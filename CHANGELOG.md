@@ -2,6 +2,12 @@
 
 ## 0.7.6
 
+### Poprawki po audycie
+
+- Uzupełniono `services.yaml` o brakujące usługi AI (`save_ai_settings`, `save_ai_analysis`, `clear_ai_history`) i ujednolicono nazwy oraz opisy usług na język polski.
+- Dodano kontrolowaną walidację JSON w usługach przyjmujących dane z karty (`save_ai_settings`, `save_ai_analysis`, `apply_schedule_patch`, `save_tariff_settings`, `save_future_plan`). Nieprawidłowy JSON lub nieoczekiwany typ danych zwraca czytelny błąd zamiast nieobsługiwanego wyjątku.
+- Dodano testy regresji walidacji JSON i schematów usług.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

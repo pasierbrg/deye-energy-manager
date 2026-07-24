@@ -90,6 +90,22 @@ SERVICE_NAMES = (
 _STATIC_PATH_REGISTERED = False
 
 
+def _parse_json_payload(value: str, expected_type: type | tuple[type, ...]) -> Any:
+    """Parse a JSON string passed from the Lovelace card and validate its type.
+
+    Raises a clear ValueError for malformed JSON or unexpected type so that
+    the service call fails with a controlled message instead of an unhandled
+    exception.
+    """
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as err:
+        raise ValueError("Nieprawidłowy JSON") from err
+    if not isinstance(parsed, expected_type):
+        raise ValueError(f"Oczekiwano typu {expected_type}, otrzymano {type(parsed).__name__}")
+    return parsed
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     global _STATIC_PATH_REGISTERED
     runtime = DeyeEnergyManagerRuntime(
@@ -146,14 +162,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_emergency_stop()
 
     async def handle_save_ai_settings(call: ServiceCall) -> None:
-        data = json.loads(call.data["data"])
-        if isinstance(data, dict):
-            await runtime.async_set_ai_settings(data)
+        data = _parse_json_payload(call.data["data"], dict)
+        await runtime.async_set_ai_settings(data)
 
     async def handle_save_ai_analysis(call: ServiceCall) -> None:
-        data = json.loads(call.data["data"])
-        if isinstance(data, dict):
-            await runtime.async_add_ai_analysis(data)
+        data = _parse_json_payload(call.data["data"], dict)
+        await runtime.async_add_ai_analysis(data)
 
     async def handle_clear_ai_history(call: ServiceCall) -> None:
         await runtime.async_clear_ai_history()
@@ -165,13 +179,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_clear_all_history()
 
     async def handle_apply_schedule_patch(call: ServiceCall) -> None:
-        updates = json.loads(call.data["data"])
-        if not isinstance(updates, list):
-            raise ValueError("Schedule patch must be a JSON list")
+        updates = _parse_json_payload(call.data["data"], list)
         await runtime.async_apply_schedule_patch(updates)
 
     async def handle_save_tariff_settings(call: ServiceCall) -> None:
-        settings = json.loads(call.data["data"])
+        settings = _parse_json_payload(call.data["data"], dict)
         normalized = await runtime.async_update_tariff_settings(settings)
         hass.config_entries.async_update_entry(
             entry,
@@ -191,9 +203,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_refresh_tariff_catalog()
 
     async def handle_save_future_plan(call: ServiceCall) -> None:
-        plan = json.loads(call.data["data"])
-        if not isinstance(plan, dict):
-            raise ValueError("Future plan must be a JSON object")
+        plan = _parse_json_payload(call.data["data"], dict)
         await runtime.async_save_future_plan(plan)
 
     async def handle_cancel_future_plan(call: ServiceCall) -> None:
