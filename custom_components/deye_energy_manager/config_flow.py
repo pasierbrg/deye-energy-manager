@@ -233,7 +233,7 @@ class DeyeEnergyManagerConfigFlow(MappingWizardMixin, config_entries.ConfigFlow,
     """Configuration wizard for Deye Energy Manager."""
 
     VERSION = 1
-    MINOR_VERSION = 15
+    MINOR_VERSION = 14
 
     @staticmethod
     @callback

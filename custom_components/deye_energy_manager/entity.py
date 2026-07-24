@@ -9,9 +9,6 @@ from .manager import DeyeEnergyManagerRuntime
 
 class DeyeEnergyManagerEntity(Entity):
     _attr_has_entity_name = True
-    # Profile helpers are required for the card and must never be created as
-    # disabled by default, even on reinstalls or registry resets.
-    _attr_entity_registry_enabled_default = True
 
     def __init__(self, runtime: DeyeEnergyManagerRuntime, key: str, name: str) -> None:
         self.runtime = runtime

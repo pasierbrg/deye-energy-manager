@@ -40,12 +40,20 @@ class ProfileHelperEntityContractTests(unittest.TestCase):
         )
         self.assertIn('"normal_profile_mode"', SELECT_SOURCE)
 
-    def test_helper_entities_enabled_by_default(self):
-        self.assertIn("_attr_entity_registry_enabled_default = True", ENTITY_SOURCE)
+    def test_base_entity_does_not_force_registry_enabled_default(self):
+        # Setting this in the base class would affect every entity and is not
+        # needed; the HA default is already True for newly registered entities.
+        self.assertNotIn("_attr_entity_registry_enabled_default", ENTITY_SOURCE)
 
     def test_unique_id_is_stable_entry_id_based(self):
         self.assertIn('self._attr_unique_id = f"{runtime.entry_id}_{key}"', ENTITY_SOURCE)
-        self.assertIn("_ensure_profile_entities_enabled", INIT_SOURCE)
+
+    def test_integration_does_not_auto_enable_entities(self):
+        # Automatic re-enabling would override user/system choices.
+        self.assertNotIn("_ensure_profile_entities_enabled", INIT_SOURCE)
+        self.assertNotIn("disabled_by", INIT_SOURCE)
+        self.assertNotIn("async_migrate_entry", INIT_SOURCE)
+        self.assertNotIn("entity_registry", INIT_SOURCE)
 
     def test_charge_entities_publish_runtime_values(self):
         for attr in (

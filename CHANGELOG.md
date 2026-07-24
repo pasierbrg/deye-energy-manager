@@ -17,7 +17,7 @@
 
 ### Etap 5.2 — naprawa profili trybów i kopiowania ustawień Charge
 
-- Wymuszono widoczność encji pomocniczych profili (`charge_profile_*`, `normal_profile_*`) w rejestrze encji oraz dodano migrację konfiguracji, która je ponownie włącza po reinstalacji lub resecie rejestru.
+- Zachowano definicje czterech encji pomocniczych profili (`charge_profile_*`, `normal_profile_*`) ze stabilnymi `unique_id`; ich brak lub wyłączenie w rejestrze encji nie blokuje zapisu profilu przez dedykowane usługi backendu.
 - Zapis **Ustawień ładowania** nie jest już blokowany przez brakujące encje pomocnicze; karta wywołuje wyłącznie `deye_energy_manager.save_charge_profile` i pokazuje stan oczekujący do potwierdzenia przez `manager_status.attributes.charge_profile`.
 - Formularz **Ustawień normalnej pracy** odczytuje dane w kolejności: szkic użytkownika, stan oczekujący, `manager_status.attributes.normal_profile`, encja pomocnicza. Stara lub brakująca encja nie nadpisuje potwierdzonego profilu.
 - Przy pierwszym przełączeniu slotu na tryb `Charge` kopiowany jest pełny aktualny szablon Charge: `grid_charge_enabled`, `charge_current`, `discharge_current`, `grid_charge_current` i `target_soc`.
@@ -25,6 +25,13 @@
 - Istniejące sloty `Charge` nie są automatycznie nadpisywane po zmianie szablonu ładowania.
 - Bezpośrednia edycja pojedynczej encji pomocniczej normalnego profilu zapisuje cały profil, nie zerując pozostałych pól.
 - Rewizja karty JavaScript: `v=0780`.
+
+### Etap 5.2.1 — bezpieczna obsługa wyłączonych encji profili
+
+- Usunięto automatyczne ponowne włączanie encji pomocniczych profili: usunięto `_ensure_profile_entities_enabled`, `_attr_entity_registry_enabled_default = True` z klasy bazowej oraz `async_migrate_entry`.
+- Przywrócono `MINOR_VERSION = 14` w `config_flow.py`, ponieważ migracja nie była konieczna.
+- Integracja nie zmienia `disabled_by` żadnej encji w rejestrze; użytkownik zachowuje pełną kontrolę nad wyłączonymi encjami.
+- Brak lub wyłączenie pomocniczych encji profili nie blokuje zapisu, odczytu ani kopiowania szablonów Charge — źródłem prawdy pozostają usługi backendu i atrybuty `manager_status`.
 
 ### Bezpieczeństwo
 

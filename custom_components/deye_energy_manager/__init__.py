@@ -7,7 +7,6 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
-from homeassistant.helpers import entity_registry as er
 from pathlib import Path
 
 from .const import DOMAIN, PLATFORMS, WORK_MODES, PHYSICAL_NORMAL_MODES
@@ -91,44 +90,6 @@ SERVICE_NAMES = (
 )
 _STATIC_PATH_REGISTERED = False
 
-# Helper entities that the card expects.  They must be visible in the entity
-# registry so that the profile forms and slot Charge copy work even after a
-# reinstall or a registry reset.
-_PROFILE_HELPER_ENTITY_KEYS = {
-    "number": [
-        "charge_profile_charge_current",
-        "charge_profile_discharge_current",
-        "charge_profile_grid_charge_current",
-        "charge_profile_target_soc",
-        "normal_profile_sell_power",
-        "normal_profile_discharge_current",
-        "normal_profile_charge_current",
-        "normal_profile_grid_charge_current",
-        "normal_profile_tou_soc",
-    ],
-    "switch": ["charge_profile_grid_enabled"],
-    "select": ["normal_profile_mode"],
-}
-
-
-def _ensure_profile_entities_enabled(hass: HomeAssistant, entry_id: str) -> None:
-    """Make sure profile helper entities are enabled in the registry.
-
-    If an entity was disabled by a previous install or by the user, re-enable
-    it so the platform setup creates and publishes it.  This keeps stable
-    unique_id and entity_id.
-    """
-    registry = er.async_get(hass)
-    for platform, keys in _PROFILE_HELPER_ENTITY_KEYS.items():
-        for key in keys:
-            unique_id = f"{entry_id}_{key}"
-            entity_id = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-            if entity_id is None:
-                continue
-            reg_entry = registry.async_get(entity_id)
-            if reg_entry is not None and reg_entry.disabled_by is not None:
-                registry.async_update_entity(entity_id, disabled_by=None)
-
 
 def _parse_json_payload(value: str, expected_type: type | tuple[type, ...]) -> Any:
     """Parse a JSON string passed from the Lovelace card and validate its type.
@@ -155,9 +116,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     await runtime.async_start()
-    # Make profile helper entities visible before platform setup so they are
-    # created and published even if a previous run disabled them.
-    _ensure_profile_entities_enabled(hass, entry.entry_id)
     if not _STATIC_PATH_REGISTERED:
         static_path = str(Path(__file__).parent / "www")
         if hasattr(hass.http, "async_register_static_paths"):
@@ -316,13 +274,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             if hass.services.has_service(DOMAIN, service_name):
                 hass.services.async_remove(DOMAIN, service_name)
     return unload_ok
-
-
-async def async_migrate_entry(hass: HomeAssistant, config_entry: ConfigEntry) -> bool:
-    """Migrate config entry and enable profile helper entities.
-
-    Bumping the minor version triggers this so missing/disabled profile helper
-    entities are recreated after a reinstall or registry reset.
-    """
-    _ensure_profile_entities_enabled(hass, config_entry.entry_id)
-    return True
