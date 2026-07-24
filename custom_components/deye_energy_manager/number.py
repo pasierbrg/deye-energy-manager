@@ -83,10 +83,36 @@ class DeyeManagerNumber(DeyeEnergyManagerEntity, NumberEntity, RestoreEntity):
             self.runtime.notify_update()
             return
         # Normal profile edits are save-only, applied to slots only when
-        # they explicitly select Normalna Praca.
+        # they explicitly select Normalna Praca.  Direct edits of a single
+        # helper must update the whole stored profile so nothing is zeroed.
         if self.attr.startswith("normal_profile_"):
-            self.runtime.mark_config_saved()
-            self.runtime.notify_update()
+            physical_mode = self.runtime.normal_profile_physical_work_mode
+            if physical_mode not in ("Zero Export To Load", "Zero Export To CT"):
+                self.runtime.mark_config_saved()
+                self.runtime.notify_update()
+                return
+            field_map = {
+                "normal_profile_sell_power": "sell_power",
+                "normal_profile_discharge_current": "discharge_current",
+                "normal_profile_charge_current": "charge_current",
+                "normal_profile_grid_charge_current": "grid_charge_current",
+                "normal_profile_tou_soc": "tou_soc",
+            }
+            values = {
+                "physical_work_mode": physical_mode,
+                "sell_power": self.runtime.normal_profile_sell_power,
+                "discharge_current": self.runtime.normal_profile_discharge_current,
+                "charge_current": self.runtime.normal_profile_charge_current,
+                "grid_charge_current": self.runtime.normal_profile_grid_charge_current,
+                "tou_soc": self.runtime.normal_profile_tou_soc,
+                field_map[self.attr]: value,
+            }
+            try:
+                await self.runtime.async_save_normal_profile(values)
+            except Exception:
+                setattr(self.runtime, self.attr, previous)
+                self.runtime.notify_update()
+                raise
             return
         # Direct edits from Home Assistant's number entity remain compatible
         # with the shared Charge profile and its single schedule path.

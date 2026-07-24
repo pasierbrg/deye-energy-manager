@@ -284,5 +284,28 @@ class ServiceJsonValidationTests(unittest.TestCase):
             })
 
 
+class EntityRegistrySafetyTests(unittest.TestCase):
+    """Verify that the integration never overrides user/system entity choices."""
+
+    def test_config_flow_minor_version_not_bumped_for_entity_enabling(self):
+        config_flow_source = (ROOT / "custom_components" / "deye_energy_manager" / "config_flow.py").read_text(encoding="utf-8")
+        self.assertIn("MINOR_VERSION = 14", config_flow_source)
+
+    def test_init_does_not_auto_enable_or_migrate_entities(self):
+        init_source = (ROOT / "custom_components" / "deye_energy_manager" / "__init__.py").read_text(encoding="utf-8")
+        self.assertNotIn("_ensure_profile_entities_enabled", init_source)
+        self.assertNotIn("async_migrate_entry", init_source)
+        self.assertNotIn("entity_registry", init_source)
+        self.assertNotIn("disabled_by", init_source)
+        self.assertNotIn("async_update_entity", init_source)
+
+    def test_async_setup_entry_does_not_call_registry_helpers(self):
+        init_source = (ROOT / "custom_components" / "deye_energy_manager" / "__init__.py").read_text(encoding="utf-8")
+        setup_entry = init_source.split("async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:")[1]
+        self.assertNotIn("async_get_entity_id", setup_entry)
+        self.assertNotIn("async_update_entity", setup_entry)
+        self.assertNotIn("disabled_by", setup_entry)
+
+
 if __name__ == "__main__":
     unittest.main()

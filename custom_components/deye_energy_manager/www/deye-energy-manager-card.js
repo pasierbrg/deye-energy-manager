@@ -6,6 +6,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this._dialog = null;
     this._chargeProfileDraft = {};
     this._chargeProfileGridDraft = null;
+    this._chargeProfilePending = null;
     this._normalProfileDraft = {};
     this._normalProfilePending = null;
     this._defaultSettingsDraft = {};
@@ -227,6 +228,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
 
   updateDynamicValues() {
     if (!this._hass || !this._isRendered) return;
+    this.checkChargeProfilePending();
     this.checkNormalProfilePending();
     const slots = this.scheduleSlots();
     const statusEntity = this.entity("sensor", "manager_status");
@@ -912,21 +914,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     return profile && typeof profile === "object" ? profile : {};
   }
 
-  chargeProfileNumericValue(entitySuffix, profileKey) {
-    const entityId = this.entity("number", entitySuffix);
-    const state = this.displayState(entityId, "");
-    const known = state && !["unknown", "unavailable", "None", "null"].includes(state);
-    if (known) return state;
-    const stored = this.chargeProfileStoredValues()[profileKey];
-    return Number.isFinite(Number(stored)) ? String(stored) : "brak";
-  }
 
-  chargeProfileGridEnabled() {
-    if (typeof this._chargeProfileGridDraft === "boolean") return this._chargeProfileGridDraft;
-    const state = this.displayState(this.entity("switch", "charge_profile_grid_enabled"), "");
-    if (state === "on" || state === "off") return state === "on";
-    return Boolean(this.chargeProfileStoredValues().grid_charge_enabled);
-  }
 
   normalProfileStoredValues() {
     const statusId = this.entity("sensor", "manager_status");
@@ -954,13 +942,58 @@ class DeyeEnergyManagerCard extends HTMLElement {
       const pendingNum = this._numericOrNull(this._normalProfilePending[profileKey]);
       if (pendingNum !== null) return String(pendingNum);
     }
+    const stored = this.normalProfileStoredValues()[profileKey];
+    const storedNum = this._numericOrNull(stored);
+    if (storedNum !== null) return String(storedNum);
     const entityId = this.entity("number", entitySuffix);
     const state = this.displayState(entityId, "");
     const known = state && !["unknown", "unavailable", "None", "null"].includes(state);
-    if (known) return state;
-    const stored = this.normalProfileStoredValues()[profileKey];
+    return known ? state : "";
+  }
+
+  chargeProfileStoredValues() {
+    const statusId = this.entity("sensor", "manager_status");
+    const profile = this._hass?.states?.[statusId]?.attributes?.charge_profile;
+    return profile && typeof profile === "object" ? profile : {};
+  }
+
+  chargeProfileNumericValue(entitySuffix, profileKey) {
+    const draft = this._chargeProfileDraft[profileKey];
+    if (Object.prototype.hasOwnProperty.call(this._chargeProfileDraft, profileKey)) {
+      const draftNum = this._numericOrNull(draft);
+      return draftNum !== null ? String(draftNum) : "";
+    }
+    if (this._chargeProfilePending) {
+      const pendingNum = this._numericOrNull(this._chargeProfilePending[profileKey]);
+      if (pendingNum !== null) return String(pendingNum);
+    }
+    const stored = this.chargeProfileStoredValues()[profileKey];
     const storedNum = this._numericOrNull(stored);
-    return storedNum !== null ? String(storedNum) : "";
+    if (storedNum !== null) return String(storedNum);
+    const entityId = this.entity("number", entitySuffix);
+    const state = this.displayState(entityId, "");
+    const known = state && !["unknown", "unavailable", "None", "null"].includes(state);
+    return known ? state : "brak";
+  }
+
+  chargeProfileGridEnabled() {
+    if (typeof this._chargeProfileGridDraft === "boolean") return this._chargeProfileGridDraft;
+    if (this._chargeProfilePending) return Boolean(this._chargeProfilePending.grid_charge_enabled);
+    const stored = this.chargeProfileStoredValues().grid_charge_enabled;
+    if (typeof stored === "boolean") return stored;
+    const state = this.displayState(this.entity("switch", "charge_profile_grid_enabled"), "");
+    if (state === "on" || state === "off") return state === "on";
+    return false;
+  }
+
+  chargeProfileValues() {
+    return {
+      chargeCurrent: this.chargeProfileNumericValue("charge_profile_charge_current", "charge_current"),
+      dischargeCurrent: this.chargeProfileNumericValue("charge_profile_discharge_current", "discharge_current"),
+      gridChargeCurrent: this.chargeProfileNumericValue("charge_profile_grid_charge_current", "grid_charge_current"),
+      targetSoc: this.chargeProfileNumericValue("charge_profile_target_soc", "target_soc"),
+      gridEnabled: this.chargeProfileGridEnabled(),
+    };
   }
 
   normalProfileValues() {
@@ -1009,6 +1042,33 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const statusProfile = this._hass?.states?.[statusId]?.attributes?.normal_profile;
     if (statusProfile && typeof statusProfile === "object" && this._normalProfilePendingMatches(statusProfile)) {
       this._normalProfilePending = null;
+    }
+  }
+
+  _chargeProfilePendingMatches(statusProfile) {
+    if (!this._chargeProfilePending || !statusProfile || typeof statusProfile !== "object") return false;
+    const keys = ["grid_charge_enabled", "charge_current", "discharge_current", "grid_charge_current", "target_soc"];
+    for (const key of keys) {
+      const pending = this._chargeProfilePending[key];
+      const stored = statusProfile[key];
+      if (key === "grid_charge_enabled") {
+        if (Boolean(pending) !== Boolean(stored)) return false;
+      } else {
+        const pendingNum = this._numericOrNull(pending);
+        const storedNum = this._numericOrNull(stored);
+        if (pendingNum === null || storedNum === null) return false;
+        if (Math.abs(pendingNum - storedNum) > 0.05) return false;
+      }
+    }
+    return true;
+  }
+
+  checkChargeProfilePending() {
+    if (!this._chargeProfilePending) return;
+    const statusId = this.entity("sensor", "manager_status");
+    const statusProfile = this._hass?.states?.[statusId]?.attributes?.charge_profile;
+    if (statusProfile && typeof statusProfile === "object" && this._chargeProfilePendingMatches(statusProfile)) {
+      this._chargeProfilePending = null;
     }
   }
 
@@ -1162,18 +1222,6 @@ class DeyeEnergyManagerCard extends HTMLElement {
   }
 
   async saveChargeProfile() {
-    const helpers = {
-      charge_current: this.entity("number", "charge_profile_charge_current"),
-      discharge_current: this.entity("number", "charge_profile_discharge_current"),
-      grid_charge_current: this.entity("number", "charge_profile_grid_charge_current"),
-      target_soc: this.entity("number", "charge_profile_target_soc"),
-      grid_charge_enabled: this.entity("switch", "charge_profile_grid_enabled"),
-    };
-    const missing = Object.values(helpers).filter((entityId) => !this.exists(entityId));
-    if (missing.length) {
-      this.failSave("charge_profile", new Error(`Brak encji profilu ładowania: ${missing.join(", ")}`));
-      return false;
-    }
     const fields = [...this.querySelectorAll("[data-charge-profile-number]")];
     const values = {};
     for (const field of fields) {
@@ -1184,17 +1232,41 @@ class DeyeEnergyManagerCard extends HTMLElement {
       }
       values[field.dataset.chargeProfileNumber] = value;
     }
+    const currentRanges = {
+      charge_current: { min: 0, max: 240 },
+      discharge_current: { min: 0, max: 240 },
+      grid_charge_current: { min: 0, max: 240 },
+      target_soc: { min: 0, max: 100 },
+    };
+    for (const [key, { min, max }] of Object.entries(currentRanges)) {
+      if (!(key in values) || values[key] < min || values[key] > max) {
+        this.failSave("charge_profile", new Error(`Wartość ${key} musi być między ${min} a ${max}`));
+        return false;
+      }
+    }
     values.grid_charge_enabled = typeof this._chargeProfileGridDraft === "boolean"
       ? this._chargeProfileGridDraft
       : this.rawValue("charge-profile-grid", "off") === "on";
+    this._chargeProfilePending = { ...values };
     this.beginSave();
     try {
       await this.callService("deye_energy_manager", "save_charge_profile", values);
+      // Helper entities are optional for the template save.  Optimistically
+      // update only the ones that actually exist so the UI feels snappy.
+      const helpers = {
+        charge_current: this.entity("number", "charge_profile_charge_current"),
+        discharge_current: this.entity("number", "charge_profile_discharge_current"),
+        grid_charge_current: this.entity("number", "charge_profile_grid_charge_current"),
+        target_soc: this.entity("number", "charge_profile_target_soc"),
+        grid_charge_enabled: this.entity("switch", "charge_profile_grid_enabled"),
+      };
       Object.entries(values).forEach(([key, value]) => {
         const entityId = helpers[key];
-        this._optimisticStates[entityId] = key === "grid_charge_enabled"
-          ? (value ? "on" : "off")
-          : String(value);
+        if (entityId && this.exists(entityId)) {
+          this._optimisticStates[entityId] = key === "grid_charge_enabled"
+            ? (value ? "on" : "off")
+            : String(value);
+        }
       });
       this._chargeProfileDraft = {};
       this._chargeProfileGridDraft = null;
@@ -1203,6 +1275,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this.render();
       return true;
     } catch (error) {
+      this._chargeProfilePending = null;
       this.failSave("charge_profile", error);
       return false;
     }
@@ -1258,6 +1331,27 @@ class DeyeEnergyManagerCard extends HTMLElement {
           slot_key: slotKey,
           mode: "Normalna Praca",
           force_copy_normal_profile: true,
+        }]),
+      });
+      this.finishSave();
+      this.captureScrollPositions();
+      this.render();
+      return true;
+    } catch (error) {
+      this.failSave("schedule_patch", error);
+      return false;
+    }
+  }
+
+  async reloadChargeProfileSlot(slotKey) {
+    if (!slotKey) return false;
+    this.beginSave();
+    try {
+      await this.callService("deye_energy_manager", "apply_schedule_patch", {
+        data: JSON.stringify([{
+          slot_key: slotKey,
+          mode: "Charge",
+          force_copy_charge_profile: true,
         }]),
       });
       this.finishSave();
@@ -3560,6 +3654,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       : this.row(physicalSocLabel, this.touSocInput(entities.touSoc));
     const slotFields = `
           ${isCharge ? '<div class="hint">Wartości początkowe skopiowano z Ustawień ładowania przy wyborze Charge. Późniejsze ręczne zmiany dotyczą wyłącznie tej godziny.</div>' : ""}
+          ${isCharge ? `<button class="primary" data-reload-charge-profile="${key}" style="margin-bottom:8px">Wczytaj ponownie ustawienia ładowania</button>` : ""}
           ${isNormal ? '<div class="hint">Ten slot otrzymał początkowe wartości z szablonu Normalnej Pracy. Zmiany wykonane tutaj dotyczą tylko tej godziny.<br>' + physicalModeLabel + '</div>' : ""}
           ${isNormal ? `<button class="primary" data-reload-normal-profile="${key}" style="margin-bottom:8px">Wczytaj ponownie ustawienia normalnej pracy</button>` : ""}
           ${this.row("Moc sprzedaży", this.numberInput(entities.sellPower, "W"))}
@@ -3997,6 +4092,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.querySelectorAll("[data-save-charge-profile]").forEach((el) => el.addEventListener("click", () => this.saveChargeProfile()));
     this.querySelectorAll("[data-save-normal-profile]").forEach((el) => el.addEventListener("click", () => this.saveNormalProfile()));
     this.querySelectorAll("[data-reload-normal-profile]").forEach((el) => el.addEventListener("click", () => this.reloadNormalProfileSlot(el.dataset.reloadNormalProfile)));
+    this.querySelectorAll("[data-reload-charge-profile]").forEach((el) => el.addEventListener("click", () => this.reloadChargeProfileSlot(el.dataset.reloadChargeProfile)));
     this.querySelectorAll("[data-save-default-settings]").forEach((el) => el.addEventListener("click", () => this.saveDefaultSettings()));
     this.querySelectorAll("[data-charge-profile-number]").forEach((el) => {
       const saveDraft = () => { this._chargeProfileDraft[el.dataset.chargeProfileNumber] = el.value; };

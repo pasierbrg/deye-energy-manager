@@ -126,7 +126,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=0779", source)
+            self.assertIn("deye-energy-manager-card.js?v=0780", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0778", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0777", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0774", source)
@@ -175,7 +175,10 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             "setSelect(",
         ):
             self.assertNotIn(forbidden, method)
-        self.assertIn("Brak encji profilu", method)
+        # The save must not block when helper entities are missing; it uses a
+        # pending state that is confirmed by manager_status.
+        self.assertNotIn("Brak encji profilu", method)
+        self.assertIn("this._chargeProfilePending", method)
         self.assertIn("this._chargeProfileDraft = {}", method)
         self.assertIn("this._chargeProfileGridDraft = null", method)
 
@@ -272,6 +275,39 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             'this.reloadNormalProfileSlot(el.dataset.reloadNormalProfile)',
             source,
         )
+
+    def test_charge_profile_reload_button_calls_apply_schedule_patch_with_force_flag(self):
+        source = self.sources[0]
+        method = extract_method(source, "async reloadChargeProfileSlot(slotKey)")
+        self.assertIn('"apply_schedule_patch"', method)
+        self.assertIn('force_copy_charge_profile: true', method)
+        self.assertIn('"Charge"', method)
+        self.assertIn('data-reload-charge-profile', source)
+        self.assertIn(
+            'this.reloadChargeProfileSlot(el.dataset.reloadChargeProfile)',
+            source,
+        )
+
+    def test_charge_profile_save_uses_pending_until_manager_status_confirms(self):
+        method = extract_method(self.sources[0], "async saveChargeProfile()")
+        self.assertIn("this._chargeProfilePending = { ...values }", method)
+        self.assertIn("checkChargeProfilePending()", self.sources[0])
+        self.assertIn("_chargeProfilePendingMatches", self.sources[0])
+
+    def test_normal_profile_numeric_prefers_stored_over_entity(self):
+        method = extract_method(self.sources[0], "normalProfileNumericValue(entitySuffix, profileKey)")
+        # Draft -> pending -> stored -> entity, per the specification.
+        self.assertIn("this.normalProfileStoredValues()[profileKey]", method)
+        stored_index = method.index("this.normalProfileStoredValues()[profileKey]")
+        entity_index = method.index('this.entity("number", entitySuffix)')
+        self.assertLess(stored_index, entity_index)
+
+    def test_charge_profile_numeric_prefers_stored_over_entity(self):
+        method = extract_method(self.sources[0], "chargeProfileNumericValue(entitySuffix, profileKey)")
+        self.assertIn("this.chargeProfileStoredValues()[profileKey]", method)
+        stored_index = method.index("this.chargeProfileStoredValues()[profileKey]")
+        entity_index = method.index('this.entity("number", entitySuffix)')
+        self.assertLess(stored_index, entity_index)
 
     def test_settings_menu_and_forms_follow_the_approved_layout(self):
         source = self.sources[0]
