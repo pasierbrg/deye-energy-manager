@@ -3612,24 +3612,27 @@ class DeyeEnergyManagerRuntime:
         await self.async_update_energy_sample()
         if not self.weather_last_updated or ha_now().minute == 0:
             await self.async_update_weather_forecast()
+
+        result = True
         if self.emergency_stop:
-            return await self.async_apply_safe_defaults("Zatrzymanie awaryjne")
+            result = await self.async_apply_safe_defaults("Zatrzymanie awaryjne")
         elif self.control_mode == "Schedule" and self.mapping_error:
-            return self._report_tou_preflight_failure()
+            result = self._report_tou_preflight_failure()
         elif self.control_mode in ("Manual Sell", "Charge Battery"):
-            return await self.async_apply_targets()
+            result = await self.async_apply_targets()
         elif self.control_mode in ("Stop Sell", "Protect Battery"):
-            return await self.async_apply_safe_defaults(
+            result = await self.async_apply_safe_defaults(
                 "Sprzedaż zatrzymana" if self.control_mode == "Stop Sell" else "Aktywna ochrona baterii"
             )
         elif self.scheduler_enabled:
             if self.active_slot.enabled:
-                return await self.async_apply_targets()
+                result = await self.async_apply_targets()
             else:
                 await self.async_apply_default_values("Defaults applied by inactive slot")
+
         if self.sold_energy_today != previous_sold_energy or self.sold_value_today != previous_sold_value:
             self.notify_update()
-        return True
+        return result
 
     async def async_tick(self, *_args: Any) -> None:
         if self._tariff_catalog_manager is not None and self._tariff_catalog_manager.refresh_due():

@@ -276,6 +276,33 @@ class SafetyTests(unittest.TestCase):
         self.assertFalse(runtime.price_ok)
 
 
+class NotifyUpdateTests(unittest.TestCase):
+    def test_tick_notifies_on_stats_change_with_active_slot(self):
+        runtime = make_runtime()
+        runtime.scheduler_enabled = True
+        active = runtime.slots[runtime.active_slot_key()]
+        active.enabled = True
+        active.mode = const.MODE_ZERO_EXPORT
+        active.physical_work_mode = const.MODE_ZERO_EXPORT
+        active.sell_power = 0
+        active.discharge_current = 0
+        active.charge_current = 0
+        active.grid_charge_current = 0
+        active.tou_soc = 20
+        counts = []
+        original_notify = runtime.notify_update
+
+        def counting_notify():
+            counts.append(None)
+            original_notify()
+
+        runtime.notify_update = counting_notify
+        runtime.sold_energy_today = 1.0
+        runtime.sold_value_today = 1.0
+        asyncio.run(runtime._async_tick_impl())
+        self.assertGreaterEqual(len(counts), 1)
+
+
 class MappingAndTransactionTests(unittest.TestCase):
     def assert_safe_defaults(self, runtime, expected_mode=const.MODE_ZERO_EXPORT):
         calls = control_number_calls(runtime)
