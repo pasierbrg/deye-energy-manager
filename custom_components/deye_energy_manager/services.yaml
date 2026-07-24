@@ -35,6 +35,15 @@ apply_settings:
           max: 240
           step: 5
           unit_of_measurement: A
+    grid_charge_current:
+      required: false
+      description: Po pominięciu używany jest prąd ładowania z sieci zapisany w Ustawieniach domyślnych. Dodatnia wartość nie włącza automatycznie Grid Charge; jest wyłącznie limitem prądu.
+      selector:
+        number:
+          min: 0
+          max: 240
+          step: 5
+          unit_of_measurement: A
 manual_sell:
   name: Ręczna sprzedaż
   description: Przełącz na Selling First i ustaw ręczne limity sprzedaży.

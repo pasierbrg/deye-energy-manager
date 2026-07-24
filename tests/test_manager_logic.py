@@ -443,6 +443,22 @@ class MappingAndTransactionTests(unittest.TestCase):
             asyncio.run(runtime.async_apply_settings(const.MODE_SELLING_FIRST, 5000, 120, 0))
         self.assert_safe_defaults(runtime)
 
+    def test_apply_settings_uses_custom_grid_charge_current(self):
+        runtime = make_runtime()
+        runtime.default_grid_charge_current = 30
+        asyncio.run(runtime.async_apply_settings(const.MODE_ZERO_EXPORT, 0, 120, 120, 60))
+        grid_calls = [call for call in runtime.hass.services.calls if call[:2] == ("number", "set_value") and call[2].get("entity_id") == const.DEFAULT_GRID_CHARGE_CURRENT]
+        self.assertTrue(grid_calls)
+        self.assertEqual(grid_calls[-1][2]["value"], 60)
+
+    def test_apply_settings_uses_default_grid_charge_current_when_omitted(self):
+        runtime = make_runtime()
+        runtime.default_grid_charge_current = 45
+        asyncio.run(runtime.async_apply_settings(const.MODE_ZERO_EXPORT, 0, 120, 120))
+        grid_calls = [call for call in runtime.hass.services.calls if call[:2] == ("number", "set_value") and call[2].get("entity_id") == const.DEFAULT_GRID_CHARGE_CURRENT]
+        self.assertTrue(grid_calls)
+        self.assertEqual(grid_calls[-1][2]["value"], 45)
+
     def test_more_than_six_segments_is_rejected(self):
         runtime = make_runtime()
         for index, slot in enumerate(runtime.slots.values()):

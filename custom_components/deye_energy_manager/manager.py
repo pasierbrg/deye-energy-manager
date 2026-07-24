@@ -3137,8 +3137,10 @@ class DeyeEnergyManagerRuntime:
         sell_power: float,
         discharge_current: float,
         charge_current: float,
+        grid_charge_current: float | None = None,
     ) -> None:
         """Apply direct inverter settings using a safe, serialized write order."""
+        effective_grid_charge_current = grid_charge_current if grid_charge_current is not None else self.default_grid_charge_current
         async with self._operation_lock:
             if mode == MODE_SELLING_FIRST and not self.sell_allowed:
                 await self.async_apply_safe_defaults("Sprzedaż zablokowana przez ochronę SOC lub ceny")
@@ -3149,7 +3151,7 @@ class DeyeEnergyManagerRuntime:
                     sell_power,
                     discharge_current,
                     charge_current,
-                    self.default_grid_charge_current,
+                    effective_grid_charge_current,
                 )
             except Exception as err:
                 await self.async_apply_safe_defaults(f"Nieprawidłowy plan ustawień: {err}")
@@ -3158,7 +3160,7 @@ class DeyeEnergyManagerRuntime:
                 await self.async_set_number(self.charge_current_number, charge_current)
                 await self.async_set_number(
                     self.grid_charge_current_number,
-                    self.default_grid_charge_current,
+                    effective_grid_charge_current,
                 )
                 await self.async_set_number(self.max_sell_power_number, sell_power)
                 await self.async_set_number(self.discharge_current_number, discharge_current)
@@ -3167,7 +3169,7 @@ class DeyeEnergyManagerRuntime:
                     sell_power,
                     discharge_current,
                     charge_current,
-                    self.default_grid_charge_current,
+                    effective_grid_charge_current,
                 )
                 if unconfirmed:
                     raise RuntimeError(f"Niepotwierdzone wartości: {'; '.join(unconfirmed)}")
@@ -3177,7 +3179,7 @@ class DeyeEnergyManagerRuntime:
                     sell_power,
                     discharge_current,
                     charge_current,
-                    self.default_grid_charge_current,
+                    effective_grid_charge_current,
                 )
                 if unconfirmed:
                     raise RuntimeError(f"Niepotwierdzone wartości końcowe: {'; '.join(unconfirmed)}")

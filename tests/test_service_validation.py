@@ -266,6 +266,15 @@ class ServiceJsonValidationTests(unittest.TestCase):
         })
         self.assertNotIn("charge_current", result)
 
+    def test_apply_settings_schema_accepts_optional_grid_charge_current(self):
+        result = init.APPLY_SCHEMA({
+            "mode": "Selling First",
+            "sell_power": 3000,
+            "discharge_current": 80,
+            "grid_charge_current": 60,
+        })
+        self.assertEqual(result.get("grid_charge_current"), 60)
+
     def test_apply_settings_schema_rejects_unknown_mode(self):
         with self.assertRaises(Exception):
             init.APPLY_SCHEMA({

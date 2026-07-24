@@ -10,6 +10,7 @@
 - Ujednolicono wymagane encje w kreatorze mapowania (`config_flow.py`) oraz diagnostyce. Dla pełnego sterowania wymagane są teraz: tryb pracy Deye, maksymalna moc sprzedaży, prąd rozładowania, prąd ładowania, prąd ładowania z sieci oraz bieżący SOC baterii. Cena sprzedaży pozostaje warunkiem wyłącznie dla `Selling First`.
 - Diagnostyka pokazuje osobno `required_entities_complete` oraz oznacza, czy encja została wybrana ręcznie, czy jest domyślną.
 - Uporządkowano `_async_tick_impl` tak, aby powiadomienie o zmianie statystyk sprzedaży było wysyłane niezależnie od ścieżki sterowania, bez ryzyka pominięcia przy wcześniejszym `return`.
+- Usługa `apply_settings` obsługuje opcjonalny parametr `grid_charge_current`. Po pominięciu używana jest wartość domyślna; dodatnia wartość nie włącza automatycznie Grid Charge, jest wyłącznie limitem prądu.
 
 ### Bezpieczeństwo
 
