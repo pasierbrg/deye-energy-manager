@@ -222,6 +222,21 @@ class SafetyTests(unittest.TestCase):
     def test_default_control_confirmation_window_is_12_seconds(self):
         self.assertEqual(make_runtime().control_confirmation_timeout, 12.0)
 
+    def test_required_entities_complete_includes_battery_soc(self):
+        runtime = make_runtime()
+        self.assertTrue(runtime.required_entities_complete)
+
+    def test_required_entities_complete_false_when_soc_missing(self):
+        runtime = make_runtime(soc=None)
+        self.assertFalse(runtime.required_entities_complete)
+        self.assertTrue(runtime.data_available)
+
+    def test_required_entities_complete_false_when_charge_current_missing(self):
+        runtime = make_runtime()
+        del runtime.hass.states.values[const.DEFAULT_CHARGE_CURRENT]
+        self.assertFalse(runtime.required_entities_complete)
+        self.assertFalse(runtime.data_available)
+
     def test_missing_soc_blocks_selling(self):
         runtime = make_runtime(soc=None)
         self.assertTrue(runtime.data_available)

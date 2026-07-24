@@ -7,6 +7,8 @@
 - Uzupełniono `services.yaml` o brakujące usługi AI (`save_ai_settings`, `save_ai_analysis`, `clear_ai_history`) i ujednolicono nazwy oraz opisy usług na język polski.
 - Dodano kontrolowaną walidację JSON w usługach przyjmujących dane z karty (`save_ai_settings`, `save_ai_analysis`, `apply_schedule_patch`, `save_tariff_settings`, `save_future_plan`). Nieprawidłowy JSON lub nieoczekiwany typ danych zwraca czytelny błąd zamiast nieobsługiwanego wyjątku.
 - Dodano testy regresji walidacji JSON i schematów usług.
+- Ujednolicono wymagane encje w kreatorze mapowania (`config_flow.py`) oraz diagnostyce. Dla pełnego sterowania wymagane są teraz: tryb pracy Deye, maksymalna moc sprzedaży, prąd rozładowania, prąd ładowania, prąd ładowania z sieci oraz bieżący SOC baterii. Cena sprzedaży pozostaje warunkiem wyłącznie dla `Selling First`.
+- Diagnostyka pokazuje osobno `required_entities_complete` oraz oznacza, czy encja została wybrana ręcznie, czy jest domyślną.
 
 ### Bezpieczeństwo
 

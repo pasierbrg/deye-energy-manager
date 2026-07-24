@@ -125,6 +125,31 @@ def _install_home_assistant_stubs() -> None:
     config_entries = types.ModuleType("homeassistant.config_entries")
     config_entries.ConfigEntry = object
 
+    class _ConfigFlowBase:
+        pass
+
+    class ConfigFlowMeta(type):
+        def __init__(cls, name, bases, namespace, **kwargs):
+            super().__init__(name, bases, namespace)
+
+    class ConfigFlow(_ConfigFlowBase, metaclass=ConfigFlowMeta):
+        def __init_subclass__(cls, **kwargs):
+            super().__init_subclass__()
+
+    config_entries.ConfigFlow = ConfigFlow
+    config_entries.OptionsFlowWithReload = object
+    const = types.ModuleType("homeassistant.const")
+    const.CONF_NAME = "name"
+    selector = types.ModuleType("homeassistant.helpers.selector")
+
+    selector.SelectSelector = lambda config: None
+    selector.SelectSelectorConfig = lambda **kwargs: kwargs
+    selector.EntitySelector = lambda config: None
+    selector.EntitySelectorConfig = lambda **kwargs: kwargs
+    selector.BooleanSelector = lambda: None
+    sys.modules["homeassistant.helpers.selector"] = selector
+    sys.modules["homeassistant.const"] = const
+
     core.HomeAssistant = object
     core.ServiceCall = object
     core.callback = lambda function: function
@@ -170,6 +195,26 @@ sys.modules[package.__name__] = package
 const = _load_module(f"{package.__name__}.const", PACKAGE / "const.py")
 manager = _load_module(f"{package.__name__}.manager", PACKAGE / "manager.py")
 init = _load_module(f"{package.__name__}", PACKAGE / "__init__.py")
+
+
+config_flow = _load_module(f"{package.__name__}.config_flow", PACKAGE / "config_flow.py")
+
+
+class ConfigFlowRequiredEntitiesTests(unittest.TestCase):
+    """Verify that the mapping wizard requires the entities needed for full control."""
+
+    def test_required_fields_includes_all_control_entities(self):
+        required = config_flow.REQUIRED_FIELDS
+        self.assertIn(const.CONF_WORK_MODE_SELECT, required)
+        self.assertIn(const.CONF_MAX_SELL_POWER_NUMBER, required)
+        self.assertIn(const.CONF_DISCHARGE_CURRENT_NUMBER, required)
+        self.assertIn(const.CONF_CHARGE_CURRENT_NUMBER, required)
+        self.assertIn(const.CONF_GRID_CHARGE_CURRENT_NUMBER, required)
+        self.assertIn(const.CONF_BATTERY_SOC_SENSOR, required)
+
+    def test_price_sensors_are_not_required_globally(self):
+        self.assertNotIn(const.CONF_PRICE_SENSOR, config_flow.REQUIRED_FIELDS)
+        self.assertNotIn(const.CONF_SELL_PRICE_TOMORROW_SENSOR, config_flow.REQUIRED_FIELDS)
 
 
 class ServiceJsonValidationTests(unittest.TestCase):
