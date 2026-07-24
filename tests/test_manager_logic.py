@@ -1101,6 +1101,92 @@ class NormalProfileTests(unittest.TestCase):
             }))
 
 
+class ChargeProfileSlotReloadTests(unittest.TestCase):
+    """Regression coverage for copying the Charge template into slots."""
+
+    def _configure_charge_profile(self, runtime):
+        runtime.charge_profile_charge_current = 120
+        runtime.charge_profile_discharge_current = 120
+        runtime.charge_profile_grid_charge_current = 60
+        runtime.charge_profile_target_soc = 80
+        runtime.charge_profile_grid_enabled = True
+
+    def test_force_copy_charge_profile_reloads_whole_template(self):
+        runtime = make_runtime()
+        self._configure_charge_profile(runtime)
+        slot_key = runtime.active_slot_key()
+        slot = runtime.slots[slot_key]
+        slot.mode = const.MODE_CHARGE
+        slot.charge_current = 5
+        slot.discharge_current = 6
+        slot.grid_charge_current = 7
+        slot.tou_soc = 10
+        slot.charge_enabled = False
+
+        asyncio.run(runtime.async_apply_schedule_patch([{
+            "slot_key": slot_key,
+            "mode": const.MODE_CHARGE,
+            "force_copy_charge_profile": True,
+        }]))
+
+        self.assertEqual(slot.mode, const.MODE_CHARGE)
+        self.assertEqual(slot.charge_current, 120)
+        self.assertEqual(slot.discharge_current, 120)
+        self.assertEqual(slot.grid_charge_current, 60)
+        self.assertEqual(slot.tou_soc, 80)
+        self.assertTrue(slot.charge_enabled)
+
+    def test_force_copy_charge_profile_affects_only_requested_slot(self):
+        runtime = make_runtime()
+        self._configure_charge_profile(runtime)
+        keys = list(runtime.slots.keys())
+        first = runtime.slots[keys[0]]
+        second = runtime.slots[keys[1]]
+        first.mode = const.MODE_CHARGE
+        second.mode = const.MODE_CHARGE
+        first.charge_current = 5
+        second.charge_current = 7
+
+        asyncio.run(runtime.async_apply_schedule_patch([{
+            "slot_key": keys[0],
+            "mode": const.MODE_CHARGE,
+            "force_copy_charge_profile": True,
+        }]))
+
+        self.assertEqual(first.charge_current, 120)
+        self.assertEqual(second.charge_current, 7)
+
+    def test_new_charge_slot_copies_full_template_from_runtime(self):
+        runtime = make_runtime()
+        self._configure_charge_profile(runtime)
+        slot_key = runtime.active_slot_key()
+        slot = runtime.slots[slot_key]
+        slot.mode = const.MODE_SELLING_FIRST
+        slot.tou_soc = 30
+
+        runtime.set_work_mode_for_slot(slot_key, const.MODE_CHARGE)
+        self.assertEqual(slot.charge_current, 120)
+        self.assertEqual(slot.discharge_current, 120)
+        self.assertEqual(slot.grid_charge_current, 60)
+        self.assertEqual(slot.tou_soc, 80)
+        self.assertTrue(slot.charge_enabled)
+
+    def test_existing_charge_slot_keeps_manual_values_after_template_change(self):
+        runtime = make_runtime()
+        self._configure_charge_profile(runtime)
+        slot_key = runtime.active_slot_key()
+        slot = runtime.slots[slot_key]
+        runtime.set_work_mode_for_slot(slot_key, const.MODE_CHARGE)
+        slot.tou_soc = 55
+
+        runtime.charge_profile_target_soc = 90
+        runtime.charge_profile_grid_enabled = False
+        runtime.set_work_mode_for_slot(slot_key, const.MODE_CHARGE)
+
+        self.assertEqual(slot.tou_soc, 55)
+        self.assertTrue(slot.charge_enabled)
+
+
 class TouSocMappingTests(unittest.TestCase):
     """Regression coverage for logical SOC versus physical Deye TOU SOC."""
 

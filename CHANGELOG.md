@@ -15,6 +15,17 @@
 - Usługa `save_normal_profile` akceptuje teraz częściowe aktualizacje: zmiana tylko trybu fizycznego przez encję `select.normal_profile_mode` nie nadpisuje pozostałych parametrów szablonu.
 - Etap 5.1: naprawiono synchronizację formularza **Ustawienia normalnej pracy**. Wartości `null`/`undefined`/pusty ciąg dla `tou_soc` nie są już konwertowane na `0`. Wprowadzono stan oczekujący `_normalProfilePending` przechowujący wartości wysłane do backendu; formularz pokazuje je do czasu potwierdzenia przez atrybut `normal_profile` w `sensor.manager_status`. Otwarte okno ustawień synchronizuje kontrolki przy aktualizacjach `hass`, nie nadpisując aktywnego szkicu użytkownika. Wybór `Zero Export To CT` i wpisane wartości SOC pozostają widoczne po zapisie, a stary stan encji pomocniczej nie ma już pierwszeństwa.
 
+### Etap 5.2 — naprawa profili trybów i kopiowania ustawień Charge
+
+- Wymuszono widoczność encji pomocniczych profili (`charge_profile_*`, `normal_profile_*`) w rejestrze encji oraz dodano migrację konfiguracji, która je ponownie włącza po reinstalacji lub resecie rejestru.
+- Zapis **Ustawień ładowania** nie jest już blokowany przez brakujące encje pomocnicze; karta wywołuje wyłącznie `deye_energy_manager.save_charge_profile` i pokazuje stan oczekujący do potwierdzenia przez `manager_status.attributes.charge_profile`.
+- Formularz **Ustawień normalnej pracy** odczytuje dane w kolejności: szkic użytkownika, stan oczekujący, `manager_status.attributes.normal_profile`, encja pomocnicza. Stara lub brakująca encja nie nadpisuje potwierdzonego profilu.
+- Przy pierwszym przełączeniu slotu na tryb `Charge` kopiowany jest pełny aktualny szablon Charge: `grid_charge_enabled`, `charge_current`, `discharge_current`, `grid_charge_current` i `target_soc`.
+- W oknie slotu `Charge` dodano przycisk **Wczytaj ponownie ustawienia ładowania**, który przez `apply_schedule_patch` z flagą `force_copy_charge_profile` ponownie wczytuje szablon tylko do tego slotu.
+- Istniejące sloty `Charge` nie są automatycznie nadpisywane po zmianie szablonu ładowania.
+- Bezpośrednia edycja pojedynczej encji pomocniczej normalnego profilu zapisuje cały profil, nie zerując pozostałych pól.
+- Rewizja karty JavaScript: `v=0780`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.
@@ -73,7 +84,7 @@
 - Wprowadzono logiczny tryb harmonogramu **Normalna Praca**, który w backendzie mapuje się na fizyczny `Zero Export To Load` lub `Zero Export To CT`; selektor slotów pokazuje teraz tylko trzy tryby: `Selling First`, `Normalna Praca` i `Charge`.
 - Dodano szablon **Ustawienia normalnej pracy** (fizyczny tryb Deye, moc sprzedaży, prądy, SOC TOU) kopiowany do slotu przy jego pierwszym wyborze lub przy ręcznym ponownym wczytaniu; późniejsze zmiany szablonu nie nadpisują istniejących slotów.
 - Tabela harmonogramu pokazuje zgodę **Ładowanie z sieci** jako **tak** albo **nie** dla trybu `Charge`, a dla pozostałych trybów jako **nie dotyczy**; nie wyświetla błędnego stanu **brak**.
-- Obie dystrybuowane kopie karty mają identyczną zawartość i rewizję zasobu `v=0779`.
+- Obie dystrybuowane kopie karty mają identyczną zawartość i rewizję zasobu `v=0780`.
 - Poprawiono zabezpieczanie dynamicznych wartości HTML.
 - Usunięto błędnie wyświetlane encje numeryczne HTML, m.in. w nazwie strategii „Zrównoważony”.
 - Dodano zakładkę `Taryfa i dystrybucja` z wyborem operatora, taryfy i trybu katalogu, jawnym przyciskiem zapisu, diagnostyką aktualizacji oraz profilem 48h dla dziś i jutra.

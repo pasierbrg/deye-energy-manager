@@ -45,8 +45,8 @@ Pełna lista znajduje się w [CHANGELOG.md](CHANGELOG.md).
 - kompresja harmonogramu do 6 fizycznych slotów Deye Time Of Use;
 - **Minimalny SOC sprzedaży** jest wyłącznie warunkiem biznesowym `Selling First`; nie jest zapisywany jako fizyczny SOC Deye Time Of Use;
 - **Ładowanie z sieci: TAK** w konkretnym slocie `Charge` jest jedyną zgodą na ładowanie baterii z sieci; wartość **NIE** pozostawia Deye Grid Charge wyłączone;
-- osobny profil **Ustawienia ładowania** jest zapisywany atomowo i zachowywany po ponownym otwarciu okna oraz restarcie Home Assistant; stanowi szablon kopiowany przy wyborze trybu `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci, zgoda na ładowanie z sieci i docelowy SOC; późniejsze zmiany konkretnego slotu pozostają niezależne;
-- osobny profil **Ustawienia normalnej pracy** jest zapisywany atomowo i zachowywany po restarcie; stanowi szablon kopiowany przy wyborze trybu `Normalna Praca`: fizyczny tryb Deye (`Zero Export To Load` albo `Zero Export To CT`), moc sprzedaży, prąd rozładowania, prąd ładowania baterii, prąd ładowania z sieci i fizyczny SOC Deye TOU; późniejsze zmiany konkretnego slotu pozostają niezależne, a w edytorze slotu dostępny jest przycisk ponownego wczytania szablonu;
+- osobny profil **Ustawienia ładowania** jest zapisywany atomowo przez dedykowaną usługę backendu i zachowywany po ponownym otwarciu okna oraz restarcie Home Assistant; zapis nie wymaga obecności wszystkich encji pomocniczych. Stanowi szablon kopiowany przy wyborze trybu `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci, zgoda na ładowanie z sieci i docelowy SOC. Późniejsze zmiany konkretnego slotu pozostają niezależne, a w edytorze slotu `Charge` dostępny jest przycisk ponownego wczytania szablonu;
+- osobny profil **Ustawienia normalnej pracy** jest zapisywany atomowo przez dedykowaną usługę backendu i zachowywany po restarcie; stanowi szablon kopiowany przy wyborze trybu `Normalna Praca`: fizyczny tryb Deye (`Zero Export To Load` albo `Zero Export To CT`), moc sprzedaży, prąd rozładowania, prąd ładowania baterii, prąd ładowania z sieci i fizyczny SOC Deye TOU. Późniejsze zmiany konkretnego slotu pozostają niezależne, a w edytorze slotu dostępny jest przycisk ponownego wczytania szablonu. Formularz odczytuje dane w kolejności: szkic użytkownika, zapisanego profilu w `manager_status`, stanu encji; stara lub brakująca encja pomocnicza nie nadpisuje potwierdzonego profilu;
 - ręczne i zbiorcze edytowanie harmonogramu;
 - inteligentne sugestie Dziś/Jutro bazujące na cenach energii i dystrybucji, Solcast, pogodzie, SOC i wyuczonym profilu zużycia;
 - automatycznie aktualizowany katalog profili dystrybucyjnych PGE, Tauron, Enea, Energa i Stoen;
@@ -140,7 +140,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0779
+/deye_energy_manager/deye-energy-manager-card.js?v=0780
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -152,10 +152,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=0779
+/local/deye-energy-manager-card.js?v=0780
 ```
 
-Po podmianie pliku karty ustaw parametr `v=0779`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `0779` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=0780`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `0780` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
@@ -177,7 +177,7 @@ Przykład kompletnego dashboardu znajduje się w `dashboard/energy_manager.yaml`
 - Stop Sell i zatrzymanie awaryjne zatrzaskują sterowanie managera do świadomego wznowienia oraz stosują pełny zestaw ustawień domyślnych użytkownika.
 - W **System i diagnostyka** przycisk **Włącz Manager i harmonogram** świadomie przywraca tryb `Schedule` i włącza Scheduler. Nie zmienia szablonu Charge ani parametrów slotów: Deye Grid Charge może włączyć wyłącznie **Ładowanie z sieci: TAK** zapisane w aktywnym slocie `Charge`. Diagnostyka pokazuje ostatnią próbę zastosowania slotu, wartości oczekiwane i odczytane oraz stan encji Deye Time Of Use.
 - W oknie pojedynczego slotu widoczne jest jedno pole SOC właściwe dla wybranego trybu: **Minimalny SOC sprzedaży** dla `Selling First`, **SOC baterii Deye (TOU)** dla `Normalna Praca` (fizycznie `Zero Export To Load` lub `Zero Export To CT`) oraz **Docelowy SOC** dla `Charge`. W logice integracji minimalny SOC sprzedaży pozostaje niezależny od fizycznego SOC Deye TOU.
-- **Ustawienia ładowania** są szablonem kopiowanym jednorazowo do slotu po wybraniu `Charge`. Użytkownik może później zmienić prądy, docelowy SOC i zgodę **Ładowanie z sieci** dla tej godziny; ponowny zapis szablonu nie nadpisuje istniejących slotów Charge. Formularz odtwarza cały zapisany profil także wtedy, gdy pomocnicza encja nie opublikowała jeszcze stanu, a tabela harmonogramu zawsze pokazuje zgodę jako **TAK** albo **NIE**.
+- **Ustawienia ładowania** są szablonem kopiowanym jednorazowo do slotu po pierwszym wybraniu `Charge`. Użytkownik może później zmienić prądy, docelowy SOC i zgodę **Ładowanie z sieci** dla tej godziny; ponowny zapis szablonu nie nadpisuje istniejących slotów Charge. W oknie slotu `Charge` dostępny jest przycisk **Wczytaj ponownie ustawienia ładowania**. Zapis szablonu odbywa się przez dedykowaną usługę backendu i nie wymaga obecności wszystkich encji pomocniczych; formularz odtwarza cały zapisany profil także wtedy, gdy pomocnicza encja nie opublikowała jeszcze stanu, a tabela harmonogramu zawsze pokazuje zgodę jako **TAK** albo **NIE**.
 - Zakładka **Deye Time Of Use** pozwala również na świadomą, bezpośrednią edycję sześciu fizycznych zakresów. Ponowne zastosowanie mapowania harmonogramu może je nadpisać.
 - Po migracji zachowany jest wcześniej zapisany SOC TOU. Gdy nie można go wiarygodnie odtworzyć, pole jest oznaczone jako **wymaga potwierdzenia**; integracja nie podstawia w jego miejsce ani minimalnego SOC sprzedaży, ani wartości `0` i nie zapisuje wtedy mapowania TOU.
 - Ustawienia można ręcznie przywrócić przyciskiem **Zastosuj ustawienia domyślne teraz**.

@@ -150,6 +150,26 @@ def _install_home_assistant_stubs() -> None:
     sys.modules["homeassistant.helpers.selector"] = selector
     sys.modules["homeassistant.const"] = const
 
+    entity_registry = types.ModuleType("homeassistant.helpers.entity_registry")
+
+    class _FakeRegistryEntry:
+        def __init__(self):
+            self.disabled_by = None
+
+    class _FakeEntityRegistry:
+        def async_get_entity_id(self, platform, domain, unique_id):
+            return None
+
+        def async_get(self, entity_id):
+            return _FakeRegistryEntry()
+
+        def async_update_entity(self, entity_id, **kwargs):
+            pass
+
+    entity_registry.async_get = lambda hass: _FakeEntityRegistry()
+    sys.modules["homeassistant.helpers.entity_registry"] = entity_registry
+    helpers.entity_registry = entity_registry
+
     core.HomeAssistant = object
     core.ServiceCall = object
     core.callback = lambda function: function

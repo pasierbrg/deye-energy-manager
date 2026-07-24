@@ -23,13 +23,13 @@ Automatyczne mapowanie niczego nie zapisuje bez końcowego potwierdzenia. Kreato
 Dodaj zasób JavaScript:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0779
+/deye_energy_manager/deye-energy-manager-card.js?v=0780
 ```
 
 Przy instalacji ręcznej użyj:
 
 ```text
-/local/deye-energy-manager-card.js?v=0779
+/local/deye-energy-manager-card.js?v=0780
 ```
 
 Następnie dodaj kartę ręczną:
@@ -42,7 +42,7 @@ type: custom:deye-energy-manager-card
 
 1. Wykonaj kopię konfiguracji w panelu **System i diagnostyka**.
 2. Zaktualizuj integrację i uruchom ponownie Home Assistant.
-3. Zmień parametr cache zasobu na `v=0779`.
+3. Zmień parametr cache zasobu na `v=0780`.
 4. Odśwież przeglądarkę przez `Ctrl + F5`.
 5. Sprawdź mapowanie encji w opcjach integracji.
 6. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**, wybierz operatora i taryfę, a następnie użyj przycisku **Zapisz ustawienia taryfy**.
@@ -74,7 +74,7 @@ Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_ho
 
 Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
 
-Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=0779`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=0779`.
+Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=0780`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=0780`.
 
 Plan na jutro wymaga ręcznego zaznaczenia godzin i potwierdzenia przyciskiem **Zaplanuj wybrane na jutro**. Plan jest zapisany z datą i pozostaje oczekujący po restarcie Home Assistant. W dniu wykonania integracja sprawdza encje sterujące oraz tylko SOC i ceny wymagane przez zatwierdzony slot `Selling First`, po czym stosuje dokładnie zaakceptowane pozycje. Nie tworzy planu zastępczego. W razie błędu plan jest oznaczony jako nieudany, a falownik otrzymuje pełne **Ustawienia domyślne** 1:1.
 
@@ -86,9 +86,9 @@ Jeżeli poprzednia konfiguracja nie zawiera wiarygodnie zapisanego **SOC baterii
 
 ## Ustawienia ładowania
 
-W **Ustawienia i diagnostyka → Ustawienia Trybów → Ustawienia ładowania** zapisz szablon dla nowych slotów `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci oraz **Docelowy SOC**. Szablon jest kopiowany przy zmianie trybu danego slotu na `Charge`. Od tej chwili wartości slotu można edytować ręcznie i mają one pierwszeństwo; późniejsza zmiana szablonu ich nie nadpisze. Jedyną zgodą na Grid Charge jest przełącznik **Ładowanie z sieci: TAK** w danym slocie Charge. Przy wartości `NIE` Grid Charge pozostaje wyłączone nawet przy dodatnim limicie prądu; bateria może ładować się z PV.
+W **Ustawienia i diagnostyka → Ustawienia Trybów → Ustawienia ładowania** zapisz szablon dla nowych slotów `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci, zgoda na ładowanie z sieci oraz **Docelowy SOC**. Szablon jest kopiowany przy pierwszej zmianie trybu danego slotu na `Charge`. Od tej chwili wartości slotu można edytować ręcznie i mają one pierwszeństwo; późniejsza zmiana szablonu ich nie nadpisze. W oknie slotu `Charge` dostępny jest przycisk **Wczytaj ponownie ustawienia ładowania**, który ponownie skopiuje aktualny szablon tylko do tego slotu. Jedyną zgodą na Grid Charge jest przełącznik **Ładowanie z sieci: TAK** w danym slocie Charge. Przy wartości `NIE` Grid Charge pozostaje wyłączone nawet przy dodatnim limicie prądu; bateria może ładować się z PV.
 
-Przycisk **Zapisz ustawienia ładowania** zapisuje cały profil jako jeden rekord. Po zamknięciu okna, ponownym otwarciu karty lub restarcie Home Assistant wszystkie zapisane wartości profilu powinny pozostać bez zmian. Formularz korzysta również z zapisanego profilu w atrybutach statusu managera, jeśli pomocnicza encja nie opublikowała jeszcze stanu. Tabela harmonogramu pokazuje zgodę **Ładowanie z sieci** zawsze jako **TAK** albo **NIE**. Jeżeli walidacja albo zapis się nie powiedzie, integracja zachowuje ostatni poprawny profil i wyświetla błąd.
+Przycisk **Zapisz ustawienia ładowania** zapisuje cały profil jako jeden rekord przez dedykowaną usługę backendu, niezależnie od tego, czy wszystkie encje pomocnicze są w danej chwili widoczne w Home Assistant. Po zamknięciu okna, ponownym otwarciu karty lub restarcie Home Assistant wszystkie zapisane wartości profilu powinny pozostać bez zmian. Formularz korzysta również z zapisanego profilu w atrybutach statusu managera, jeśli pomocnicza encja nie opublikowała jeszcze stanu. Tabela harmonogramu pokazuje zgodę **Ładowanie z sieci** zawsze jako **TAK** albo **NIE**. Jeżeli walidacja albo zapis się nie powiedzie, integracja zachowuje ostatni poprawny profil i wyświetla błąd.
 
 Zakładka **Deye Time Of Use** udostępnia bezpośrednią edycję sześciu fizycznych zakresów falownika. Jest to ścieżka dla świadomej konfiguracji i diagnostyki; późniejsze zastosowanie Harmonogramu sprzedaży może ponownie zapisać te zakresy zgodnie z mapowaniem 24 h.
 

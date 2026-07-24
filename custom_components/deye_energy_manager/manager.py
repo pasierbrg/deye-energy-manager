@@ -3037,7 +3037,14 @@ class DeyeEnergyManagerRuntime:
             "tou_soc": (0.0, 100.0),
             "min_sell_price": (0.0, 5.0),
         }
-        allowed_fields = {"enabled", "mode", "charge_enabled", "force_copy_normal_profile", *numeric_limits}
+        allowed_fields = {
+            "enabled",
+            "mode",
+            "charge_enabled",
+            "force_copy_normal_profile",
+            "force_copy_charge_profile",
+            *numeric_limits,
+        }
 
         async with self._operation_lock:
             previous_slots = {key: replace(slot) for key, slot in self.slots.items()}
@@ -3061,6 +3068,7 @@ class DeyeEnergyManagerRuntime:
                         slot.enabled = bool(update["enabled"])
                     previous_mode = slot.mode
                     force_copy = bool(update.get("force_copy_normal_profile"))
+                    force_copy_charge = bool(update.get("force_copy_charge_profile"))
                     if "mode" in update:
                         mode = str(update["mode"])
                         if mode not in SLOT_MODES:
@@ -3086,7 +3094,7 @@ class DeyeEnergyManagerRuntime:
                                 slot.tou_soc = self.normal_profile_tou_soc
                         elif mode == MODE_CHARGE:
                             slot.enabled = True
-                            if previous_mode != MODE_CHARGE:
+                            if previous_mode != MODE_CHARGE or force_copy_charge:
                                 slot.charge_current = self.charge_profile_charge_current
                                 slot.discharge_current = self.charge_profile_discharge_current
                                 slot.grid_charge_current = self.charge_profile_grid_charge_current
