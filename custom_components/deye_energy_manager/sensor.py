@@ -278,6 +278,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             DeyeManagerSensor(runtime, "grid_l3_voltage", "Grid L3 voltage", lambda r: r.state_float(r.grid_l3_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.grid_l3_voltage_sensor),
             DeyeManagerSensor(runtime, "load_frequency", "Load frequency", lambda r: r.state_float(r.load_frequency_sensor, 0), "Hz", SensorDeviceClass.FREQUENCY, source_fn=lambda r: r.load_frequency_sensor),
             DeyeManagerSensor(runtime, "daily_load_consumption", "Daily load consumption", lambda r: r.state_float(r.daily_load_consumption_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_load_consumption_sensor),
+            DeyeManagerSensor(runtime, "load_l1_power", "Load L1 power", lambda r: r.state_float_or_none(r.load_l1_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l1_power_sensor),
+            DeyeManagerSensor(runtime, "load_l2_power", "Load L2 power", lambda r: r.state_float_or_none(r.load_l2_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l2_power_sensor),
+            DeyeManagerSensor(runtime, "load_l3_power", "Load L3 power", lambda r: r.state_float_or_none(r.load_l3_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l3_power_sensor),
             DeyeManagerSensor(runtime, "inverter_ac_temperature", "Inverter AC temperature", lambda r: r.state_float(r.inverter_ac_temperature_sensor, 0), "°C", SensorDeviceClass.TEMPERATURE, source_fn=lambda r: r.inverter_ac_temperature_sensor),
         ]
     )

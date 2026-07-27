@@ -41,6 +41,9 @@ from .const import (
     CONF_GRID_POSITIVE_IS_IMPORT,
     CONF_INVERTER_AC_TEMPERATURE_SENSOR,
     CONF_LOAD_FREQUENCY_SENSOR,
+    CONF_LOAD_L1_POWER_SENSOR,
+    CONF_LOAD_L2_POWER_SENSOR,
+    CONF_LOAD_L3_POWER_SENSOR,
     CONF_LOAD_POWER_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_DISCHARGE_CURRENT_NUMBER,
@@ -110,6 +113,9 @@ from .const import (
     DEFAULT_GRID_POWER_SENSOR,
     DEFAULT_INVERTER_AC_TEMPERATURE_SENSOR,
     DEFAULT_LOAD_FREQUENCY_SENSOR,
+    DEFAULT_LOAD_L1_POWER_SENSOR,
+    DEFAULT_LOAD_L2_POWER_SENSOR,
+    DEFAULT_LOAD_L3_POWER_SENSOR,
     DEFAULT_LOAD_POWER_SENSOR,
     DEFAULT_BATTERY_POWER_SENSOR,
     DEFAULT_PV1_CURRENT_SENSOR,
@@ -513,6 +519,18 @@ class DeyeEnergyManagerRuntime:
     @property
     def daily_load_consumption_sensor(self) -> str | None:
         return self.configured_sensor(CONF_DAILY_LOAD_CONSUMPTION_SENSOR, DEFAULT_DAILY_LOAD_CONSUMPTION_SENSOR)
+
+    @property
+    def load_l1_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_LOAD_L1_POWER_SENSOR, DEFAULT_LOAD_L1_POWER_SENSOR)
+
+    @property
+    def load_l2_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_LOAD_L2_POWER_SENSOR, DEFAULT_LOAD_L2_POWER_SENSOR)
+
+    @property
+    def load_l3_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_LOAD_L3_POWER_SENSOR, DEFAULT_LOAD_L3_POWER_SENSOR)
 
     @property
     def inverter_ac_temperature_sensor(self) -> str | None:

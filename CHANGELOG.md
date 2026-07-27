@@ -47,6 +47,18 @@
 - Poprawiono nazwy encji w karcie JS na zgodne z managerem (`battery_bms_voltage`, `daily_energy_bought`, `daily_energy_sold`).
 - Rewizja karty JavaScript: `v=13`.
 
+### Etap 5.3.1 — poprawki layoutu i fazy obciążenia domu
+
+- Przepisano layout panelu **Status energii** na układ siatkowy: PV lewy górny, sieć lewy dolny, falownik centralny, bateria prawy górny, dom prawy dolny.
+- Zmieniono położenie legendy przepływów — znajduje się teraz bezpośrednio pod grafiką falownika.
+- Dodano opcjonalne mapowanie encji fazowych obciążenia domu: `load_l1_power`, `load_l2_power`, `load_l3_power`.
+- Usunięto częstotliwość sieci i temperaturę falownika z kafelka domu — temperatura wyświetla się wyłącznie pod centralnym falownikiem.
+- Poprawiono formatowanie wartości mocy: brak podwójnych jednostek i czytelniejsze wartości główne.
+- Ujednolicono źródło trybu Deye — odczyt z encji `select.deye_inverter_system_work_mode` zamiast z sensora `current_work_mode`.
+- Zaktualizowano dynamiczną aktualizację linii przepływu do nowych ścieżek i markerów SVG.
+- Wprowadzono skalowanie całego panelu **Status energii** względem bazowej szerokości 1500 px: panel zachowuje stały układ desktopowy na każdej szerokości (1920, 1366, 768, 430, 390, 320 px) i jest proporcjonalnie pomniejszany bez przechodzenia na układ pionowy, bez ukrywania linii ani legendy.
+- Rewizja karty JavaScript: `v=14`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

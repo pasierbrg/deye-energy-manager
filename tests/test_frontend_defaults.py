@@ -123,10 +123,31 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             self.assertIn(required, source)
         self.assertNotIn(">P50<", source)
 
+    def test_energy_flow_panel_keeps_desktop_layout_without_media_queries(self):
+        method = extract_method(self.sources[0], "energyFlowPanel()")
+        self.assertNotIn("@media", method)
+        self.assertNotIn("flow-svg{display:none", method)
+        self.assertIn(".flow-tile-pv{grid-column:1;grid-row:1", method)
+        self.assertIn(".flow-tile-grid{grid-column:1;grid-row:1", method)
+        self.assertIn(".flow-tile-battery{grid-column:3;grid-row:1", method)
+        self.assertIn(".flow-tile-home{grid-column:3;grid-row:1", method)
+        self.assertIn(".flow-inverter{grid-column:2;grid-row:1", method)
+        self.assertIn(".flow-wrapper{", method)
+        self.assertIn(".flow-scaler{", method)
+        self.assertIn("scaleFlowPanel()", self.sources[0])
+
+    def test_energy_flow_panel_has_scaling_logic(self):
+        method = extract_method(self.sources[0], "scaleFlowPanel() {")
+        self.assertIn("baseWidth = 1500", method)
+        self.assertIn("baseHeight = 680", method)
+        self.assertIn("Math.max(available / baseWidth, 0.2)", method)
+        self.assertIn("scaler.style.transform", method)
+        self.assertIn("wrapper.style.height", method)
+
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=13", source)
+            self.assertIn("deye-energy-manager-card.js?v=14", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
             self.assertNotIn("deye-energy-manager-card.js?v=08", source)
