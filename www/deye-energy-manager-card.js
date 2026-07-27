@@ -2210,7 +2210,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
   slotModeLabel(mode) {
     const normalized = this.norm(mode);
     if (normalized.includes("selling")) return "Sprzeda\u017c";
-    if (normalized.includes("normalna praca") || normalized.includes("normal_operation") || normalized.includes("zero export")) return "Normalna Praca";
+    if (normalized.includes("normal") || normalized.includes("zeroexport")) return "Normalna Praca";
     if (normalized.includes("charge")) return "\u0141adowanie";
     return mode;
   }
@@ -2227,7 +2227,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     if (normalized.includes("selling")) {
       return { cls: "selling", title: "Sprzeda\u017c", subtitle: "Priorytet sprzeda\u017cy", icon: "sell" };
     }
-    if (normalized.includes("normalna praca") || normalized.includes("normal_operation") || normalized.includes("zero export")) {
+    if (normalized.includes("normal") || normalized.includes("zeroexport")) {
       return { cls: "normal", title: "Normalna Praca", subtitle: "Normalny tryb pracy", icon: "normal" };
     }
     if (normalized.includes("charge")) {
@@ -3649,7 +3649,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const mode = this.state(entities.mode, "Normalna Praca");
     const isCharge = mode === "Charge";
     const isSelling = mode === "Selling First";
-    const isNormal = mode === "Normalna Praca" || this.norm(mode).includes("normal") || this.norm(mode).includes("zero export");
+    const isNormal = mode === "Normalna Praca" || this.norm(mode).includes("normal") || this.norm(mode).includes("zeroexport");
     const physicalSocLabel = isCharge ? "Docelowy SOC" : "SOC baterii Deye (TOU)";
     const gridControl = isCharge
       ? this.pill(entities.chargeEnabled)

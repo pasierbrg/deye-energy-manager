@@ -126,7 +126,8 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=08", source)
+            self.assertIn("deye-energy-manager-card.js?v=09", source)
+            self.assertNotIn("deye-energy-manager-card.js?v=08", source)
             self.assertNotIn("deye-energy-manager-card.js?v=07", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0780", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0778", source)
@@ -378,12 +379,21 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertNotIn('this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)', source)
 
     def test_zero_export_physical_modes_display_as_normal_operation(self):
+        import re
+        def norm(value):
+            return re.sub(r"[^a-z0-9]", "", value.lower())
         mode_meta = extract_method(self.sources[0], "modeMeta(mode, enabled = true)")
-        self.assertIn('normalized.includes("zero export")', mode_meta)
+        self.assertIn('normalized.includes("zeroexport")', mode_meta)
+        self.assertIn('normalized.includes("normal")', mode_meta)
+        self.assertNotIn('normalized.includes("zero export")', mode_meta)
+        self.assertNotIn('normalized.includes("normalna praca")', mode_meta)
         self.assertIn('title: "Normalna Praca"', mode_meta)
         self.assertIn('cls: "normal"', mode_meta)
+        for raw in ("Zero Export To Load", "Zero Export To CT", "Normalna Praca"):
+            self.assertTrue("normal" in norm(raw) or "zeroexport" in norm(raw), f"{raw} nie mapuje się na Normalna Praca")
         label_method = extract_method(self.sources[0], "slotModeLabel(mode)")
-        self.assertIn('normalized.includes("zero export")', label_method)
+        self.assertIn('normalized.includes("zeroexport")', label_method)
+        self.assertIn('normalized.includes("normal")', label_method)
         self.assertIn('return "Normalna Praca"', label_method)
 
     def test_normal_profile_settings_keep_physical_mode_names(self):
