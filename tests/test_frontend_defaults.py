@@ -377,6 +377,22 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn("this.slotModeOptions(), bulk.mode)", source)
         self.assertNotIn('this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)', source)
 
+    def test_zero_export_physical_modes_display_as_normal_operation(self):
+        mode_meta = extract_method(self.sources[0], "modeMeta(mode, enabled = true)")
+        self.assertIn('normalized.includes("zero export")', mode_meta)
+        self.assertIn('title: "Normalna Praca"', mode_meta)
+        self.assertIn('cls: "normal"', mode_meta)
+        label_method = extract_method(self.sources[0], "slotModeLabel(mode)")
+        self.assertIn('normalized.includes("zero export")', label_method)
+        self.assertIn('return "Normalna Praca"', label_method)
+
+    def test_normal_profile_settings_keep_physical_mode_names(self):
+        source = self.sources[0]
+        dialog = extract_method(source, "renderDialog(slots, touStarts)")
+        self.assertIn('this.rawSelect("normal-profile-mode",', dialog)
+        self.assertIn('["Zero Export To Load", "Zero Export To Load"]', dialog)
+        self.assertIn('["Zero Export To CT", "Zero Export To CT"]', dialog)
+
     def test_disabled_state_is_not_a_work_mode_option(self):
         source = self.sources[0]
         dialog = extract_method(source, "renderDialog(slots, touStarts)")

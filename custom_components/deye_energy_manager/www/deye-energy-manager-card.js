@@ -2210,7 +2210,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
   slotModeLabel(mode) {
     const normalized = this.norm(mode);
     if (normalized.includes("selling")) return "Sprzeda\u017c";
-    if (normalized.includes("normalna praca") || normalized.includes("normal_operation")) return "Normalna Praca";
+    if (normalized.includes("normalna praca") || normalized.includes("normal_operation") || normalized.includes("zero export")) return "Normalna Praca";
     if (normalized.includes("charge")) return "\u0141adowanie";
     return mode;
   }
@@ -2227,7 +2227,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     if (normalized.includes("selling")) {
       return { cls: "selling", title: "Sprzeda\u017c", subtitle: "Priorytet sprzeda\u017cy", icon: "sell" };
     }
-    if (normalized.includes("normalna praca") || normalized.includes("normal_operation")) {
+    if (normalized.includes("normalna praca") || normalized.includes("normal_operation") || normalized.includes("zero export")) {
       return { cls: "normal", title: "Normalna Praca", subtitle: "Normalny tryb pracy", icon: "normal" };
     }
     if (normalized.includes("charge")) {
@@ -2295,7 +2295,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <span class="metric discharge">\u2193 ${discharge} A</span>
       <span class="metric charge">\u2191 ${charge} A</span>
       <span class="metric soc">\u25c7 ${soc}%</span>
-      <span class="sr-only">${mode}</span>`;
+      <span class="sr-only">${this.slotModeLabel(mode)}</span>`;
   }
 
   selectedSlotList(slots) {
@@ -3649,7 +3649,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const mode = this.state(entities.mode, "Normalna Praca");
     const isCharge = mode === "Charge";
     const isSelling = mode === "Selling First";
-    const isNormal = mode === "Normalna Praca" || this.norm(mode).includes("normal");
+    const isNormal = mode === "Normalna Praca" || this.norm(mode).includes("normal") || this.norm(mode).includes("zero export");
     const physicalSocLabel = isCharge ? "Docelowy SOC" : "SOC baterii Deye (TOU)";
     const gridControl = isCharge
       ? this.pill(entities.chargeEnabled)
@@ -3658,7 +3658,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     let physicalModeLabel = "";
     if (isNormal) {
       const storedMode = this.state(entities.physicalWorkMode, "");
-      physicalModeLabel = storedMode ? `Fizyczny tryb Deye: ${storedMode}` : "";
+      physicalModeLabel = storedMode ? `Fizyczny tryb Deye: ${this.slotModeLabel(storedMode)}` : "";
     }
 
     const socField = isSelling
