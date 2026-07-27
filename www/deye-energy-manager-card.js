@@ -2061,8 +2061,8 @@ class DeyeEnergyManagerCard extends HTMLElement {
     if (status.includes("SLOT DISABLED")) return ["Slot wy\u0142\u0105czony - domy\u015blne", "warn"];
     if (status.includes("GRID CHARGE")) return ["\u0141adowanie z sieci", "charge"];
     if (status.includes("SELLING ACTIVE")) return ["Sprzeda\u017c wed\u0142ug harmonogramu", "good"];
-    if (status.includes("ZERO EXPORT CT")) return ["Zero Export To CT", "ct"];
-    if (status.includes("ZERO EXPORT LOAD")) return ["Zero Export To Load", "zero"];
+    if (status.includes("ZERO EXPORT CT")) return ["Normalna Praca", "ct"];
+    if (status.includes("ZERO EXPORT LOAD")) return ["Normalna Praca", "zero"];
     if (status.includes("SCHEDULE")) return ["Harmonogram aktywny", "good"];
     if (status.includes("MANUAL")) return ["Sprzeda\u017c r\u0119czna", "good"];
     if (status.includes("CHARGE")) return ["\u0141adowanie r\u0119czne", "charge"];
