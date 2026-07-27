@@ -39,9 +39,13 @@
 
 - Zastąpiono klasyczny panel statusu nowym wizualnym diagramem przepływu energii z węzłami PV, falownika, baterii, sieci i domu.
 - Dodano opcjonalne mapowanie szczegółowych encji: PV1/PV2 (moc, napięcie, prąd), fazy sieci L1-L3, dzienne import/eksport energii, częstotliwość obciążenia, temperaturę falownika.
-- Linie między węzłami są animowane kulkami i wskazują aktualny kierunek przepływu; węzły przygasają, gdy przepływ jest nieaktywny.
-- Panel aktualizuje wartości dynamicznie, a przy zmianie kierunku przepływu przeładowuje diagram.
-- Rewizja karty JavaScript: `v=12`.
+- Panel wyświetla dokładnie takie same dane jak na docelowym zdjęciu: sumy PV, szczegóły stringów, napięcia faz, temperaturę baterii, dzienne ładowanie/rozładowanie baterii oraz import/eksport z sieci.
+- Środkiem panelu jest inline SVG falownika Deye z wyświetlaczem i temperaturą.
+- Linie przepływu są łukowate, kolorowe i animowane kulkami; kierunek zmienia się dynamicznie wraz ze zmianą kierunku energii.
+- Dodano legendę sześciu kierunków przepływu oraz dolny pasek z czterema kafelkami: Decyzja managera, Aktywny slot, Tryb pracy (Manager), Tryb Deye.
+- Panel aktualizuje wartości dynamicznie bez pełnego rerenderu.
+- Poprawiono nazwy encji w karcie JS na zgodne z managerem (`battery_bms_voltage`, `daily_energy_bought`, `daily_energy_sold`).
+- Rewizja karty JavaScript: `v=13`.
 
 ### Bezpieczeństwo
 
