@@ -1427,7 +1427,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const options = this.options(entityId, fallbackOptions);
     const merged = options.includes(current) || !current ? options : [current, ...options];
     return `<select data-select="${entityId}" ${this.exists(entityId) ? "" : "disabled"}>
-      ${merged.map((option) => `<option value="${this.escapeHtml(option)}" ${option === current ? "selected" : ""}>${this.escapeHtml(option)}</option>`).join("")}
+      ${merged.map((option) => `<option value="${this.escapeHtml(option)}" ${option === current ? "selected" : ""}>${this.escapeHtml(this.slotModeLabel(option))}</option>`).join("")}
     </select>`;
   }
 
@@ -2207,19 +2207,31 @@ class DeyeEnergyManagerCard extends HTMLElement {
     return ["Selling First", "Normalna Praca", "Charge"];
   }
 
+  slotModeLabel(mode) {
+    const normalized = this.norm(mode);
+    if (normalized.includes("selling")) return "Sprzeda\u017c";
+    if (normalized.includes("normalna praca") || normalized.includes("normal_operation")) return "Normalna Praca";
+    if (normalized.includes("charge")) return "\u0141adowanie";
+    return mode;
+  }
+
+  slotModeOptions() {
+    return this.slotWorkModes().map((mode) => [mode, this.slotModeLabel(mode)]);
+  }
+
   modeMeta(mode, enabled = true) {
     if (!enabled) {
-      return { cls: "disabled", title: "Wy\u0142\u0105czone", subtitle: "Sprzeda\u017c wy\u0142\u0105czona", icon: "shield" };
+      return { cls: "disabled", title: "Wy\u0142\u0105czono", subtitle: "Slot nieaktywny", icon: "shield" };
     }
     const normalized = this.norm(mode);
     if (normalized.includes("selling")) {
-      return { cls: "selling", title: "Selling First", subtitle: "Priorytet sprzeda\u017cy", icon: "sell" };
+      return { cls: "selling", title: "Sprzeda\u017c", subtitle: "Priorytet sprzeda\u017cy", icon: "sell" };
     }
     if (normalized.includes("normalna praca") || normalized.includes("normal_operation")) {
-      return { cls: "normal", title: "Normalna Praca", subtitle: "Praca wed\u0142ug zapisanego profilu", icon: "normal" };
+      return { cls: "normal", title: "Normalna Praca", subtitle: "Normalny tryb pracy", icon: "normal" };
     }
     if (normalized.includes("charge")) {
-      return { cls: "charge", title: "Charge", subtitle: "\u0141adowanie z sieci", icon: "charge" };
+      return { cls: "charge", title: "\u0141adowanie", subtitle: "\u0141adowanie z sieci", icon: "charge" };
     }
     return { cls: "zero", title: "Zero Export To Load", subtitle: "Zero eksport do LOAD", icon: "load" };
   }
@@ -3466,14 +3478,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
           <button class="wide-action" data-save-default-settings="1">Zapisz ustawienia domyślne</button>
           <button class="wide-action" data-action="apply-defaults" data-default-action="1" data-default-label="Zastosuj ustawienia domyślne teraz" ${this._defaultsApplying ? "disabled" : ""}>${this._defaultsApplying ? "Stosowanie ustawień domyślnych…" : "Zastosuj ustawienia domyślne teraz"}</button>
           <h3>Ustawienia ładowania</h3>
-          <div class="hint">To szablon kopiowany do slotu w chwili wybrania trybu <strong>Charge</strong>. Późniejsze ręczne zmiany w tym slocie mają pierwszeństwo i nie są nadpisywane kolejnym zapisem szablonu.</div>
-          ${this.row("Tryb ładowania", "Charge")}
+          <div class="hint">To szablon kopiowany do slotu w chwili wybrania trybu <strong>Ładowanie</strong>. Późniejsze ręczne zmiany w tym slocie mają pierwszeństwo i nie są nadpisywane kolejnym zapisem szablonu.</div>
+          ${this.row("Tryb ładowania", "Ładowanie")}
           ${this.row("Ładowanie z sieci", this.rawSelect("charge-profile-grid", [["on", "TAK"], ["off", "NIE"]], this.chargeProfileGridEnabled() ? "on" : "off"))}
           ${this.row("Prąd ładowania", this.chargeProfileInput("charge_current", this.entity("number", "charge_profile_charge_current"), "A"))}
           ${this.row("Prąd rozładowania", this.chargeProfileInput("discharge_current", this.entity("number", "charge_profile_discharge_current"), "A"))}
           ${this.row("Prąd ładowania z sieci", this.chargeProfileInput("grid_charge_current", this.entity("number", "charge_profile_grid_charge_current"), "A"))}
           ${this.row("Docelowy SOC", this.chargeProfileInput("target_soc", this.entity("number", "charge_profile_target_soc"), "%"))}
-          <div class="hint">Ładowanie z sieci: NIE — bateria może ładować się z PV. Ładowanie z sieci: TAK — jest dozwolone wyłącznie w zakresach Charge.</div>
+          <div class="hint">Ładowanie z sieci: NIE — bateria może ładować się z PV. Ładowanie z sieci: TAK — jest dozwolone wyłącznie w zakresach trybu Ładowanie.</div>
           <button class="wide-action" data-save-charge-profile="1">Zapisz ustawienia ładowania</button>
           <h3>Ustawienia normalnej pracy</h3>
           <div class="hint">Ten szablon jest kopiowany do slotu tylko w chwili wybrania trybu <strong>Normalna Praca</strong>. Późniejsze ręczne zmiany w danym slocie mają pierwszeństwo i nie są automatycznie nadpisywane zmianami szablonu.</div>
@@ -3598,7 +3610,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
           <div class="dialog-body">
             <div class="range-box">Zakres: ${this.selectedRangeText(slots)}<br>Liczba godzin: ${selectedCount}</div>
             <label class="apply-row"><input type="checkbox" data-apply-field="active" checked> Aktywne ${this.rawSelect("multi-active", [["on", "Tak"], ["off", "Nie"]], bulk.active)}</label>
-            <label class="apply-row"><input type="checkbox" data-apply-field="mode" checked> Tryb pracy ${this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)}</label>
+              <label class="apply-row"><input type="checkbox" data-apply-field="mode" checked> Tryb pracy ${this.rawSelect("multi-mode", this.slotModeOptions(), bulk.mode)}</label>
             <label class="apply-row"><input type="checkbox" data-apply-field="sellPower" checked> Moc sprzedaży ${this.rawNumber("multi-sell-power", bulk.sellPower, "W")}</label>
             <label class="apply-row"><input type="checkbox" data-apply-field="dischargeCurrent" checked> Prąd rozładowania ${this.rawNumber("multi-discharge-current", bulk.dischargeCurrent, "A")}</label>
             <label class="apply-row"><input type="checkbox" data-apply-field="chargeCurrent" checked> Prąd ładowania ${this.rawNumber("multi-charge-current", bulk.chargeCurrent, "A")}</label>
@@ -3768,7 +3780,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <small>${this.mapWarning(slots)}</small>
       </div>
       <label class="apply-row"><input type="checkbox" data-apply-field="active" checked><span>Aktywne</span>${this.rawSelect("multi-active", [["on", "Tak"], ["off", "Nie"]], bulk.active)}</label>
-      <label class="apply-row"><input type="checkbox" data-apply-field="mode" checked><span>Tryb pracy</span>${this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)}</label>
+        <label class="apply-row"><input type="checkbox" data-apply-field="mode" checked><span>Tryb pracy</span>${this.rawSelect("multi-mode", this.slotModeOptions(), bulk.mode)}</label>
       <label class="apply-row"><input type="checkbox" data-apply-field="sellPower" checked><span>Moc sprzedaży</span>${this.rawNumber("multi-sell-power", bulk.sellPower, "W")}</label>
       <label class="apply-row"><input type="checkbox" data-apply-field="dischargeCurrent" checked><span>Prąd rozładowania</span>${this.rawNumber("multi-discharge-current", bulk.dischargeCurrent, "A")}</label>
       <label class="apply-row"><input type="checkbox" data-apply-field="chargeCurrent" checked><span>Prąd ładowania</span>${this.rawNumber("multi-charge-current", bulk.chargeCurrent, "A")}</label>

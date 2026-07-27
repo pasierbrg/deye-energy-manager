@@ -126,7 +126,8 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=07", source)
+            self.assertIn("deye-energy-manager-card.js?v=08", source)
+            self.assertNotIn("deye-energy-manager-card.js?v=07", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0780", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0778", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0777", source)
@@ -357,6 +358,30 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             self.assertIn(mode, method)
         self.assertNotIn("Zero Export To Load", method)
         self.assertNotIn("Zero Export To CT", method)
+
+    def test_slot_modes_use_polish_display_labels(self):
+        source = self.sources[0]
+        mode_meta = extract_method(source, "modeMeta(mode, enabled = true)")
+        self.assertIn('title: "Sprzeda\\u017c"', mode_meta)
+        self.assertIn('title: "Normalna Praca"', mode_meta)
+        self.assertIn('title: "\\u0141adowanie"', mode_meta)
+        self.assertIn('title: "Wy\\u0142\\u0105czono"', mode_meta)
+        self.assertIn('subtitle: "Normalny tryb pracy"', mode_meta)
+        self.assertIn('subtitle: "Slot nieaktywny"', mode_meta)
+
+    def test_slot_mode_selectors_map_technical_values_to_polish_labels(self):
+        source = self.sources[0]
+        self.assertIn("slotModeLabel(mode)", source)
+        self.assertIn("slotModeOptions()", source)
+        self.assertIn("this.slotModeLabel(option))", source)
+        self.assertIn("this.slotModeOptions(), bulk.mode)", source)
+        self.assertNotIn('this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)', source)
+
+    def test_disabled_state_is_not_a_work_mode_option(self):
+        source = self.sources[0]
+        dialog = extract_method(source, "renderDialog(slots, touStarts)")
+        self.assertIn("selectInput(entities.mode", dialog)
+        self.assertNotIn("Wy\\u0142\\u0105czono", dialog)
 
     def test_schedule_table_always_displays_stored_grid_permission_and_current(self):
         source = self.sources[0]
