@@ -35,6 +35,14 @@
 - Integracja nie zmienia `disabled_by` żadnej encji w rejestrze; użytkownik zachowuje pełną kontrolę nad wyłączonymi encjami.
 - Brak lub wyłączenie pomocniczych encji profili nie blokuje zapisu, odczytu ani kopiowania szablonów Charge — źródłem prawdy pozostają usługi backendu i atrybuty `manager_status`.
 
+### Etap 5.3 — panel przepływu energii
+
+- Zastąpiono klasyczny panel statusu nowym wizualnym diagramem przepływu energii z węzłami PV, falownika, baterii, sieci i domu.
+- Dodano opcjonalne mapowanie szczegółowych encji: PV1/PV2 (moc, napięcie, prąd), fazy sieci L1-L3, dzienne import/eksport energii, częstotliwość obciążenia, temperaturę falownika.
+- Linie między węzłami są animowane kulkami i wskazują aktualny kierunek przepływu; węzły przygasają, gdy przepływ jest nieaktywny.
+- Panel aktualizuje wartości dynamicznie, a przy zmianie kierunku przepływu przeładowuje diagram.
+- Rewizja karty JavaScript: `v=12`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

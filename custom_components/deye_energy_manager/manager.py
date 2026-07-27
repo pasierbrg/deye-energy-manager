@@ -16,20 +16,42 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util.dt import now as ha_now
 
 from .const import (
+    CONF_BATTERY_BMS_VOLTAGE_SENSOR,
+    CONF_BATTERY_CURRENT_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
     CONF_BATTERY_POSITIVE_IS_DISCHARGE,
+    CONF_BATTERY_TEMPERATURE_SENSOR,
     CONF_BUY_PRICE_TODAY_SENSOR,
     CONF_BUY_PRICE_TOMORROW_SENSOR,
     CONF_CHARGE_CURRENT_NUMBER,
+    CONF_DAILY_BATTERY_CHARGE_SENSOR,
+    CONF_DAILY_BATTERY_DISCHARGE_SENSOR,
+    CONF_DAILY_ENERGY_BOUGHT_SENSOR,
+    CONF_DAILY_ENERGY_SOLD_SENSOR,
+    CONF_DAILY_LOAD_CONSUMPTION_SENSOR,
     CONF_DAILY_PV_PRODUCTION_SENSOR,
     CONF_GRID_CHARGE_CURRENT_NUMBER,
+    CONF_GRID_L1_POWER_SENSOR,
+    CONF_GRID_L1_VOLTAGE_SENSOR,
+    CONF_GRID_L2_POWER_SENSOR,
+    CONF_GRID_L2_VOLTAGE_SENSOR,
+    CONF_GRID_L3_POWER_SENSOR,
+    CONF_GRID_L3_VOLTAGE_SENSOR,
     CONF_GRID_POWER_SENSOR,
     CONF_GRID_POSITIVE_IS_IMPORT,
-    CONF_PV_POWER_SENSOR,
+    CONF_INVERTER_AC_TEMPERATURE_SENSOR,
+    CONF_LOAD_FREQUENCY_SENSOR,
     CONF_LOAD_POWER_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_DISCHARGE_CURRENT_NUMBER,
     CONF_MAX_SELL_POWER_NUMBER,
+    CONF_PV1_CURRENT_SENSOR,
+    CONF_PV1_POWER_SENSOR,
+    CONF_PV1_VOLTAGE_SENSOR,
+    CONF_PV2_CURRENT_SENSOR,
+    CONF_PV2_POWER_SENSOR,
+    CONF_PV2_VOLTAGE_SENSOR,
+    CONF_PV_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_SELL_PRICE_TOMORROW_SENSOR,
     CONF_SOLCAST_CURRENT_POWER_SENSOR,
@@ -67,14 +89,36 @@ from .const import (
     SLOT_MODES,
     WORK_MODES,
     DEFAULT_BATTERY_SOC,
+    DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR,
+    DEFAULT_BATTERY_CURRENT_SENSOR,
+    DEFAULT_BATTERY_TEMPERATURE_SENSOR,
     DEFAULT_BUY_PRICE_TODAY_SENSOR,
     DEFAULT_BUY_PRICE_TOMORROW_SENSOR,
+    DEFAULT_DAILY_BATTERY_CHARGE_SENSOR,
+    DEFAULT_DAILY_BATTERY_DISCHARGE_SENSOR,
+    DEFAULT_DAILY_ENERGY_BOUGHT_SENSOR,
+    DEFAULT_DAILY_ENERGY_SOLD_SENSOR,
+    DEFAULT_DAILY_LOAD_CONSUMPTION_SENSOR,
     DEFAULT_DAILY_PV_PRODUCTION_SENSOR,
     DEFAULT_GRID_CHARGE_CURRENT,
+    DEFAULT_GRID_L1_POWER_SENSOR,
+    DEFAULT_GRID_L1_VOLTAGE_SENSOR,
+    DEFAULT_GRID_L2_POWER_SENSOR,
+    DEFAULT_GRID_L2_VOLTAGE_SENSOR,
+    DEFAULT_GRID_L3_POWER_SENSOR,
+    DEFAULT_GRID_L3_VOLTAGE_SENSOR,
     DEFAULT_GRID_POWER_SENSOR,
-    DEFAULT_PV_POWER_SENSOR,
+    DEFAULT_INVERTER_AC_TEMPERATURE_SENSOR,
+    DEFAULT_LOAD_FREQUENCY_SENSOR,
     DEFAULT_LOAD_POWER_SENSOR,
     DEFAULT_BATTERY_POWER_SENSOR,
+    DEFAULT_PV1_CURRENT_SENSOR,
+    DEFAULT_PV1_POWER_SENSOR,
+    DEFAULT_PV1_VOLTAGE_SENSOR,
+    DEFAULT_PV2_CURRENT_SENSOR,
+    DEFAULT_PV2_POWER_SENSOR,
+    DEFAULT_PV2_VOLTAGE_SENSOR,
+    DEFAULT_PV_POWER_SENSOR,
     DEFAULT_PRICE_SENSOR,
     DEFAULT_SELL_PRICE_TOMORROW_SENSOR,
     DEFAULT_SOLCAST_CURRENT_POWER_SENSOR,
@@ -384,6 +428,95 @@ class DeyeEnergyManagerRuntime:
     @property
     def daily_pv_production_sensor(self) -> str | None:
         return self.configured_sensor(CONF_DAILY_PV_PRODUCTION_SENSOR, DEFAULT_DAILY_PV_PRODUCTION_SENSOR)
+
+    # Status panel detail sensors
+    @property
+    def pv1_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV1_POWER_SENSOR, DEFAULT_PV1_POWER_SENSOR)
+
+    @property
+    def pv1_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV1_VOLTAGE_SENSOR, DEFAULT_PV1_VOLTAGE_SENSOR)
+
+    @property
+    def pv1_current_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV1_CURRENT_SENSOR, DEFAULT_PV1_CURRENT_SENSOR)
+
+    @property
+    def pv2_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV2_POWER_SENSOR, DEFAULT_PV2_POWER_SENSOR)
+
+    @property
+    def pv2_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV2_VOLTAGE_SENSOR, DEFAULT_PV2_VOLTAGE_SENSOR)
+
+    @property
+    def pv2_current_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV2_CURRENT_SENSOR, DEFAULT_PV2_CURRENT_SENSOR)
+
+    @property
+    def battery_bms_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_BATTERY_BMS_VOLTAGE_SENSOR, DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR)
+
+    @property
+    def battery_current_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_BATTERY_CURRENT_SENSOR, DEFAULT_BATTERY_CURRENT_SENSOR)
+
+    @property
+    def battery_temperature_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_BATTERY_TEMPERATURE_SENSOR, DEFAULT_BATTERY_TEMPERATURE_SENSOR)
+
+    @property
+    def daily_battery_charge_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_DAILY_BATTERY_CHARGE_SENSOR, DEFAULT_DAILY_BATTERY_CHARGE_SENSOR)
+
+    @property
+    def daily_battery_discharge_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_DAILY_BATTERY_DISCHARGE_SENSOR, DEFAULT_DAILY_BATTERY_DISCHARGE_SENSOR)
+
+    @property
+    def daily_energy_bought_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_DAILY_ENERGY_BOUGHT_SENSOR, DEFAULT_DAILY_ENERGY_BOUGHT_SENSOR)
+
+    @property
+    def daily_energy_sold_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_DAILY_ENERGY_SOLD_SENSOR, DEFAULT_DAILY_ENERGY_SOLD_SENSOR)
+
+    @property
+    def grid_l1_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L1_POWER_SENSOR, DEFAULT_GRID_L1_POWER_SENSOR)
+
+    @property
+    def grid_l1_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L1_VOLTAGE_SENSOR, DEFAULT_GRID_L1_VOLTAGE_SENSOR)
+
+    @property
+    def grid_l2_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L2_POWER_SENSOR, DEFAULT_GRID_L2_POWER_SENSOR)
+
+    @property
+    def grid_l2_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L2_VOLTAGE_SENSOR, DEFAULT_GRID_L2_VOLTAGE_SENSOR)
+
+    @property
+    def grid_l3_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L3_POWER_SENSOR, DEFAULT_GRID_L3_POWER_SENSOR)
+
+    @property
+    def grid_l3_voltage_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_GRID_L3_VOLTAGE_SENSOR, DEFAULT_GRID_L3_VOLTAGE_SENSOR)
+
+    @property
+    def load_frequency_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_LOAD_FREQUENCY_SENSOR, DEFAULT_LOAD_FREQUENCY_SENSOR)
+
+    @property
+    def daily_load_consumption_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_DAILY_LOAD_CONSUMPTION_SENSOR, DEFAULT_DAILY_LOAD_CONSUMPTION_SENSOR)
+
+    @property
+    def inverter_ac_temperature_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_INVERTER_AC_TEMPERATURE_SENSOR, DEFAULT_INVERTER_AC_TEMPERATURE_SENSOR)
 
     @property
     def solcast_forecast_tomorrow_sensor(self) -> str | None:
