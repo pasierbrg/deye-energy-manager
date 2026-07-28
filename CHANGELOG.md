@@ -73,6 +73,20 @@
 - Usunięto wszystkie media queries zmieniające układ panelu na pionowy lub ukrywające linie.
 - Rewizja karty JavaScript: `v=16`.
 
+### Etap 5.3.3 — poprawki panelu Status energii
+
+- Wprowadzono pełne odświeżanie wszystkich danych szczegółowych panelu **Status energii** co 5 s (mocy, napięć, prądów, temperatur, dziennych sum, sprzedaży) bez pełnego rerenderu.
+- Poprawiono wyświetlanie SOC — duża wartość procentowa z przygaszonym `% SOC` obok.
+- Zastąpiono skaczące kropki na liniach przepływu płynną animacją `stroke-dashoffset`; kierunek zmienia się bez zerwania animacji, a linie bez przepływu pozostają ciągłe i przygaszone.
+- Usunięto wartości mocy wyświetlane nad liniami przepływu.
+- Usunięto legendę sześciu kierunków spod grafiki falownika; w jej miejscu pojawił się kafelek **Sprzedano dzisiaj** z wartością i energią.
+- Usunięto napis **Falownik Deye** spod grafiki falownika; pozostawiono samą temperaturę.
+- Poprawiono kafelek **Decyzja managera** — usunięto linię `Deye:`, dodano uzasadnienie decyzji z sensora `decision_reason`.
+- Ujednolicono kolory trybów w kafelkach statusu z paletą harmonogramu: Sprzedaż — zielony, Normalna Praca — niebieski, Ładowanie — pomarańczowy, Wyłączono/Brak danych — szary.
+- Potwierdzono, że kafelek **Tryb Deye** czyta nazwę trybu z encji `select.deye_inverter_system_work_mode` i wyświetla ją w kolorze zgodnym z trybem.
+- Zagęszczono kompozycję panelu: zmniejszono paddingi i marginesy, nie zmieniając bazowego rozmiaru 1320 × 570 px.
+- Rewizja karty JavaScript: `v=17`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

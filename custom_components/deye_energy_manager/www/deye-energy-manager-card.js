@@ -299,21 +299,59 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const gridMainText = gridValue < -1 ? `Eksport ${formatKw(Math.abs(gridValue))}` : gridValue > 1 ? `Pobór ${formatKw(gridValue)}` : `Bilans 0 kW`;
     const batteryDirectionText = batteryValue < -1 ? `Ładowanie ${formatKw(Math.abs(batteryValue))}` : batteryValue > 1 ? `Rozładowanie ${formatKw(batteryValue)}` : `Spoczynek`;
 
+    const fmtNum = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
+    const detailed = (key, fallback = null) => this.asNumber(this.state(this.entity("sensor", key)), fallback);
+    const managerModeClass = this.modeTextClass(modeText);
+    const currentModeMeta = this.modeMeta(currentModeValue, true);
+    const safeModeClass = (cls) => cls ? `mode-${cls}` : "";
+
     this.setText("[data-live='pv-main']", formatKw(pvValue));
-    this.setText("[data-live='pv-line-value']", formatKw(pvValue));
     this.setText("[data-live='pv-total']", formatKw(pvValue));
+    this.setText("[data-live='pv-daily']", fmtNum(detailed("daily_pv_production"), 2));
+    this.setText("[data-live='pv1-power']", formatKw(detailed("pv1_power")));
+    this.setText("[data-live='pv1-volts']", fmtNum(detailed("pv1_voltage"), 1));
+    this.setText("[data-live='pv1-amps']", fmtNum(detailed("pv1_current"), 1));
+    this.setText("[data-live='pv2-power']", formatKw(detailed("pv2_power")));
+    this.setText("[data-live='pv2-volts']", fmtNum(detailed("pv2_voltage"), 1));
+    this.setText("[data-live='pv2-amps']", fmtNum(detailed("pv2_current"), 1));
+
     this.setText("[data-live='grid-main']", gridMainText);
-    this.setText("[data-live='grid-line-value']", formatKw(gridValue));
-    this.setText("[data-live='battery-soc-main']", batterySocValue === null ? "—" : `${Math.round(batterySocValue)}`);
+    this.setText("[data-live='grid-l1-power']", formatKw(detailed("grid_l1_power")));
+    this.setText("[data-live='grid-l1-volt']", fmtNum(detailed("grid_l1_voltage"), 1));
+    this.setText("[data-live='grid-l2-power']", formatKw(detailed("grid_l2_power")));
+    this.setText("[data-live='grid-l2-volt']", fmtNum(detailed("grid_l2_voltage"), 1));
+    this.setText("[data-live='grid-l3-power']", formatKw(detailed("grid_l3_power")));
+    this.setText("[data-live='grid-l3-volt']", fmtNum(detailed("grid_l3_voltage"), 1));
+    this.setText("[data-live='grid-bought']", fmtNum(detailed("daily_energy_bought"), 2));
+    this.setText("[data-live='grid-sold']", fmtNum(detailed("daily_energy_sold"), 2));
+    this.setText("[data-live='grid-frequency']", fmtNum(detailed("load_frequency"), 2));
+
+    this.setText("[data-live='battery-soc-value']", batterySocValue === null ? "—" : `${Math.round(batterySocValue)}`);
     this.setText("[data-live='battery-direction']", batteryDirectionText);
-    this.setText("[data-live='battery-line-value']", formatKw(batteryValue));
+    this.setText("[data-live='battery-voltage']", fmtNum(detailed("battery_bms_voltage"), 1));
+    this.setText("[data-live='battery-current']", fmtNum(detailed("battery_current"), 1));
+    this.setText("[data-live='battery-temp']", fmtNum(detailed("battery_temperature"), 1));
+    this.setText("[data-live='battery-charge-daily']", fmtNum(detailed("daily_battery_charge"), 2));
+    this.setText("[data-live='battery-discharge-daily']", fmtNum(detailed("daily_battery_discharge"), 2));
+
     this.setText("[data-live='load-main']", formatKw(loadValue));
-    this.setText("[data-live='load-line-value']", formatKw(loadValue));
-    this.setText("[data-live='deye-mode']", currentModeValue);
+    this.setText("[data-live='load-daily']", fmtNum(detailed("daily_load_consumption"), 2));
+    this.setText("[data-live='load-l1-power']", formatKw(detailed("load_l1_power")));
+    this.setText("[data-live='load-l2-power']", formatKw(detailed("load_l2_power")));
+    this.setText("[data-live='load-l3-power']", formatKw(detailed("load_l3_power")));
+
+    this.setText("[data-live='inverter-temp']", detailed("inverter_ac_temperature") === null ? "—" : `${Math.round(detailed("inverter_ac_temperature"))}`);
+    this.setText("[data-live='sold-today-pln']", fmtNum(this.asNumber(this.state(this.entity("sensor", "sold_value_today")), 0), 2));
+    this.setText("[data-live='sold-today-kwh']", `${fmtNum(this.asNumber(this.state(this.entity("sensor", "sold_energy_today")), 0), 2)} kWh`);
+
     this.setText("[data-live='active-slot']", activeSlotLabel);
     this.setText("[data-live='manager-mode']", modeText);
-    this.setText("[data-live='manager-active-mode']", `Aktywny tryb: ${modeText}`);
-    this.setText("[data-live='manager-deye-mode']", `Deye: ${currentModeValue}`);
+    this.setText("[data-live='manager-active-mode']", modeText);
+    this.setText("[data-live='decision-reason']", this.state(this.entity("sensor", "decision_reason"), "—"));
+    this.setText("[data-live='deye-mode']", this.slotModeLabel(currentModeValue));
+    this.setClass("[data-live='manager-active-mode']", safeModeClass(managerModeClass), "", false);
+    this.setClass("[data-live='manager-mode']", safeModeClass(managerModeClass), "", false);
+    this.setClass("[data-live='deye-mode']", safeModeClass(currentModeMeta.cls), "", false);
 
     this.updateFlowLines();
     this.scaleFlowPanel();
@@ -2140,9 +2178,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
 
   energyFlowPanel() {
     const [modeText, modeClass] = this.readMode(this.state(this.entity("sensor", "manager_status")));
+    const decisionReason = this.state(this.entity("sensor", "decision_reason"), "");
     const activeSlot = this.state(this.entity("sensor", "active_slot"), "");
     const activeSlotLabel = (this.scheduleSlots().find(([key]) => key === activeSlot)?.[1] || activeSlot).replace(/:00/g, "");
     const currentMode = this.state(this.entity("select", "work_mode_select"), "");
+    const currentModeMeta = this.modeMeta(currentMode, true);
+    const managerModeClass = this.modeTextClass(modeText);
 
     const st = (key, fallback = null) => this.asNumber(this.state(this.entity("sensor", key)), fallback);
     const pvPower = st("pv_power", 0) || 0;
@@ -2179,6 +2220,8 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const loadL2Power = st("load_l2_power");
     const loadL3Power = st("load_l3_power");
     const inverterTemp = st("inverter_ac_temperature");
+    const soldTodayKwh = this.asNumber(this.state(this.entity("sensor", "sold_energy_today")), 0) || 0;
+    const soldTodayPln = this.asNumber(this.state(this.entity("sensor", "sold_value_today")), 0) || 0;
 
     const active = {
       pv: pvPower > 1,
@@ -2203,14 +2246,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <div class="flow-phase-volt">${volt}</div>
       </div>`;
 
-    const legendItem = (color, text) => `<div class="flow-legend-item"><span class="flow-legend-line" style="background:${color}"></span><span>${text}</span></div>`;
-
     const pvPath = "M280,110 C400,110 500,160 573,220";
     const batPath = active.batteryCharge ? "M723,220 C796,160 896,110 1016,110" : "M1016,110 C896,110 796,160 723,220";
     const gridPath = active.gridExport ? "M573,220 C500,280 400,330 280,330" : "M280,330 C400,330 500,280 573,220";
     const homePath = "M723,220 C796,280 896,330 1016,330";
 
-    const dotOffset = (pathId, dur) => active[pathId] ? `<circle r="3" fill="#fff"><animateMotion path="${pathId === 'pv' ? pvPath : pathId === 'battery' ? batPath : pathId === 'grid' ? gridPath : homePath}" dur="${dur}s" repeatCount="indefinite"/></circle>` : "";
+    const lineClass = (isActive) => isActive ? "flow-line flow-active" : "flow-line";
 
     const inverterSvg = `<svg class="flow-inverter-svg" viewBox="0 0 150 190" xmlns="http://www.w3.org/2000/svg">
       <defs>
@@ -2236,26 +2277,26 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <style>
           .flow-wrapper{max-width:1320px;margin:0 auto;overflow:hidden;position:relative}
           .flow-scaler{width:1320px;transform-origin:top left;transform:scale(1);line-height:1}
-          .energy-flow-panel{width:1320px;height:570px;padding:12px;box-sizing:border-box;position:relative}
-          .flow-board{position:relative;display:grid;grid-template-columns:280px 736px 280px;grid-template-rows:440px;gap:0;align-items:center;justify-items:center;width:1296px;height:440px}
-          .flow-tile{width:280px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:12px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
+          .energy-flow-panel{width:1320px;height:570px;padding:8px;box-sizing:border-box;position:relative}
+          .flow-board{position:relative;display:grid;grid-template-columns:280px 736px 280px;grid-template-rows:440px;gap:0;align-items:center;justify-items:center;width:1304px;height:440px}
+          .flow-tile{width:280px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:10px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
           .flow-tile-battery{grid-column:3;grid-row:1;justify-self:end;align-self:start}
           .flow-tile-home{grid-column:3;grid-row:1;justify-self:end;align-self:end}
           .flow-inverter{grid-column:2;grid-row:1;align-self:center;justify-self:center;text-align:center;position:relative;z-index:1}
-          .flow-tile-head{display:flex;align-items:center;gap:9px;margin-bottom:6px}
-          .flow-tile-icon{width:34px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-          .flow-tile-icon svg{width:30px;height:30px}
-          .flow-tile-title{font-size:13px;font-weight:700;color:#e2eef5}
-          .flow-tile-main{font-size:22px;font-weight:800;line-height:1.1;margin:2px 0 3px}
-          .flow-tile-main .unit{font-size:13px;font-weight:600;color:#8eacbd;margin-left:3px}
-          .flow-tile-sub{font-size:11px;color:#a9c1d0;margin-bottom:8px}
-          .flow-tile-divider{border:0;border-top:1px solid rgba(107,157,182,.2);margin:8px 0}
-          .flow-detail-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:center}
+          .flow-tile-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+          .flow-tile-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+          .flow-tile-icon svg{width:28px;height:28px}
+          .flow-tile-title{font-size:12px;font-weight:700;color:#e2eef5}
+          .flow-tile-main{font-size:22px;font-weight:800;line-height:1.05;margin:1px 0 2px}
+          .flow-tile-main .unit{font-size:12px;font-weight:600;color:#8eacbd;margin-left:3px}
+          .flow-tile-sub{font-size:10px;color:#a9c1d0;margin-bottom:6px}
+          .flow-tile-divider{border:0;border-top:1px solid rgba(107,157,182,.2);margin:6px 0}
+          .flow-detail-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;text-align:center}
           .flow-detail-row.three-cols{grid-template-columns:repeat(3,1fr)}
           .flow-phase-label{font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
-          .flow-phase-power{font-size:12px;font-weight:700;color:#e2eef5}
+          .flow-phase-power{font-size:11px;font-weight:700;color:#e2eef5}
           .flow-phase-volt{font-size:10px;color:#a9c1d0;margin-top:1px}
           .flow-tile-pv .flow-tile-main{color:#fbbf24}
           .flow-tile-grid .flow-tile-main{color:#c084fc}
@@ -2265,33 +2306,35 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .flow-tile .sold{color:#4ade80}
           .flow-tile .bought{color:#c084fc}
           .flow-inverter-svg{width:150px;height:auto;display:block;margin:0 auto}
-          .flow-inverter-label{font-size:14px;font-weight:700;color:#e2eef5;margin-top:6px}
-          .flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:4px;font-size:13px;color:#38bdf8;margin-top:3px}
-          .flow-inverter-temp svg{width:14px;height:14px}
-          .flow-legend{position:static;transform:none;display:grid;grid-template-columns:repeat(2,1fr);gap:4px 14px;padding:8px 14px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:rgba(6,19,29,.88);z-index:2;margin-top:8px;justify-items:start}
-          .flow-legend-item{display:flex;align-items:center;gap:7px;font-size:10px;color:#a9c1d0;white-space:nowrap}
-          .flow-legend-line{width:18px;height:2px;border-radius:1px}
+          .flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;color:#38bdf8;margin-top:3px}
+          .flow-inverter-temp svg{width:13px;height:13px}
+          .flow-sold-tile{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;justify-items:start;padding:7px 12px;margin-top:6px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:rgba(6,19,29,.88);min-width:180px}
+          .flow-sold-icon{width:30px;height:30px;display:flex;align-items:center;justify-content:center}
+          .flow-sold-icon svg{width:24px;height:24px}
+          .flow-sold-copy{text-align:left;min-width:0}
+          .flow-sold-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px}
+          .flow-sold-copy strong{display:block;font-size:13px;font-weight:700;color:#e2eef5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .flow-sold-copy .sub{font-size:10px;color:#7ee22d;margin-top:1px;text-transform:none}
           .flow-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;overflow:visible;pointer-events:none}
-          .flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round}
+          .flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none}
           .flow-line-bg{stroke:rgba(255,255,255,.08);stroke-width:6}
-          .flow-value{position:absolute;font-size:14px;font-weight:800;z-index:2;text-shadow:0 1px 3px rgba(0,0,0,.8);white-space:nowrap}
-          .flow-value .unit{font-size:10px;font-weight:600;color:#8eacbd;margin-left:2px}
-          .flow-value-pv{top:92px;left:380px;color:#fbbf24}
-          .flow-value-bat{top:92px;right:380px;color:#4ade80}
-          .flow-value-grid{bottom:92px;left:380px;color:#c084fc}
-          .flow-value-home{bottom:92px;right:380px;color:#38bdf8}
-          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:1296px;margin-top:8px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
-          .flow-status-tile{display:flex;align-items:center;gap:10px;padding:10px 14px;min-height:64px;box-sizing:border-box;border-right:1px solid rgba(107,157,182,.2)}
+          .flow-active{stroke-dasharray:4 20;animation:flowDash 3s linear infinite}
+          @keyframes flowDash{to{stroke-dashoffset:-220}}
+          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:1304px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
+          .flow-status-tile{display:flex;align-items:center;gap:9px;padding:8px 12px;min-height:58px;box-sizing:border-box;border-right:1px solid rgba(107,157,182,.2)}
           .flow-status-tile:last-child{border-right:0}
-          .flow-status-icon{width:34px;height:34px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-          .flow-status-icon svg{width:26px;height:26px}
+          .flow-status-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+          .flow-status-icon svg{width:24px;height:24px}
           .flow-status-copy{min-width:0;flex:1}
           .flow-status-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px}
-          .flow-status-copy strong{display:block;font-size:13px;font-weight:700;color:#e2eef5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-          .flow-status-copy .sub{font-size:10px;color:#38bdf8;margin-top:1px;text-transform:none}
+          .flow-status-copy strong{display:block;font-size:13px;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+          .flow-status-copy .sub{font-size:10px;color:#9fb6c4;margin-top:1px;text-transform:none}
           .flow-status-copy .slot-time{color:#fbbf24;font-size:14px}
-          .flow-status-copy .mode-normal{color:#4ade80}
-          .flow-footer{text-align:center;width:1296px;margin-top:6px;font-size:10px;color:#6b8a9c}
+          .mode-selling{color:#7ee22d}
+          .mode-normal{color:#4dabf7}
+          .mode-charge{color:#f6a619}
+          .mode-disabled{color:#b9c9d4}
+          .flow-footer{text-align:center;width:1304px;margin-top:4px;font-size:10px;color:#6b8a9c}
         </style>
         <div class="flow-wrapper">
           <div class="flow-scaler">
@@ -2303,14 +2346,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     <div class="flow-tile-title">PV (Produkcja)</div>
                   </div>
                   <div class="flow-tile-main" data-live="pv-main">${fmtPower(pvPower)}</div>
-                  <div class="flow-tile-sub">dzisiaj: ${pvDaily.toFixed(2)} kWh</div>
+                  <div class="flow-tile-sub">dzisiaj: <span data-live="pv-daily">${fmtNumber(pvDaily, 2)}</span> kWh</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row">
-                    ${phaseRow("PV1", `<span style="color:#fbbf24">${fmtPower(pv1Power)}</span>`, `${fmtNumber(pv1V, 1)} V | ${fmtNumber(pv1A, 1)} A`)}
-                    ${phaseRow("PV2", `<span style="color:#fbbf24">${fmtPower(pv2Power)}</span>`, `${fmtNumber(pv2V, 1)} V | ${fmtNumber(pv2A, 1)} A`)}
+                    ${phaseRow("PV1", `<span style="color:#fbbf24" data-live="pv1-power">${fmtPower(pv1Power)}</span>`, `<span data-live="pv1-volts">${fmtNumber(pv1V, 1)}</span> V | <span data-live="pv1-amps">${fmtNumber(pv1A, 1)}</span> A`)}
+                    ${phaseRow("PV2", `<span style="color:#fbbf24" data-live="pv2-power">${fmtPower(pv2Power)}</span>`, `<span data-live="pv2-volts">${fmtNumber(pv2V, 1)}</span> V | <span data-live="pv2-amps">${fmtNumber(pv2A, 1)}</span> A`)}
                   </div>
                   <hr class="flow-tile-divider">
-                  <div style="text-align:center;font-size:11px;color:#a9c1d0">Razem: <span style="color:#fbbf24;font-weight:700">${fmtPower(pvPower)}</span></div>
+                  <div style="text-align:center;font-size:11px;color:#a9c1d0">Razem: <span style="color:#fbbf24;font-weight:700" data-live="pv-total">${fmtPower(pvPower)}</span></div>
                 </div>
                 <div class="flow-tile flow-tile-grid">
                   <div class="flow-tile-head">
@@ -2320,28 +2363,27 @@ class DeyeEnergyManagerCard extends HTMLElement {
                   <div class="flow-tile-main" data-live="grid-main">${gridMain}</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
-                    ${phaseRow("L1", `<span style="color:#c084fc">${fmtPower(gridL1Power)}</span>`, `${fmtNumber(gridL1V, 1)} V`)}
-                    ${phaseRow("L2", `<span style="color:#c084fc">${fmtPower(gridL2Power)}</span>`, `${fmtNumber(gridL2V, 1)} V`)}
-                    ${phaseRow("L3", `<span style="color:#c084fc">${fmtPower(gridL3Power)}</span>`, `${fmtNumber(gridL3V, 1)} V`)}
+                    ${phaseRow("L1", `<span style="color:#c084fc" data-live="grid-l1-power">${fmtPower(gridL1Power)}</span>`, `<span data-live="grid-l1-volt">${fmtNumber(gridL1V, 1)}</span> V`)}
+                    ${phaseRow("L2", `<span style="color:#c084fc" data-live="grid-l2-power">${fmtPower(gridL2Power)}</span>`, `<span data-live="grid-l2-volt">${fmtNumber(gridL2V, 1)}</span> V`)}
+                    ${phaseRow("L3", `<span style="color:#c084fc" data-live="grid-l3-power">${fmtPower(gridL3Power)}</span>`, `<span data-live="grid-l3-volt">${fmtNumber(gridL3V, 1)}</span> V`)}
                   </div>
                   <hr class="flow-tile-divider">
                   <div style="font-size:10px;color:#a9c1d0;line-height:1.5">
-                    <div>Dzisiaj: <span class="bought">pobrano ${gridBought === null ? "—" : gridBought.toFixed(2)} kWh</span></div>
-                    <div>Dzisiaj: <span class="sold">oddano ${gridSold === null ? "—" : gridSold.toFixed(2)} kWh</span></div>
-                    <div>Częstotliwość: ${frequency === null ? "—" : frequency.toFixed(2)} Hz</div>
+                    <div>Dzisiaj: <span class="bought">pobrano <span data-live="grid-bought">${fmtNumber(gridBought, 2)}</span> kWh</span></div>
+                    <div>Dzisiaj: <span class="sold">oddano <span data-live="grid-sold">${fmtNumber(gridSold, 2)}</span> kWh</span></div>
+                    <div>Częstotliwość: <span data-live="grid-frequency">${fmtNumber(frequency, 2)}</span> Hz</div>
                   </div>
                 </div>
                 <div class="flow-inverter">
                   ${inverterSvg}
-                  <div class="flow-inverter-label">Falownik Deye</div>
-                  <div class="flow-inverter-temp">${this.iconSvg("thermometer")}Temp. Deye: ${inverterTemp === null ? "—" : `${Math.round(inverterTemp)} °C`}</div>
-                  <div class="flow-legend">
-                    ${legendItem("#fbbf24", "Produkcja PV")}
-                    ${legendItem("#38bdf8", "Zasilanie domu")}
-                    ${legendItem("#4ade80", "Rozładowanie baterii")}
-                    ${legendItem("#4ade80", "Ładowanie baterii")}
-                    ${legendItem("#c084fc", "Import z sieci")}
-                    ${legendItem("#c084fc", "Eksport do sieci")}
+                  <div class="flow-inverter-temp">${this.iconSvg("thermometer")}<span data-live="inverter-temp">${inverterTemp === null ? "—" : `${Math.round(inverterTemp)}`}</span> °C</div>
+                  <div class="flow-sold-tile">
+                    <div class="flow-sold-icon" style="color:#7ee22d">${this.iconSvg("money")}</div>
+                    <div class="flow-sold-copy">
+                      <span>Sprzedano dzisiaj</span>
+                      <strong data-live="sold-today-pln">${fmtNumber(soldTodayPln, 2)}</strong> PLN
+                      <div class="sub" data-live="sold-today-kwh">${fmtNumber(soldTodayKwh, 2)} kWh</div>
+                    </div>
                   </div>
                 </div>
                 <div class="flow-tile flow-tile-battery">
@@ -2349,18 +2391,18 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     <div class="flow-tile-icon" style="color:#4ade80">${this.iconSvg("battery2")}</div>
                     <div class="flow-tile-title">Bateria</div>
                   </div>
-                  <div class="flow-tile-main" data-live="battery-soc-main">${socMain}<span class="unit">% SOC</span></div>
+                  <div class="flow-tile-main"><span class="soc-value" data-live="battery-soc-value">${socMain}</span><span class="unit">% SOC</span></div>
                   <div class="flow-tile-sub" data-live="battery-direction" style="color:#4ade80">${batteryDirection}</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
-                    ${phaseRow("Napięcie", `${fmtNumber(batteryVoltage, 1)} V`, "")}
-                    ${phaseRow("Prąd", `${fmtNumber(batteryCurrent, 1)} A`, "")}
-                    ${phaseRow("Temp.", `${fmtNumber(batteryTemp, 1)} °C`, "")}
+                    ${phaseRow("Napięcie", `<span data-live="battery-voltage">${fmtNumber(batteryVoltage, 1)}</span> V`, "")}
+                    ${phaseRow("Prąd", `<span data-live="battery-current">${fmtNumber(batteryCurrent, 1)}</span> A`, "")}
+                    ${phaseRow("Temp.", `<span data-live="battery-temp">${fmtNumber(batteryTemp, 1)}</span> °C`, "")}
                   </div>
                   <hr class="flow-tile-divider">
                   <div style="font-size:10px;color:#a9c1d0;line-height:1.5">
-                    <div>Dzisiaj: <span class="positive">ładowanie ${batteryChargeDaily === null ? "—" : batteryChargeDaily.toFixed(2)} kWh</span></div>
-                    <div>Dzisiaj: <span class="positive">rozładowanie ${batteryDischargeDaily === null ? "—" : batteryDischargeDaily.toFixed(2)} kWh</span></div>
+                    <div>Dzisiaj: <span class="positive">ładowanie <span data-live="battery-charge-daily">${fmtNumber(batteryChargeDaily, 2)}</span> kWh</span></div>
+                    <div>Dzisiaj: <span class="positive">rozładowanie <span data-live="battery-discharge-daily">${fmtNumber(batteryDischargeDaily, 2)}</span> kWh</span></div>
                   </div>
                 </div>
                 <div class="flow-tile flow-tile-home">
@@ -2369,40 +2411,32 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     <div class="flow-tile-title">Dom (Odbiorniki)</div>
                   </div>
                   <div class="flow-tile-main" data-live="load-main">${fmtPower(loadPower)}</div>
-                  <div class="flow-tile-sub">dzisiaj: ${loadDaily === null ? "—" : loadDaily.toFixed(2)} kWh</div>
+                  <div class="flow-tile-sub">dzisiaj: <span data-live="load-daily">${fmtNumber(loadDaily, 2)}</span> kWh</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
-                    ${phaseRow("L1", `<span style="color:#38bdf8">${fmtPower(loadL1Power)}</span>`, "")}
-                    ${phaseRow("L2", `<span style="color:#38bdf8">${fmtPower(loadL2Power)}</span>`, "")}
-                    ${phaseRow("L3", `<span style="color:#38bdf8">${fmtPower(loadL3Power)}</span>`, "")}
+                    ${phaseRow("L1", `<span style="color:#38bdf8" data-live="load-l1-power">${fmtPower(loadL1Power)}</span>`, "")}
+                    ${phaseRow("L2", `<span style="color:#38bdf8" data-live="load-l2-power">${fmtPower(loadL2Power)}</span>`, "")}
+                    ${phaseRow("L3", `<span style="color:#38bdf8" data-live="load-l3-power">${fmtPower(loadL3Power)}</span>`, "")}
                   </div>
                 </div>
-                <svg class="flow-svg" viewBox="0 0 1296 440" preserveAspectRatio="xMidYMid meet">
+                <svg class="flow-svg" viewBox="0 0 1304 440" preserveAspectRatio="xMidYMid meet">
                   <path d="${pvPath}" class="flow-line-bg" />
-                  <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="flow-line" stroke-width="4" stroke-opacity="${active.pv ? 0.9 : 0.2}" />
-                  ${active.pv ? `<circle r="3" fill="#fbbf24"><animateMotion path="${pvPath}" dur="1.2s" repeatCount="indefinite"/></circle>` : ""}
+                  <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="${lineClass(active.pv)}" stroke-width="4" stroke-opacity="${active.pv ? 0.9 : 0.2}" />
                   <path d="${batPath}" class="flow-line-bg" />
-                  <path data-flow-line="battery" d="${batPath}" stroke="#4ade80" class="flow-line" stroke-width="4" stroke-opacity="${active.batteryDischarge || active.batteryCharge ? 0.9 : 0.2}" />
-                  ${active.batteryDischarge || active.batteryCharge ? `<circle r="3" fill="#4ade80"><animateMotion path="${batPath}" dur="1.0s" repeatCount="indefinite"/></circle>` : ""}
+                  <path data-flow-line="battery" d="${batPath}" stroke="#4ade80" class="${lineClass(active.batteryDischarge || active.batteryCharge)}" stroke-width="4" stroke-opacity="${active.batteryDischarge || active.batteryCharge ? 0.9 : 0.2}" />
                   <path d="${gridPath}" class="flow-line-bg" />
-                  <path data-flow-line="grid" d="${gridPath}" stroke="#c084fc" class="flow-line" stroke-width="4" stroke-opacity="${active.gridImport || active.gridExport ? 0.9 : 0.2}" />
-                  ${active.gridImport || active.gridExport ? `<circle r="3" fill="#c084fc"><animateMotion path="${gridPath}" dur="0.8s" repeatCount="indefinite"/></circle>` : ""}
+                  <path data-flow-line="grid" d="${gridPath}" stroke="#c084fc" class="${lineClass(active.gridImport || active.gridExport)}" stroke-width="4" stroke-opacity="${active.gridImport || active.gridExport ? 0.9 : 0.2}" />
                   <path d="${homePath}" class="flow-line-bg" />
-                  <path data-flow-line="home" d="${homePath}" stroke="#38bdf8" class="flow-line" stroke-width="4" stroke-opacity="${active.load ? 0.9 : 0.2}" />
-                  ${active.load ? `<circle r="3" fill="#38bdf8"><animateMotion path="${homePath}" dur="0.9s" repeatCount="indefinite"/></circle>` : ""}
+                  <path data-flow-line="home" d="${homePath}" stroke="#38bdf8" class="${lineClass(active.load)}" stroke-width="4" stroke-opacity="${active.load ? 0.9 : 0.2}" />
                 </svg>
-                <div class="flow-value flow-value-pv" data-live="pv-line-value">${fmtPower(pvPower)}</div>
-                <div class="flow-value flow-value-bat" data-live="battery-line-value">${fmtPower(batteryPower)}</div>
-                <div class="flow-value flow-value-grid" data-live="grid-line-value">${fmtPower(gridPower)}</div>
-                <div class="flow-value flow-value-home" data-live="load-line-value">${fmtPower(loadPower)}</div>
               </div>
               <div class="flow-bottom">
                 <div class="flow-status-tile">
                   <div class="flow-status-icon" style="color:#4dabf7">${this.iconSvg("shield")}</div>
                   <div class="flow-status-copy">
                     <span>Decyzja managera</span>
-                    <strong data-live="manager-active-mode">Aktywny tryb: ${modeText}</strong>
-                    <div class="sub" data-live="manager-deye-mode">Deye: ${currentMode}</div>
+                    <strong class="mode-${managerModeClass}" data-live="manager-active-mode">${modeText}</strong>
+                    <div class="sub" data-live="decision-reason">${decisionReason || "—"}</div>
                   </div>
                 </div>
                 <div class="flow-status-tile">
@@ -2416,14 +2450,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
                   <div class="flow-status-icon" style="color:#4ade80">${this.iconSvg("gear")}</div>
                   <div class="flow-status-copy">
                     <span>Tryb pracy (Manager)</span>
-                    <strong class="mode-normal" data-live="manager-mode">${modeText}</strong>
+                    <strong class="mode-${managerModeClass}" data-live="manager-mode">${modeText}</strong>
                   </div>
                 </div>
                 <div class="flow-status-tile">
                   <div class="flow-status-icon" style="color:#38bdf8">${this.iconSvg("shield")}</div>
                   <div class="flow-status-copy">
                     <span>Tryb Deye</span>
-                    <strong data-live="deye-mode">${currentMode}</strong>
+                    <strong class="mode-${currentModeMeta.cls}" data-live="deye-mode">${this.slotModeLabel(currentMode)}</strong>
                   </div>
                 </div>
               </div>
@@ -2476,26 +2510,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       path.setAttribute("stroke-opacity", isActive ? 0.9 : 0.2);
       path.removeAttribute("marker-end");
       path.textContent = "";
-      const existingDots = svg.querySelectorAll(`circle[data-flow-dot="${key}"]`);
-      existingDots.forEach((el) => el.remove());
-      if (isActive) {
-        const animate = document.createElementNS("http://www.w3.org/2000/svg", "animate");
-        animate.setAttribute("attributeName", "stroke-opacity");
-        animate.setAttribute("values", "0.9;0.5;0.9");
-        animate.setAttribute("dur", "1.4s");
-        animate.setAttribute("repeatCount", "indefinite");
-        path.appendChild(animate);
-        const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
-        circle.setAttribute("r", "3");
-        circle.setAttribute("fill", color);
-        circle.setAttribute("data-flow-dot", key);
-        const motion = document.createElementNS("http://www.w3.org/2000/svg", "animateMotion");
-        motion.setAttribute("path", d);
-        motion.setAttribute("dur", "1.0s");
-        motion.setAttribute("repeatCount", "indefinite");
-        circle.appendChild(motion);
-        svg.appendChild(circle);
-      }
+      path.classList.toggle("flow-active", isActive);
     };
     setPath("pv", pvPath, "#fbbf24", active.pv);
     setPath("battery", batPath, "#4ade80", active.batteryDischarge || active.batteryCharge);
@@ -2623,6 +2638,15 @@ class DeyeEnergyManagerCard extends HTMLElement {
       return { cls: "charge", title: "\u0141adowanie", subtitle: "\u0141adowanie z sieci", icon: "charge" };
     }
     return { cls: "zero", title: "Zero Export To Load", subtitle: "Zero eksport do LOAD", icon: "load" };
+  }
+
+  modeTextClass(text) {
+    const normalized = this.norm(text);
+    if (normalized.includes("sprzeda") || normalized.includes("selling")) return "selling";
+    if (normalized.includes("normal") || normalized.includes("zeroexport") || normalized.includes("ct") || normalized.includes("load")) return "normal";
+    if (normalized.includes("adowan") || normalized.includes("charge")) return "charge";
+    if (normalized.includes("wylacz") || normalized.includes("disabled") || normalized.includes("idle") || normalized.includes("brak danych")) return "disabled";
+    return "";
   }
 
   iconSvg(type) {

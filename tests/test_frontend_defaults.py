@@ -149,18 +149,26 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         # No big arrow markers
         self.assertNotIn("marker-end", method)
         self.assertNotIn("markerWidth", method)
-        # Segmented lines with moving dots
-        self.assertIn("<animateMotion", method)
-        self.assertIn("repeatCount=\"indefinite\"", method)
-        # Power values next to lines
-        self.assertIn("flow-value-pv", method)
-        self.assertIn("flow-value-bat", method)
-        self.assertIn("flow-value-grid", method)
-        self.assertIn("flow-value-home", method)
-        self.assertIn('data-live="pv-line-value"', method)
-        self.assertIn('data-live="battery-line-value"', method)
-        self.assertIn('data-live="grid-line-value"', method)
-        self.assertIn('data-live="load-line-value"', method)
+        # Smooth dashed-line animation instead of jumping SVG dots
+        self.assertIn("@keyframes flowDash", method)
+        self.assertIn("stroke-dasharray:4 20", method)
+        self.assertIn("animation:flowDash 3s linear infinite", method)
+        # No power values next to lines
+        self.assertNotIn("flow-value-pv", method)
+        self.assertNotIn("flow-value-bat", method)
+        self.assertNotIn("flow-value-grid", method)
+        self.assertNotIn("flow-value-home", method)
+        self.assertNotIn('data-live="pv-line-value"', method)
+        self.assertNotIn('data-live="battery-line-value"', method)
+        self.assertNotIn('data-live="grid-line-value"', method)
+        self.assertNotIn('data-live="load-line-value"', method)
+        # Sold-today tile under inverter, no legend
+        self.assertIn("Sprzedano dzisiaj", method)
+        self.assertIn("flow-sold-tile", method)
+        self.assertIn("data-live=\"sold-today-pln\"", method)
+        self.assertIn("data-live=\"sold-today-kwh\"", method)
+        self.assertNotIn("flow-legend", method)
+        self.assertNotIn("Falownik Deye", method)
         # Centered layout with tiles in correct corners
         self.assertIn(".flow-tile-pv{grid-column:1;grid-row:1", method)
         self.assertIn(".flow-tile-grid{grid-column:1;grid-row:1", method)
@@ -176,14 +184,60 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn(".flow-status-tile{", method)
         self.assertIn("border-right", method)
         self.assertIn("grid-template-columns:repeat(4,1fr)", method)
+        # Mode colors aligned with schedule
+        self.assertIn("mode-selling", method)
+        self.assertIn("mode-normal", method)
+        self.assertIn("mode-charge", method)
+        self.assertIn("mode-disabled", method)
+        self.assertIn("data-live=\"decision-reason\"", method)
         # External container is centered and capped
         self.assertIn("max-width:1320px", method)
         self.assertIn("margin:0 auto", method)
 
+    def test_energy_flow_panel_updates_all_detailed_fields(self):
+        source = self.sources[0]
+        self.assertIn("data-live='pv1-power'", source)
+        self.assertIn("data-live='pv1-volts'", source)
+        self.assertIn("data-live='pv1-amps'", source)
+        self.assertIn("data-live='pv2-power'", source)
+        self.assertIn("data-live='pv2-volts'", source)
+        self.assertIn("data-live='pv2-amps'", source)
+        self.assertIn("data-live='grid-l1-power'", source)
+        self.assertIn("data-live='grid-l1-volt'", source)
+        self.assertIn("data-live='grid-l2-power'", source)
+        self.assertIn("data-live='grid-l2-volt'", source)
+        self.assertIn("data-live='grid-l3-power'", source)
+        self.assertIn("data-live='grid-l3-volt'", source)
+        self.assertIn("data-live='grid-bought'", source)
+        self.assertIn("data-live='grid-sold'", source)
+        self.assertIn("data-live='grid-frequency'", source)
+        self.assertIn("data-live='battery-voltage'", source)
+        self.assertIn("data-live='battery-current'", source)
+        self.assertIn("data-live='battery-temp'", source)
+        self.assertIn("data-live='battery-charge-daily'", source)
+        self.assertIn("data-live='battery-discharge-daily'", source)
+        self.assertIn("data-live='load-l1-power'", source)
+        self.assertIn("data-live='load-l2-power'", source)
+        self.assertIn("data-live='load-l3-power'", source)
+        self.assertIn("data-live='inverter-temp'", source)
+        self.assertIn("data-live='pv-daily'", source)
+        self.assertIn("data-live='load-daily'", source)
+        update = extract_method(source, "updateDynamicValues() {")
+        for key in [
+            "pv1-power", "pv1-volts", "pv1-amps", "pv2-power", "pv2-volts", "pv2-amps",
+            "grid-l1-power", "grid-l1-volt", "grid-l2-power", "grid-l2-volt",
+            "grid-l3-power", "grid-l3-volt", "grid-bought", "grid-sold", "grid-frequency",
+            "battery-voltage", "battery-current", "battery-temp",
+            "battery-charge-daily", "battery-discharge-daily",
+            "load-l1-power", "load-l2-power", "load-l3-power",
+            "inverter-temp", "pv-daily", "load-daily", "sold-today-pln", "sold-today-kwh",
+        ]:
+            self.assertIn(f"data-live='{key}'", update)
+
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=16", source)
+            self.assertIn("deye-energy-manager-card.js?v=17", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
             self.assertNotIn("deye-energy-manager-card.js?v=08", source)
