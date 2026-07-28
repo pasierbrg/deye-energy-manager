@@ -87,6 +87,18 @@
 - Zagęszczono kompozycję panelu: zmniejszono paddingi i marginesy, nie zmieniając bazowego rozmiaru 1320 × 570 px.
 - Rewizja karty JavaScript: `v=17`.
 
+### Etap 5.3.4 — poprawki layoutu, ikon i skalowania dashboardu
+
+- Poprawiono kafelek **Sprzedano dzisiaj** — energia i wartość wyświetlają się w jednym wierszu jako `kWh / PLN`.
+- Zwężono kafle **PV**, **Bateria**, **Sieć** i **Dom** do 230 px, zmniejszając pustą przestrzeń bez utraty czytelności.
+- Dostosowano długości i pozycje linii przepływu do nowej, zwężonej siatki kafli.
+- Usunięto zbędny wiersz **Razem:** z kafla PV.
+- Zastąpiono cztery główne ikony nowymi, bardziej czytelnymi SVG: słońce z panelami (PV), słup energetyczny (Sieć), bateria z błyskawicą (Bateria), dom z dachem i drzwiami (Dom).
+- Wprowadzono wspólny, nadrzędny kontener skalujący dla całego dashboardu; wszystkie sekcje (Status energii, ceny, Solcast, harmonogram, statystyki) mają teraz jedną wspólną maksymalną szerokość i są wyśrodkowane.
+- Zastosowano wspólne skalowanie całego dashboardu na telefonie: `scale = Math.min(1, availableWidth / 1152)`, bez poziomego przewijania całej karty i bez przełączania układu na pionowy.
+- Naprawiono kafelek **Tryb Deye** — wyświetla oryginalną fizyczną wartość z `select.deye_inverter_system_work_mode` (np. `Selling First`, `Zero Export To Load`, `Zero Export To CT`), bez tłumaczenia na tryb managera.
+- Rewizja karty JavaScript: `v=18`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

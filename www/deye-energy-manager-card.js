@@ -66,9 +66,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.addEventListener("touchstart", () => this.holdInteraction(1300), { passive: true });
     this.addEventListener("touchmove", () => this.holdInteraction(1300), { passive: true });
     if (!this._flowResizeHandler) {
-      this._flowResizeHandler = () => this.scaleFlowPanel();
+      this._flowResizeHandler = () => this.scaleDashboard();
       window.addEventListener("resize", this._flowResizeHandler);
-      window.setTimeout(() => this.scaleFlowPanel(), 100);
+      window.setTimeout(() => this.scaleDashboard(), 100);
     }
     this.addEventListener("focusin", () => {
       this._interacting = true;
@@ -341,20 +341,21 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.setText("[data-live='load-l3-power']", formatKw(detailed("load_l3_power")));
 
     this.setText("[data-live='inverter-temp']", detailed("inverter_ac_temperature") === null ? "—" : `${Math.round(detailed("inverter_ac_temperature"))}`);
-    this.setText("[data-live='sold-today-pln']", fmtNum(this.asNumber(this.state(this.entity("sensor", "sold_value_today")), 0), 2));
-    this.setText("[data-live='sold-today-kwh']", `${fmtNum(this.asNumber(this.state(this.entity("sensor", "sold_energy_today")), 0), 2)} kWh`);
+    const soldKwh = this.asNumber(this.state(this.entity("sensor", "sold_energy_today")), null);
+    const soldPln = this.asNumber(this.state(this.entity("sensor", "sold_value_today")), null);
+    this.setText("[data-live='sold-today-line']", `${fmtNum(soldKwh, 2)} kWh / ${fmtNum(soldPln, 2)} PLN`);
 
     this.setText("[data-live='active-slot']", activeSlotLabel);
     this.setText("[data-live='manager-mode']", modeText);
     this.setText("[data-live='manager-active-mode']", modeText);
     this.setText("[data-live='decision-reason']", this.state(this.entity("sensor", "decision_reason"), "—"));
-    this.setText("[data-live='deye-mode']", this.slotModeLabel(currentModeValue));
+    this.setText("[data-live='deye-mode']", currentModeValue || "—");
     this.setClass("[data-live='manager-active-mode']", safeModeClass(managerModeClass), "", false);
     this.setClass("[data-live='manager-mode']", safeModeClass(managerModeClass), "", false);
     this.setClass("[data-live='deye-mode']", safeModeClass(currentModeMeta.cls), "", false);
 
     this.updateFlowLines();
-    this.scaleFlowPanel();
+    this.scaleDashboard();
 
     this.querySelector("[data-action='sell']")?.classList.toggle("active", sellActive);
     this.querySelector("[data-action='stop']")?.classList.toggle("active", stopActive);
@@ -2246,10 +2247,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <div class="flow-phase-volt">${volt}</div>
       </div>`;
 
-    const pvPath = "M280,110 C400,110 500,160 573,220";
-    const batPath = active.batteryCharge ? "M723,220 C796,160 896,110 1016,110" : "M1016,110 C896,110 796,160 723,220";
-    const gridPath = active.gridExport ? "M573,220 C500,280 400,330 280,330" : "M280,330 C400,330 500,280 573,220";
-    const homePath = "M723,220 C796,280 896,330 1016,330";
+    const pvPath = "M230,110 C350,110 450,160 475,220";
+    const batPath = active.batteryCharge ? "M625,220 C650,160 750,110 870,110" : "M870,110 C750,110 650,160 625,220";
+    const gridPath = active.gridExport ? "M475,220 C450,280 350,330 230,330" : "M230,330 C350,330 450,280 475,220";
+    const homePath = "M625,220 C650,280 750,330 870,330";
 
     const lineClass = (isActive) => isActive ? "flow-line flow-active" : "flow-line";
 
@@ -2275,11 +2276,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <section class="panel status-panel">
         <h2 class="panel-title">${this.iconSvg("chart")} Status energii</h2>
         <style>
-          .flow-wrapper{max-width:1320px;margin:0 auto;overflow:hidden;position:relative}
-          .flow-scaler{width:1320px;transform-origin:top left;transform:scale(1);line-height:1}
-          .energy-flow-panel{width:1320px;height:570px;padding:8px;box-sizing:border-box;position:relative}
-          .flow-board{position:relative;display:grid;grid-template-columns:280px 736px 280px;grid-template-rows:440px;gap:0;align-items:center;justify-items:center;width:1304px;height:440px}
-          .flow-tile{width:280px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:10px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
+          .energy-flow-panel{width:1116px;height:540px;padding:8px;box-sizing:border-box;position:relative}
+          .flow-board{position:relative;display:grid;grid-template-columns:230px 640px 230px;grid-template-rows:420px;gap:0;align-items:center;justify-items:center;width:1100px;height:420px}
+          .flow-tile{width:230px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
           .flow-tile-battery{grid-column:3;grid-row:1;justify-self:end;align-self:start}
@@ -2308,19 +2307,18 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .flow-inverter-svg{width:150px;height:auto;display:block;margin:0 auto}
           .flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;color:#38bdf8;margin-top:3px}
           .flow-inverter-temp svg{width:13px;height:13px}
-          .flow-sold-tile{display:grid;grid-template-columns:34px 1fr;gap:8px;align-items:center;justify-items:start;padding:7px 12px;margin-top:6px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:rgba(6,19,29,.88);min-width:180px}
-          .flow-sold-icon{width:30px;height:30px;display:flex;align-items:center;justify-content:center}
-          .flow-sold-icon svg{width:24px;height:24px}
+          .flow-sold-tile{display:grid;grid-template-columns:30px 1fr;gap:8px;align-items:center;padding:5px 10px;margin-top:5px;border:1px solid rgba(107,157,182,.25);border-radius:9px;background:rgba(6,19,29,.88);min-width:170px}
+          .flow-sold-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
+          .flow-sold-icon svg{width:22px;height:22px}
           .flow-sold-copy{text-align:left;min-width:0}
-          .flow-sold-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px}
-          .flow-sold-copy strong{display:block;font-size:13px;font-weight:700;color:#e2eef5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-          .flow-sold-copy .sub{font-size:10px;color:#7ee22d;margin-top:1px;text-transform:none}
+          .flow-sold-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px;line-height:1.1}
+          .flow-sold-value{display:block;font-size:13px;font-weight:700;color:#e2eef5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
           .flow-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;overflow:visible;pointer-events:none}
           .flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none}
           .flow-line-bg{stroke:rgba(255,255,255,.08);stroke-width:6}
           .flow-active{stroke-dasharray:4 20;animation:flowDash 3s linear infinite}
           @keyframes flowDash{to{stroke-dashoffset:-220}}
-          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:1304px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
+          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:1100px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
           .flow-status-tile{display:flex;align-items:center;gap:9px;padding:8px 12px;min-height:58px;box-sizing:border-box;border-right:1px solid rgba(107,157,182,.2)}
           .flow-status-tile:last-child{border-right:0}
           .flow-status-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
@@ -2334,12 +2332,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .mode-normal{color:#4dabf7}
           .mode-charge{color:#f6a619}
           .mode-disabled{color:#b9c9d4}
-          .flow-footer{text-align:center;width:1304px;margin-top:4px;font-size:10px;color:#6b8a9c}
+          .flow-footer{text-align:center;width:1100px;margin-top:4px;font-size:10px;color:#6b8a9c}
         </style>
-        <div class="flow-wrapper">
-          <div class="flow-scaler">
-            <div class="energy-flow-panel">
-              <div class="flow-board">
+        <div class="energy-flow-panel">
+          <div class="flow-board">
                 <div class="flow-tile flow-tile-pv">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#fbbf24">${this.iconSvg("pv2")}</div>
@@ -2352,8 +2348,6 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     ${phaseRow("PV1", `<span style="color:#fbbf24" data-live="pv1-power">${fmtPower(pv1Power)}</span>`, `<span data-live="pv1-volts">${fmtNumber(pv1V, 1)}</span> V | <span data-live="pv1-amps">${fmtNumber(pv1A, 1)}</span> A`)}
                     ${phaseRow("PV2", `<span style="color:#fbbf24" data-live="pv2-power">${fmtPower(pv2Power)}</span>`, `<span data-live="pv2-volts">${fmtNumber(pv2V, 1)}</span> V | <span data-live="pv2-amps">${fmtNumber(pv2A, 1)}</span> A`)}
                   </div>
-                  <hr class="flow-tile-divider">
-                  <div style="text-align:center;font-size:11px;color:#a9c1d0">Razem: <span style="color:#fbbf24;font-weight:700" data-live="pv-total">${fmtPower(pvPower)}</span></div>
                 </div>
                 <div class="flow-tile flow-tile-grid">
                   <div class="flow-tile-head">
@@ -2381,8 +2375,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     <div class="flow-sold-icon" style="color:#7ee22d">${this.iconSvg("money")}</div>
                     <div class="flow-sold-copy">
                       <span>Sprzedano dzisiaj</span>
-                      <strong data-live="sold-today-pln">${fmtNumber(soldTodayPln, 2)}</strong> PLN
-                      <div class="sub" data-live="sold-today-kwh">${fmtNumber(soldTodayKwh, 2)} kWh</div>
+                      <strong class="flow-sold-value" data-live="sold-today-line">${fmtNumber(soldTodayKwh, 2)} kWh / ${fmtNumber(soldTodayPln, 2)} PLN</strong>
                     </div>
                   </div>
                 </div>
@@ -2419,7 +2412,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     ${phaseRow("L3", `<span style="color:#38bdf8" data-live="load-l3-power">${fmtPower(loadL3Power)}</span>`, "")}
                   </div>
                 </div>
-                <svg class="flow-svg" viewBox="0 0 1304 440" preserveAspectRatio="xMidYMid meet">
+                <svg class="flow-svg" viewBox="0 0 1100 420" preserveAspectRatio="xMidYMid meet">
                   <path d="${pvPath}" class="flow-line-bg" />
                   <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="${lineClass(active.pv)}" stroke-width="4" stroke-opacity="${active.pv ? 0.9 : 0.2}" />
                   <path d="${batPath}" class="flow-line-bg" />
@@ -2457,28 +2450,26 @@ class DeyeEnergyManagerCard extends HTMLElement {
                   <div class="flow-status-icon" style="color:#38bdf8">${this.iconSvg("shield")}</div>
                   <div class="flow-status-copy">
                     <span>Tryb Deye</span>
-                    <strong class="mode-${currentModeMeta.cls}" data-live="deye-mode">${this.slotModeLabel(currentMode)}</strong>
+                    <strong class="mode-${currentModeMeta.cls}" data-live="deye-mode">${currentMode || "—"}</strong>
                   </div>
                 </div>
               </div>
               <div class="flow-footer">Dane aktualizowane co 5 s</div>
             </div>
           </div>
-        </div>
-      </section>`;
+        </section>`;
   }
 
-  scaleFlowPanel() {
-    const wrapper = this.querySelector(".flow-wrapper");
-    const scaler = this.querySelector(".flow-scaler");
+  scaleDashboard() {
+    const wrapper = this.querySelector(".dashboard-wrapper");
+    const scaler = this.querySelector(".dashboard-scaler");
     if (!wrapper || !scaler) return;
-    const baseWidth = 1320;
-    const baseHeight = 570;
-    const available = wrapper.clientWidth || this.clientWidth || baseWidth;
-    const scale = Math.min(1, Math.max(available / baseWidth, 0.2));
+    const baseWidth = 1152;
+    const available = this.clientWidth || wrapper.clientWidth || baseWidth;
+    const scale = Math.min(1, Math.max(available / baseWidth, 0.25));
     scaler.style.transform = `scale(${scale})`;
     scaler.style.transformOrigin = "top left";
-    wrapper.style.height = `${baseHeight * scale}px`;
+    wrapper.style.height = `${scaler.scrollHeight * scale}px`;
     wrapper.style.overflow = "hidden";
   }
   updateFlowLines() {
@@ -2493,14 +2484,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
     };
     const svg = this.querySelector(".flow-svg");
     if (!svg) return;
-    const pvPath = "M280,110 C400,110 500,160 573,220";
+    const pvPath = "M230,110 C350,110 450,160 475,220";
     const batPath = active.batteryDischarge
-      ? "M1016,110 C896,110 796,160 723,220"
-      : "M723,220 C796,160 896,110 1016,110";
+      ? "M870,110 C750,110 650,160 625,220"
+      : "M625,220 C650,160 750,110 870,110";
     const gridPath = active.gridImport
-      ? "M280,330 C400,330 500,280 573,220"
-      : "M573,220 C500,280 400,330 280,330";
-    const homePath = "M723,220 C796,280 896,330 1016,330";
+      ? "M230,330 C350,330 450,280 475,220"
+      : "M475,220 C450,280 350,330 230,330";
+    const homePath = "M625,220 C650,280 750,330 870,330";
     const setPath = (key, d, color, isActive) => {
       const path = svg.querySelector(`path[data-flow-line="${key}"]`);
       if (!path) return;
@@ -2665,13 +2656,13 @@ class DeyeEnergyManagerCard extends HTMLElement {
       copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
       close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
       pv: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M12 2v2M12 12v2M6 8H4m16 0h-2M7.8 3.8 6.4 2.4m9.8 1.4 1.4-1.4"/><path d="M4 17h16l-2 5H6z"/></svg>',
-      pv2: '<svg viewBox="0 0 24 24"><circle cx="17" cy="6" r="2.5" fill="#fbbf24" stroke="none"/><path d="M17 3v1.5M17 10.5V12M14.5 6H13M21 6h-1.5M14.9 3.9l1.1 1.1M18 7l1.1 1.1M14.9 8.1l1.1-1.1M18 5l1.1-1.1" stroke="#fbbf24"/><path d="M4 16h12v5H4z" fill="#60a5fa" stroke="#60a5fa" stroke-width="1.5"/><path d="M6 18h2M10 18h2M8 16v5" stroke="#1e3a8a" stroke-width="1"/></svg>',
+      pv2: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="8.5" r="3.2" fill="#fbbf24"/><path d="M8.5 3.5v1.6M8.5 12v1.6M3.6 8.5h1.6M11.8 8.5h1.6M4.8 4.8l1.2 1.2M11 11l1.2 1.2M4.8 12.2l1.2-1.2M11 6l1.2-1.2" stroke="#fbbf24" stroke-width="1.2" stroke-linecap="round" fill="none"/><rect x="2.5" y="14" width="19" height="7.5" rx="1.5" fill="#60a5fa" stroke="#3b82f6" stroke-width="1.2"/><path d="M7 14v7.5M12 14v7.5M17 14v7.5M2.5 17.75h19" stroke="#1e3a8a" stroke-width="1"/></svg>',
       home: '<svg viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M9 21v-7h6v7"/></svg>',
-      home2: '<svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M6 10.5V20a1 1 0 0 0 1 1h4v-5h2v5h4a1 1 0 0 0 1-1v-9.5"/><rect x="10" y="14" width="4" height="4" rx="0.5"/></svg>',
+      home2: '<svg viewBox="0 0 24 24"><path d="M12 3L3 10.5V21h7v-6h4v6h7V10.5L12 3z" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round"/><rect x="10" y="15" width="4" height="6" rx="0.5" fill="#38bdf8"/></svg>',
       grid: '<svg viewBox="0 0 24 24"><path d="M12 2 6 22m6-20 6 20M8 8h8M6 14h12M4 22h16"/></svg>',
-      grid2: '<svg viewBox="0 0 24 24"><path d="M7 22V14M17 22V14M12 22V10"/><path d="M4 14h16"/><path d="M6 10h12l-2-8H8z"/><path d="M2 14h20"/><circle cx="7" cy="14" r="1.5" fill="#c084fc"/><circle cx="17" cy="14" r="1.5" fill="#c084fc"/><circle cx="12" cy="10" r="1.5" fill="#c084fc"/></svg>',
+      grid2: '<svg viewBox="0 0 24 24"><path d="M12 2v20" stroke="#c084fc" stroke-width="2.5" stroke-linecap="round" fill="none"/><path d="M4 7h16M4 12h16M4 17h16" stroke="#c084fc" stroke-width="1.2" stroke-linecap="round" fill="none"/><circle cx="4" cy="7" r="1.3" fill="#c084fc"/><circle cx="20" cy="7" r="1.3" fill="#c084fc"/><circle cx="4" cy="12" r="1.3" fill="#c084fc"/><circle cx="20" cy="12" r="1.3" fill="#c084fc"/><circle cx="4" cy="17" r="1.3" fill="#c084fc"/><circle cx="20" cy="17" r="1.3" fill="#c084fc"/></svg>',
       battery: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="17" height="12" rx="2"/><path d="M20 10h2v4h-2M7 12h9M11 8v8"/></svg>',
-      battery2: '<svg viewBox="0 0 24 24"><rect x="4" y="6" width="15" height="12" rx="2.5" fill="#22c55e" stroke="#22c55e" stroke-width="1.5"/><path d="M20 10h2v4h-2" fill="#22c55e"/><path d="M10 9l-2 5h3l-1 4 5-6h-3l2-3z" fill="#fff" stroke="#fff" stroke-width="1"/></svg>',
+      battery2: '<svg viewBox="0 0 24 24"><rect x="4.5" y="6" width="14" height="12" rx="2" fill="#22c55e" stroke="#16a34a" stroke-width="1.5"/><rect x="9.5" y="4" width="4" height="2.5" rx="1" fill="#16a34a"/><path d="M11.5 9.5l-2.5 4.5h3l-1 4.5 5-5.5h-3.5l2-3.5z" fill="#fff"/></svg>',
       clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
       thermometer: '<svg viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/><circle cx="11.5" cy="18.5" r="1.5"/></svg>',
       chart: '<svg viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',
@@ -4226,7 +4217,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <ha-card class="theme-schedule-dark">
         <style>
           ha-card{--bg:#020b12;--panel:rgba(9,24,35,.92);--panel2:rgba(13,31,45,.88);--panel3:rgba(16,38,54,.72);--line:rgba(118,166,190,.22);--line2:rgba(80,169,226,.38);--text:#eef7ff;--muted:#9eb8c8;--blue:#159bff;--blue2:#0a6ad8;--green:#7ee22d;--green2:#35d66f;--purple:#bc63ff;--gold:#f6a619;--red:#ff4242;overflow:hidden;background:radial-gradient(circle at 18% 0%,rgba(26,106,164,.22),transparent 34%),linear-gradient(180deg,#020913,#06131c 54%,#050b10);color:var(--text);border:1px solid rgba(101,142,164,.32);box-shadow:0 18px 45px rgba(0,0,0,.35)}
-          .dem-v073{padding:18px;display:grid;gap:16px;font-family:Roboto,Arial,sans-serif;font-size:14px}
+           .dashboard-wrapper{max-width:1152px;margin:0 auto;overflow:hidden;position:relative}
+           .dashboard-scaler{width:1152px;transform-origin:top left;transform:scale(1);line-height:1}
+           .dem-v073{padding:18px;display:grid;gap:16px;font-family:Roboto,Arial,sans-serif;font-size:14px}
           svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
           button{font:inherit}
           .panel,.schedule-shell,.table-wrap{border:1px solid rgba(107,157,182,.34);border-radius:10px;background:radial-gradient(circle at 12% 8%,rgba(20,85,130,.16),transparent 32%),linear-gradient(180deg,rgba(5,16,26,.98),rgba(7,21,32,.98));box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 12px 28px rgba(0,0,0,.18)}
@@ -4286,10 +4279,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
              .sales-summary{padding:8px}.sales-chart{min-height:150px}.sales-tables{gap:8px}.sales-table-card h3{font-size:14px;padding:9px}.sales-table-card th,.sales-table-card td{font-size:11px;padding:6px 8px}
               .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}
            }
-        </style>
-        <div class="dem-v073">
-           ${this.energyFlowPanel()}
-          <div class="info-grid">
+         </style>
+         <div class="dashboard-wrapper">
+           <div class="dashboard-scaler">
+             <div class="dem-v073">
+               ${this.energyFlowPanel()}
+               <div class="info-grid">
             <section class="panel price-panel">
               <h2 class="panel-title">Ceny sprzedaży</h2>
               <div class="price-summary single">
@@ -4364,13 +4359,16 @@ class DeyeEnergyManagerCard extends HTMLElement {
               ${selectedInfo}
             </div>
           </section>
-          <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>
-          ${this.renderDialog(slots, touStarts)}
-        </div>
-      </ha-card>`;
+               <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>
+               ${this.renderDialog(slots, touStarts)}
+             </div>
+           </div>
+         </div>
+       </ha-card>`;
 
     this.bindControlsV073(slots);
     this._isRendered = true;
+    this.scaleDashboard();
     this.syncBulkPanelValues(slots);
     this.restoreScrollPositions();
   }
