@@ -141,7 +141,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=19
+/deye_energy_manager/deye-energy-manager-card.js?v=20
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -153,10 +153,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=19
+/local/deye-energy-manager-card.js?v=20
 ```
 
-Po podmianie pliku karty ustaw parametr `v=19`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `19` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=20`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `20` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
@@ -165,6 +165,67 @@ type: custom:deye-energy-manager-card
 ```
 
 Przykład kompletnego dashboardu znajduje się w `dashboard/energy_manager.yaml`.
+
+### Konfiguracja układu (opcjonalna)
+
+Wszystkie ustawienia są opcjonalne. Niepoprawne wartości są automatycznie zastępowane domyślnymi.
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: auto          # auto | full | section | single | grid | fit
+  dashboard_width: 1184      # maksymalna szerokość dashboardu w px (320–2400)
+  center_dashboard: true     # wyśrodkowanie dashboardu w karcie
+  fit_to_width: false        # rozciągnięcie do pełnej szerokości karty
+  allow_horizontal_scroll: false
+  grid_columns: null         # liczba kolumn w trybie grid (1–6)
+  grid_gap: 16
+  section: null              # w trybie single: status_energy | prices | solcast | schedule | sales_stats | ai | settings
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: true
+    sales_stats: true
+  mobile:
+    mode: auto
+    preserve_desktop_layout: false
+    fit_to_width: true
+    allow_horizontal_scroll: false
+    grid_columns: 1
+    mobile_breakpoint: 768
+  prices_ratio: 0.85         # szerokość kolumny Ceny sprzedaży
+  buy_prices_ratio: 0.85     # szerokość kolumny Ceny zakupu
+  solcast_ratio: 1.30        # szerokość kolumny Prognoza Solcast
+  energy_tile_width: 230     # szerokość kafli energii (120–360)
+  energy_tile_gap: 28        # odstęp między kaflami energii
+  inverter_scale: 1          # skala invertera w panelu energii (0.5–2)
+  flow_animation_speed: 6    # szybkość animacji przepływów (1–20)
+```
+
+Przykład pojedynczej sekcji:
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: single
+  section: schedule
+```
+
+Przykład układu siatki:
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 2
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: false
+    sales_stats: false
+```
 
 ## Zasady bezpieczeństwa
 

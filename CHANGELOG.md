@@ -109,6 +109,15 @@
 - Dostosowano wewnętrzne elementy prognozy Solcast, aby wyeliminować poziome przewijanie na komputerze.
 - Rewizja karty JavaScript: `v=19`.
 
+### Etap 5.3.6 — konfigurowalny układ YAML i powrót do stabilnego skalowania (v=20)
+
+- Przywrócono stabilny układ znany z rewizji v=17: brak wspólnego skalowania całego dashboardu, dialogi renderowane poza skalowanym kontenerem w osobnym hoście `.dialog-host`.
+- Energia (Status energii) nadal korzysta z własnego skalowania `.flow-wrapper`/`.flow-scaler` opartego na szerokości 1116 px.
+- Dodano konfigurowalny układ YAML (`config.layout`) z opcjami: `layout_mode`, `dashboard_width`, `max_scale`, `min_scale`, `center_dashboard`, `fit_to_width`, `allow_horizontal_scroll`, `grid_columns`, `grid_gap`, `section`, `sections`, `mobile`, `prices_ratio`, `buy_prices_ratio`, `solcast_ratio`, `energy_tile_width`, `energy_tile_gap`, `inverter_scale`, `flow_animation_speed`.
+- Dialogi są teraz aktualizowane niezależnie od dashboardu przez `renderDialogOnly()`, co zachowuje focus i pozycję przewijania podczas przełączania zakładek.
+- Zachowano dobre zmiany z v18/v19: nowe ikony, zwężone kafle, brak wiersza Razem, kafel Sprzedano dzisiaj, surowy Tryb Deye, pełne odświeżanie, animacje przepływów, brak legendy/wartości nad liniami, wyrównane sekcje i proporcje 0.85/0.85/1.30.
+- Rewizja karty JavaScript: `v=20`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

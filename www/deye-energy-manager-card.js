@@ -43,6 +43,90 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this._aiSelections = { today: new Set(), tomorrow: new Set() };
   }
 
+  layoutConfig() {
+    const cfg = this.config?.layout || {};
+    const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+    const asBool = (value, fallback) => (typeof value === "boolean" ? value : fallback);
+    const asNumber = (value, fallback, min, max) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? clamp(num, min, max) : fallback;
+    };
+    const asString = (value, fallback, allowed) => {
+      const str = String(value || fallback).trim();
+      return allowed.includes(str) ? str : fallback;
+    };
+    const defaults = {
+      layout_mode: "auto",
+      dashboard_width: 1184,
+      max_scale: 1,
+      min_scale: 0.2,
+      center_dashboard: true,
+      fit_to_width: false,
+      allow_horizontal_scroll: false,
+      grid_columns: null,
+      grid_gap: 16,
+      section: null,
+      sections: {
+        status_energy: true,
+        prices: true,
+        solcast: true,
+        schedule: true,
+        sales_stats: true,
+      },
+      mobile: {
+        mode: "auto",
+        preserve_desktop_layout: false,
+        fit_to_width: true,
+        allow_horizontal_scroll: false,
+        grid_columns: 1,
+        mobile_breakpoint: 768,
+      },
+      prices_ratio: 0.85,
+      buy_prices_ratio: 0.85,
+      solcast_ratio: 1.30,
+      energy_tile_width: 230,
+      energy_tile_gap: 28,
+      inverter_scale: 1,
+      flow_animation_speed: 6,
+    };
+    const mobileDefaults = defaults.mobile;
+    const mobile = {
+      mode: asString(cfg.mobile?.mode, mobileDefaults.mode, ["auto", "full", "section", "single", "grid", "fit"]),
+      preserve_desktop_layout: asBool(cfg.mobile?.preserve_desktop_layout, mobileDefaults.preserve_desktop_layout),
+      fit_to_width: asBool(cfg.mobile?.fit_to_width, mobileDefaults.fit_to_width),
+      allow_horizontal_scroll: asBool(cfg.mobile?.allow_horizontal_scroll, mobileDefaults.allow_horizontal_scroll),
+      grid_columns: asNumber(cfg.mobile?.grid_columns, mobileDefaults.grid_columns, 1, 4),
+      mobile_breakpoint: asNumber(cfg.mobile?.mobile_breakpoint, mobileDefaults.mobile_breakpoint, 320, 1600),
+    };
+    return {
+      layout_mode: asString(cfg.layout_mode, defaults.layout_mode, ["auto", "full", "section", "single", "grid", "fit"]),
+      dashboard_width: asNumber(cfg.dashboard_width, defaults.dashboard_width, 320, 2400),
+      max_scale: asNumber(cfg.max_scale, defaults.max_scale, 0.2, 3),
+      min_scale: asNumber(cfg.min_scale, defaults.min_scale, 0.1, 1),
+      center_dashboard: asBool(cfg.center_dashboard, defaults.center_dashboard),
+      fit_to_width: asBool(cfg.fit_to_width, defaults.fit_to_width),
+      allow_horizontal_scroll: asBool(cfg.allow_horizontal_scroll, defaults.allow_horizontal_scroll),
+      grid_columns: cfg.grid_columns === null || cfg.grid_columns === undefined ? defaults.grid_columns : asNumber(cfg.grid_columns, defaults.grid_columns, 1, 6),
+      grid_gap: asNumber(cfg.grid_gap, defaults.grid_gap, 0, 64),
+      section: asString(cfg.section, defaults.section, ["status_energy", "prices", "solcast", "schedule", "sales_stats", "ai", "settings"]),
+      sections: {
+        status_energy: asBool(cfg.sections?.status_energy, defaults.sections.status_energy),
+        prices: asBool(cfg.sections?.prices, defaults.sections.prices),
+        solcast: asBool(cfg.sections?.solcast, defaults.sections.solcast),
+        schedule: asBool(cfg.sections?.schedule, defaults.sections.schedule),
+        sales_stats: asBool(cfg.sections?.sales_stats, defaults.sections.sales_stats),
+      },
+      mobile,
+      prices_ratio: asNumber(cfg.prices_ratio, defaults.prices_ratio, 0.1, 5),
+      buy_prices_ratio: asNumber(cfg.buy_prices_ratio, defaults.buy_prices_ratio, 0.1, 5),
+      solcast_ratio: asNumber(cfg.solcast_ratio, defaults.solcast_ratio, 0.1, 5),
+      energy_tile_width: asNumber(cfg.energy_tile_width, defaults.energy_tile_width, 120, 360),
+      energy_tile_gap: asNumber(cfg.energy_tile_gap, defaults.energy_tile_gap, 0, 100),
+      inverter_scale: asNumber(cfg.inverter_scale, defaults.inverter_scale, 0.5, 2),
+      flow_animation_speed: asNumber(cfg.flow_animation_speed, defaults.flow_animation_speed, 1, 20),
+    };
+  }
+
   connectedCallback() {
     if (!this._dialogCloseHandler) {
       this._dialogCloseHandler = (event) => {
@@ -66,9 +150,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.addEventListener("touchstart", () => this.holdInteraction(1300), { passive: true });
     this.addEventListener("touchmove", () => this.holdInteraction(1300), { passive: true });
     if (!this._flowResizeHandler) {
-      this._flowResizeHandler = () => this.scaleDashboard();
+      this._flowResizeHandler = () => this.scaleFlowPanel();
       window.addEventListener("resize", this._flowResizeHandler);
-      window.setTimeout(() => this.scaleDashboard(), 100);
+      window.setTimeout(() => this.scaleFlowPanel(), 100);
     }
     this.addEventListener("focusin", () => {
       this._interacting = true;
@@ -355,7 +439,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.setClass("[data-live='deye-mode']", safeModeClass(currentModeMeta.cls), "", false);
 
     this.updateFlowLines();
-    this.scaleDashboard();
+    this.scaleFlowPanel();
 
     this.querySelector("[data-action='sell']")?.classList.toggle("active", sellActive);
     this.querySelector("[data-action='stop']")?.classList.toggle("active", stopActive);
@@ -2276,8 +2360,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <section class="panel status-panel">
         <h2 class="panel-title">${this.iconSvg("chart")} Status energii</h2>
         <style>
-          .energy-flow-panel{width:1116px;height:540px;padding:8px;box-sizing:border-box;position:relative}
-          .flow-board{position:relative;display:grid;grid-template-columns:230px 640px 230px;grid-template-rows:420px;gap:0;align-items:center;justify-items:center;width:1100px;height:420px}
+           .flow-wrapper{max-width:1116px;margin:0 auto;overflow:hidden;position:relative}
+           .flow-scaler{width:1116px;transform-origin:top left;transform:scale(1);line-height:1}
+           .energy-flow-panel{width:1116px;height:540px;padding:8px;box-sizing:border-box;position:relative}
+           .flow-board{position:relative;display:grid;grid-template-columns:230px 640px 230px;grid-template-rows:420px;gap:0;align-items:center;justify-items:center;width:1100px;height:420px}
           .flow-tile{width:230px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
@@ -2334,8 +2420,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .mode-disabled{color:#b9c9d4}
           .flow-footer{text-align:center;width:1100px;margin-top:4px;font-size:10px;color:#6b8a9c}
         </style>
-        <div class="energy-flow-panel">
-          <div class="flow-board">
+        <div class="flow-wrapper">
+          <div class="flow-scaler">
+            <div class="energy-flow-panel">
+              <div class="flow-board">
                 <div class="flow-tile flow-tile-pv">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#fbbf24">${this.iconSvg("pv2")}</div>
@@ -2457,19 +2545,21 @@ class DeyeEnergyManagerCard extends HTMLElement {
               <div class="flow-footer">Dane aktualizowane co 5 s</div>
             </div>
           </div>
-        </section>`;
+        </div>
+      </section>`;
   }
 
-  scaleDashboard() {
-    const wrapper = this.querySelector(".dashboard-wrapper");
-    const scaler = this.querySelector(".dashboard-scaler");
+  scaleFlowPanel() {
+    const wrapper = this.querySelector(".flow-wrapper");
+    const scaler = this.querySelector(".flow-scaler");
     if (!wrapper || !scaler) return;
-    const baseWidth = 1152;
-    const available = this.clientWidth || wrapper.clientWidth || baseWidth;
-    const scale = Math.min(1, Math.max(available / baseWidth, 0.25));
+    const baseWidth = 1116;
+    const baseHeight = 540;
+    const available = wrapper.clientWidth || this.clientWidth || baseWidth;
+    const scale = Math.min(1, Math.max(available / baseWidth, 0.2));
     scaler.style.transform = `scale(${scale})`;
     scaler.style.transformOrigin = "top left";
-    wrapper.style.height = `${scaler.scrollHeight * scale}px`;
+    wrapper.style.height = `${baseHeight * scale}px`;
     wrapper.style.overflow = "hidden";
   }
   updateFlowLines() {
@@ -4213,13 +4303,20 @@ class DeyeEnergyManagerCard extends HTMLElement {
       </tr>`;
     }).join("");
 
+    const layout = this.layoutConfig();
+    const dashStyle = [];
+    dashStyle.push(`max-width:${layout.dashboard_width}px`);
+    if (layout.center_dashboard) dashStyle.push("margin:0 auto");
+    if (layout.fit_to_width) dashStyle.push("width:100%");
+    if (layout.allow_horizontal_scroll) dashStyle.push("overflow-x:auto");
+    const demStyle = dashStyle.join(";");
+    const infoGridStyle = `grid-template-columns:${layout.prices_ratio}fr ${layout.buy_prices_ratio}fr ${layout.solcast_ratio}fr`;
+
     this.innerHTML = `
       <ha-card class="theme-schedule-dark">
         <style>
           ha-card{--bg:#020b12;--panel:rgba(9,24,35,.92);--panel2:rgba(13,31,45,.88);--panel3:rgba(16,38,54,.72);--line:rgba(118,166,190,.22);--line2:rgba(80,169,226,.38);--text:#eef7ff;--muted:#9eb8c8;--blue:#159bff;--blue2:#0a6ad8;--green:#7ee22d;--green2:#35d66f;--purple:#bc63ff;--gold:#f6a619;--red:#ff4242;overflow:hidden;background:radial-gradient(circle at 18% 0%,rgba(26,106,164,.22),transparent 34%),linear-gradient(180deg,#020913,#06131c 54%,#050b10);color:var(--text);border:1px solid rgba(101,142,164,.32);box-shadow:0 18px 45px rgba(0,0,0,.35)}
-           .dashboard-wrapper{max-width:1152px;margin:0 auto;overflow:hidden;position:relative}
-           .dashboard-scaler{width:1152px;transform-origin:top left;transform:scale(1);line-height:1}
-           .dem-v073{padding:18px;display:grid;gap:16px;font-family:Roboto,Arial,sans-serif;font-size:14px}
+           .dem-v073{padding:18px;display:grid;gap:16px;margin:0 auto;max-width:1184px;font-family:Roboto,Arial,sans-serif;font-size:14px}.dialog-host{position:relative}
           svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
           button{font:inherit}
            .panel,.schedule-shell,.table-wrap{box-sizing:border-box;border:1px solid rgba(107,157,182,.34);border-radius:10px;background:radial-gradient(circle at 12% 8%,rgba(20,85,130,.16),transparent 32%),linear-gradient(180deg,rgba(5,16,26,.98),rgba(7,21,32,.98));box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 12px 28px rgba(0,0,0,.18)}
@@ -4227,13 +4324,13 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:10px}
           .stat{border:1px solid rgba(111,154,178,.45);border-radius:7px;background:rgba(7,18,28,.74);padding:10px;min-width:0}
           .stat span{display:block;color:#a9c1d0;font-size:12px}.stat strong{display:block;margin-top:4px;color:#fff;font-size:18px;line-height:1.2}.stat.good strong,.good{color:#2dff95!important}.stat.warn strong,.warn{color:#ffd95c!important}.bad{color:#ff6b7a!important}
-           .info-grid{display:grid;grid-template-columns:0.85fr 0.85fr 1.30fr;gap:14px;align-items:stretch;width:1116px;box-sizing:border-box;padding:8px;margin:0 auto}.info-grid>.panel{height:auto;min-height:470px;display:flex;flex-direction:column;min-width:0}
+           .info-grid{display:grid;grid-template-columns:0.85fr 0.85fr 1.30fr;gap:14px;align-items:stretch;width:100%;box-sizing:border-box}.info-grid>.panel{height:auto;min-height:470px;display:flex;flex-direction:column;min-width:0}
           .price-summary,.solcast-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:9px}.price-summary.single{grid-template-columns:1fr}.price-summary .stat strong,.solcast-summary .stat strong{font-size:14px}
           .price-scroll{height:auto;flex:0 0 auto;min-height:0;overflow:visible;border-top:1px solid var(--line);overscroll-behavior:contain}.price-table{width:100%;border-collapse:collapse;table-layout:fixed}.price-table th,.price-table td{padding:3px 8px;border-top:1px solid var(--line);font-size:11px;line-height:14px}.price-table th{position:sticky;top:0;z-index:1;background:rgba(18,42,59,.96);color:#d8f4ff;text-align:left}.price-table tbody tr.active{background:rgba(37,105,151,.32);box-shadow:inset 3px 0 0 var(--blue)}.price-table tbody tr.active td:first-child{color:#fff;font-weight:900}.price{font-weight:900;color:#e9f7ff}.price.good{color:#2dff95}.price.warn{color:#ffd95c}.price.missing{opacity:.55}
                      .solcast-days{display:grid;grid-template-columns:repeat(7,minmax(58px,1fr));gap:8px;padding:9px;border-top:1px solid var(--line)}.solcast-day{height:104px;border:1px solid var(--line);border-radius:8px;background:rgba(7,18,28,.72);display:grid;grid-template-rows:auto 1fr auto;gap:4px;padding:6px}.solcast-day-head{display:flex;justify-content:space-between;gap:4px}.solcast-day-head strong{font-size:11px;color:#e8f7ff;white-space:nowrap}.solcast-day-head em{font-style:normal;font-size:10px;color:#88a7bb}.solcast-day-meter{display:flex;align-items:end;justify-content:center;border-radius:6px;background:rgba(255,255,255,.03)}.solcast-day-meter span{width:34px;border-radius:8px 8px 2px 2px;background:linear-gradient(180deg,#ffd166,#39ef8d);min-height:8px}.solcast-day b{text-align:center;font-size:11px}.solcast-day.missing{opacity:.45}
                      .solcast-chart{height:170px;overflow-x:hidden;border-top:1px solid var(--line);padding:10px 8px 0;overscroll-behavior:contain}.solcast-bars{height:146px;width:100%;display:grid;grid-template-columns:repeat(24,1fr);gap:4px;align-items:end}.solcast-bar{height:146px;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px}.solcast-columns{height:128px;width:100%;display:flex;align-items:end;justify-content:center;gap:2px}.solcast-columns span{display:block;width:42%;border-radius:4px 4px 0 0;min-height:3px}.solcast-columns .today{background:#2dff95}.solcast-columns .tomorrow{background:#57b9ff}.solcast-bar.now .solcast-columns span{box-shadow:0 0 0 1px #ffd166 inset}.solcast-bar em{font-style:normal;font-size:10px;color:#89a5b5;writing-mode:vertical-rl;transform:rotate(180deg)}.solcast-legend{display:flex;gap:7px;padding:4px 10px 8px;color:#a9c1d0;font-size:12px}.solcast-legend span{width:10px;height:10px;border-radius:999px;display:inline-block}.solcast-legend .today{background:#2dff95}.solcast-legend .tomorrow{background:#57b9ff}.solcast-performance{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-top:auto;padding:9px;border-top:1px solid var(--line)}.solcast-performance .stat{padding:8px}.solcast-performance .stat strong{font-size:14px}.live-changed{animation:dem-live-pulse .45s ease-out}@keyframes dem-live-pulse{0%{color:#fff;text-shadow:0 0 10px rgba(87,185,255,.9)}100%{color:inherit;text-shadow:none}}
           .defaults-status{margin-top:10px}.defaults-status.saving{color:#ffd166}.defaults-status.saved{color:var(--green)}.defaults-status.error{color:#ff8b98}button[data-default-action]:disabled{opacity:.55;cursor:wait}
-           .schedule-shell{width:1116px;box-sizing:border-box;padding:10px;margin:0 auto;background:radial-gradient(circle at 12% 8%,rgba(20,85,130,.22),transparent 30%),linear-gradient(180deg,rgba(5,16,26,.98),rgba(7,21,32,.98))}
+           .schedule-shell{width:100%;box-sizing:border-box;padding:10px;background:radial-gradient(circle at 12% 8%,rgba(20,85,130,.22),transparent 30%),linear-gradient(180deg,rgba(5,16,26,.98),rgba(7,21,32,.98))}
           .schedule-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:8px}.schedule-title h2{margin:0;display:flex;align-items:center;gap:8px;font-size:22px;font-weight:850}.schedule-title p{margin:3px 0 0;color:#c1d4df;font-size:13px}.title-icon{width:28px;height:28px;border-radius:999px;border:1px solid rgba(142,181,202,.42);background:rgba(255,255,255,.03);color:#d9ecf6;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}.title-icon.ai{color:#2fa8ff}.title-icon:hover{border-color:var(--blue);color:#fff}.save-indicator{display:none;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;line-height:1.2}.save-indicator.saving{display:inline-flex;color:#ffd166;background:rgba(246,166,25,.16)}.save-indicator.saved{display:inline-flex;color:var(--green);background:rgba(53,214,111,.14)}.save-indicator.error{display:inline-flex;max-width:360px;color:#ff8b98;background:rgba(255,77,99,.15);white-space:normal}
           .schedule-tools{display:flex;gap:9px;align-items:center;flex-wrap:wrap;justify-content:flex-end}.tool-btn,.gear-btn,.bulk-actions button,.set-btn,.icon-only{border:1px solid rgba(100,145,170,.42);border-radius:8px;background:rgba(7,17,27,.72);color:#eaf7ff;min-height:38px;padding:0 13px;display:inline-flex;align-items:center;gap:9px;cursor:pointer}.tool-btn.active{border-color:var(--blue);color:#2ea7ff;background:rgba(8,53,92,.55)}.gear-btn{width:48px;justify-content:center;padding:0}.gear-btn:hover,.tool-btn:hover,.set-btn:hover,.icon-only:hover{border-color:var(--blue);box-shadow:0 0 0 1px rgba(21,155,255,.25) inset}.icon-only{width:32px;min-height:28px;padding:0;justify-content:center}.set-btn{min-height:29px;padding:0 12px;font-weight:800}
           .mode-legend{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:4px 0 8px}.mode-tile{display:flex;align-items:center;gap:8px;min-width:0}.mode-icon{width:32px;height:32px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto}.mode-tile.selling .mode-icon{background:rgba(126,226,45,.16);color:var(--green)}.mode-tile.zero .mode-icon{background:rgba(21,155,255,.16);color:var(--blue)}.mode-tile.ct .mode-icon{background:rgba(188,99,255,.18);color:var(--purple)}.mode-tile.charge .mode-icon{background:rgba(246,166,25,.18);color:var(--gold)}.mode-tile.disabled .mode-icon{background:rgba(155,178,193,.12);color:#b9c9d4}.mode-tile.normal .mode-icon{background:rgba(77,171,247,.16);color:#4dabf7}.mode-tile strong{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mode-tile.selling strong{color:var(--green)}.mode-tile.zero strong{color:var(--blue)}.mode-tile.ct strong{color:var(--purple)}.mode-tile.charge strong{color:var(--gold)}.mode-tile.normal strong{color:#4dabf7}.mode-tile span{display:block;color:#c2d4de;margin-top:1px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -4254,7 +4351,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .stat-icon{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;background:rgba(21,155,255,.14);color:#55baff}.stat-icon svg{width:19px;height:19px}.stat-copy{min-width:0;flex:1}.status-panel .stat span,.sales-summary .stat span{font-size:11px;color:#8eacbd}.status-panel .stat strong,.sales-summary .stat strong{font-size:16px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
            .status-mode .stat-icon{color:var(--green);background:rgba(126,226,45,.14)}.status-mode.warn .stat-icon{color:var(--gold);background:rgba(246,166,25,.16)}.status-mode.bad .stat-icon{color:#ff6b7a;background:rgba(255,77,99,.15)}.status-mode.neutral .stat-icon{color:#a9c1d0;background:rgba(155,178,193,.12)}.status-mode.charge .stat-icon{color:var(--gold);background:rgba(246,166,25,.16)}.status-mode.zero .stat-icon{color:var(--blue);background:rgba(21,155,255,.16)}.status-mode.ct .stat-icon{color:var(--purple);background:rgba(188,99,255,.18)}.status-mode.normal .stat-icon{color:#4dabf7;background:rgba(77,171,247,.14)}.status-pv .stat-icon{color:#ffd166;background:rgba(255,209,102,.14)}.status-home .stat-icon{color:#57b9ff}.status-grid .stat-icon{color:#6ec7ff}.status-battery .stat-icon,.status-soc .stat-icon{color:var(--purple);background:rgba(188,99,255,.14)}.status-sold .stat-icon{color:var(--green);background:rgba(53,214,111,.14)}.status-slot .stat-icon{color:var(--gold);background:rgba(246,166,25,.14)}.status-inverter .stat-icon{color:var(--blue);background:rgba(21,155,255,.14)}.status-action .stat-icon{color:#d8ecf7;background:rgba(155,178,193,.1)}
            .decision-strip{margin:0 12px 12px;padding:10px 13px;border:1px solid rgba(107,157,182,.32);border-left:4px solid var(--blue);border-radius:8px;background:rgba(6,20,31,.82);display:flex;align-items:center;gap:10px}.decision-strip svg{width:19px;height:19px;color:var(--blue)}.decision-strip strong{font-size:13px}.decision-strip span{color:#a9c1d0;font-size:12px}.decision-strip.good{border-left-color:var(--green)}.decision-strip.good svg{color:var(--green)}.decision-strip.warn,.decision-strip.charge{border-left-color:var(--gold)}.decision-strip.warn svg,.decision-strip.charge svg{color:var(--gold)}.decision-strip.bad{border-left-color:#ff4d63}.decision-strip.bad svg{color:#ff6b7a}.decision-strip.ct{border-left-color:var(--purple)}.decision-strip.ct svg{color:var(--purple)}.decision-strip.normal{border-left-color:#4dabf7}.decision-strip.normal svg{color:#4dabf7}
-                     .sales-panel{width:1116px;box-sizing:border-box;margin:0 auto}.sales-panel>div{padding:0 2px 2px}.sales-summary{gap:10px;padding:12px}.sales-summary .stat{border-left:3px solid rgba(21,155,255,.72)}.sales-summary .stat:nth-child(1){border-left-color:var(--green)}.sales-summary .stat:nth-child(2){border-left-color:#ffd166}.sales-summary .stat:nth-child(3){border-left-color:var(--blue)}.sales-summary .stat:nth-child(4){border-left-color:var(--purple)}.sales-summary .stat:nth-child(5){border-left-color:var(--gold)}
+                     .sales-panel{width:100%;box-sizing:border-box}.sales-panel>div{padding:0 2px 2px}.sales-summary{gap:10px;padding:12px}.sales-summary .stat{border-left:3px solid rgba(21,155,255,.72)}.sales-summary .stat:nth-child(1){border-left-color:var(--green)}.sales-summary .stat:nth-child(2){border-left-color:#ffd166}.sales-summary .stat:nth-child(3){border-left-color:var(--blue)}.sales-summary .stat:nth-child(4){border-left-color:var(--purple)}.sales-summary .stat:nth-child(5){border-left-color:var(--gold)}
           .sales-chart{height:118px;margin:0 12px 12px;padding:10px 8px 7px;border:1px solid rgba(107,157,182,.25);border-radius:8px;background:rgba(4,15,24,.7)}.sales-bar{height:98px}.sales-bar span{background:linear-gradient(180deg,#74ea4b,#28b963);box-shadow:0 0 10px rgba(53,214,111,.12)}.sales-bar.now span{background:linear-gradient(180deg,#ffe08a,#f5b942)}
           .sales-tables{gap:12px;padding:0 12px 12px}.sales-tables>div{overflow:hidden;border:1px solid rgba(107,157,182,.25);border-radius:8px;background:rgba(4,15,24,.62)}.section-label{padding:9px 11px;background:rgba(18,42,59,.86);color:#d8edf8;font-size:11px;letter-spacing:0;text-transform:uppercase}.mini-table td{padding:6px 9px;border-top:1px solid rgba(118,166,190,.16);font-size:11px}.mini-table tr:hover td{background:rgba(21,155,255,.05)}
            .dialog-head{position:sticky;top:0;z-index:5;background:linear-gradient(180deg,rgba(14,50,70,.98),rgba(10,30,44,.98))}.dialog-actions{position:sticky;bottom:0;z-index:4;padding:12px 14px;background:rgba(6,20,32,.98);border-top:1px solid var(--line)}.ai-dialog{width:min(900px,96vw);height:min(900px,92vh);max-height:92vh;overflow:hidden;display:grid;grid-template-rows:auto minmax(0,1fr)}.ai-dialog>.dialog-body{overflow:auto;overscroll-behavior:contain}.ai-proposal-scroll,.ai-history-scroll{max-height:360px}
@@ -4280,11 +4377,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
               .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}
            }
          </style>
-         <div class="dashboard-wrapper">
-           <div class="dashboard-scaler">
-             <div class="dem-v073">
-               ${this.energyFlowPanel()}
-               <div class="info-grid">
+          <div class="dem-v073" style="${demStyle}">
+           ${this.energyFlowPanel()}
+           <div class="info-grid" style="${infoGridStyle}">
             <section class="panel price-panel">
               <h2 class="panel-title">Ceny sprzedaży</h2>
               <div class="price-summary single">
@@ -4359,36 +4454,35 @@ class DeyeEnergyManagerCard extends HTMLElement {
               ${selectedInfo}
             </div>
           </section>
-               <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>
-             </div>
-           </div>
-         </div>
-         ${this.renderDialog(slots, touStarts)}
-       </ha-card>`;
+          <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>
+        </div>
+        <div class="dialog-host">${this.renderDialog(slots, touStarts)}</div>
+      </ha-card>`;
+
+    this._lastSlots = slots;
+    this._lastTouStarts = touStarts;
 
     this.bindControlsV073(slots);
     this._isRendered = true;
-    this.scaleDashboard();
+    this.scaleFlowPanel();
     this.syncBulkPanelValues(slots);
     this.restoreScrollPositions();
   }
 
   bindControlsV073(slots) {
-    this.querySelectorAll("[data-close-dialog]").forEach((el) => {
-      el.addEventListener("click", (event) => {
-        if (el.classList.contains("overlay") && event.target !== el) return;
-        event.preventDefault();
-        event.stopPropagation();
-        this.closeDialog();
-      });
-    });
-    this.querySelectorAll("[data-toggle]").forEach((el) => {
+    this.bindDashboardControls(slots);
+    this.bindDialogControls(slots);
+  }
+
+  bindDashboardControls(slots) {
+    const root = this.querySelector(".dem-v073") || this;
+    root.querySelectorAll("[data-toggle]").forEach((el) => {
       el.addEventListener("click", (event) => {
         event.stopPropagation();
         this.toggle(el.dataset.toggle);
       });
     });
-    this.querySelectorAll("[data-number]").forEach((el) => {
+    root.querySelectorAll("[data-number]").forEach((el) => {
       el.onchange = () => this.setNumber(el.dataset.number, el.value);
       el.onkeydown = (event) => {
         if (event.key === "Enter") {
@@ -4397,16 +4491,16 @@ class DeyeEnergyManagerCard extends HTMLElement {
         }
       };
     });
-    this.querySelectorAll("[data-select]").forEach((el) => {
+    root.querySelectorAll("[data-select]").forEach((el) => {
       el.value = this.state(el.dataset.select);
       // Charge is a work-mode choice. Grid: yes remains a separate,
       // explicit consent and must never be inferred from this selection.
       el.onchange = () => this.setSelect(el.dataset.select, el.value);
     });
-    this.querySelectorAll("[data-time]").forEach((el) => {
+    root.querySelectorAll("[data-time]").forEach((el) => {
       el.onchange = () => this.setTime(el.dataset.time, el.value);
     });
-    this.querySelectorAll("[data-slot-check]").forEach((el) => {
+    root.querySelectorAll("[data-slot-check]").forEach((el) => {
       el.addEventListener("click", (event) => event.stopPropagation());
       el.addEventListener("change", () => {
         if (!this._selectionMode) this._selectedSlots.clear();
@@ -4416,7 +4510,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
         this.render();
       });
     });
-    this.querySelectorAll("[data-slot-row]").forEach((el) => el.addEventListener("click", (event) => {
+    root.querySelectorAll("[data-slot-row]").forEach((el) => el.addEventListener("click", (event) => {
       if (event.target.closest("button,input,select,label")) return;
       const key = el.dataset.slotRow;
       if (this._selectionMode) {
@@ -4430,7 +4524,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._dialog = { type: "sell", key };
       this.render();
     }));
-    this.querySelectorAll("[data-open-slot]").forEach((el) => el.addEventListener("click", (event) => {
+    root.querySelectorAll("[data-open-slot]").forEach((el) => el.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       this.captureScrollPositions();
@@ -4438,14 +4532,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._dialog = { type, key };
       this.render();
     }));
-    this.querySelectorAll("[data-open-tou]").forEach((el) => el.addEventListener("click", (event) => {
+    root.querySelectorAll("[data-open-tou]").forEach((el) => el.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
       this.captureScrollPositions();
       this._dialog = { type: "tou", idx: Number(el.dataset.openTou) };
       this.render();
     }));
-    this.querySelectorAll("[data-open-ai]").forEach((el) => el.addEventListener("click", (event) => {
+    root.querySelectorAll("[data-open-ai]").forEach((el) => el.addEventListener("click", (event) => {
       event.preventDefault();
       this.captureScrollPositions();
       this.saveAiAnalysis(this.aiSuggestions(slots));
@@ -4457,7 +4551,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._dialog = { type: "ai" };
       this.render();
     }));
-    this.querySelectorAll("[data-open-settings]").forEach((el) => el.addEventListener("click", (event) => {
+    root.querySelectorAll("[data-open-settings]").forEach((el) => el.addEventListener("click", (event) => {
       event.preventDefault();
       this.captureScrollPositions();
       const tab = el.dataset.openSettings;
@@ -4465,22 +4559,78 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._dialog = { type: "settings" };
       this.render();
     }));
-    this.querySelectorAll("[data-settings-tab]").forEach((el) => el.addEventListener("click", () => {
-      this._settingsTab = el.dataset.settingsTab;
-      this._tariffDraft = null;
+    root.querySelectorAll("[data-toggle-selection]").forEach((el) => el.addEventListener("click", () => {
+      this._selectionMode = !this._selectionMode;
+      this._selectedSlots.clear();
       this.render();
     }));
-    this.querySelectorAll("[data-tariff-field='tariff_mode'],[data-tariff-field='osd_provider']").forEach((el) => el.addEventListener("change", () => {
+    root.querySelectorAll("[data-schedule-select-all]").forEach((el) => el.addEventListener("click", () => {
+      slots.forEach(([key]) => this._selectedSlots.add(key));
+      this._selectionMode = true;
+      this.render();
+    }));
+    root.querySelectorAll("[data-schedule-clear]").forEach((el) => el.addEventListener("click", () => {
+      this._selectedSlots.clear();
+      this._dialog = null;
+      this.render();
+    }));
+    root.querySelectorAll("[data-open-multi]").forEach((el) => el.addEventListener("click", () => {
+      if (!this.selectedSlotList(slots).length) return;
+      this._selectionMode = true;
+      this.render();
+    }));
+  }
+
+  bindDialogControls(slots) {
+    const root = this.querySelector(".dialog-host") || this;
+    root.querySelectorAll("[data-close-dialog]").forEach((el) => {
+      el.addEventListener("click", (event) => {
+        if (el.classList.contains("overlay") && event.target !== el) return;
+        event.preventDefault();
+        event.stopPropagation();
+        this.closeDialog();
+      });
+    });
+    root.querySelectorAll("[data-toggle]").forEach((el) => {
+      el.addEventListener("click", (event) => {
+        event.stopPropagation();
+        this.toggle(el.dataset.toggle);
+      });
+    });
+    root.querySelectorAll("[data-number]").forEach((el) => {
+      el.onchange = () => this.setNumber(el.dataset.number, el.value);
+      el.onkeydown = (event) => {
+        if (event.key === "Enter") {
+          this.setNumber(el.dataset.number, el.value);
+          el.blur();
+        }
+      };
+    });
+    root.querySelectorAll("[data-select]").forEach((el) => {
+      el.value = this.state(el.dataset.select);
+      // Charge is a work-mode choice. Grid: yes remains a separate,
+      // explicit consent and must never be inferred from this selection.
+      el.onchange = () => this.setSelect(el.dataset.select, el.value);
+    });
+    root.querySelectorAll("[data-time]").forEach((el) => {
+      el.onchange = () => this.setTime(el.dataset.time, el.value);
+    });
+    root.querySelectorAll("[data-settings-tab]").forEach((el) => el.addEventListener("click", () => {
+      this._settingsTab = el.dataset.settingsTab;
+      this._tariffDraft = null;
+      this.renderDialogOnly();
+    }));
+    root.querySelectorAll("[data-tariff-field='tariff_mode'],[data-tariff-field='osd_provider']").forEach((el) => el.addEventListener("change", () => {
       const draft = this.collectTariffDraft();
       if (el.dataset.tariffField === "osd_provider") {
         const provider = this.tariffData().providers?.find((item) => item.id === draft.osd_provider);
         if (provider?.tariffs?.length) draft.tariff_plan = provider.tariffs[0].id;
       }
       this._tariffDraft = draft;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-save-tariff]").forEach((el) => el.addEventListener("click", () => this.saveTariffSettings()));
-    this.querySelectorAll("[data-refresh-tariff]").forEach((el) => el.addEventListener("click", async () => {
+    root.querySelectorAll("[data-save-tariff]").forEach((el) => el.addEventListener("click", () => this.saveTariffSettings()));
+    root.querySelectorAll("[data-refresh-tariff]").forEach((el) => el.addEventListener("click", async () => {
       el.disabled = true;
       try {
         await this.callService("deye_energy_manager", "refresh_tariff_catalog", {});
@@ -4490,62 +4640,48 @@ class DeyeEnergyManagerCard extends HTMLElement {
       }
       this.render();
     }));
-    this.querySelectorAll("[data-toggle-selection]").forEach((el) => el.addEventListener("click", () => {
-      this._selectionMode = !this._selectionMode;
-      this._selectedSlots.clear();
-      this.render();
+    root.querySelectorAll("[data-apply-multi]").forEach((el) => el.addEventListener("click", () => this.applyMultiEdit(slots)));
+    root.querySelectorAll("[data-action='apply-defaults']").forEach((el) => el.addEventListener("click", () => this.restoreDefaults()));
+    root.querySelectorAll("[data-save-charge-profile]").forEach((el) => el.addEventListener("click", () => this.saveChargeProfile()));
+    root.querySelectorAll("[data-save-normal-profile]").forEach((el) => el.addEventListener("click", () => this.saveNormalProfile()));
+    root.querySelectorAll("[data-reload-normal-profile]").forEach((el) => el.addEventListener("click", () => {
+      this.reloadNormalProfileSlot(el.dataset.reloadNormalProfile);
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-schedule-select-all]").forEach((el) => el.addEventListener("click", () => {
-      slots.forEach(([key]) => this._selectedSlots.add(key));
-      this._selectionMode = true;
-      this.render();
+    root.querySelectorAll("[data-reload-charge-profile]").forEach((el) => el.addEventListener("click", () => {
+      this.reloadChargeProfileSlot(el.dataset.reloadChargeProfile);
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-schedule-clear]").forEach((el) => el.addEventListener("click", () => {
-      this._selectedSlots.clear();
-      this._dialog = null;
-      this.render();
-    }));
-    this.querySelectorAll("[data-open-multi]").forEach((el) => el.addEventListener("click", () => {
-      if (!this.selectedSlotList(slots).length) return;
-      this._selectionMode = true;
-      this.render();
-    }));
-    this.querySelectorAll("[data-apply-multi]").forEach((el) => el.addEventListener("click", () => this.applyMultiEdit(slots)));
-    this.querySelectorAll("[data-action='apply-defaults']").forEach((el) => el.addEventListener("click", () => this.restoreDefaults()));
-    this.querySelectorAll("[data-save-charge-profile]").forEach((el) => el.addEventListener("click", () => this.saveChargeProfile()));
-    this.querySelectorAll("[data-save-normal-profile]").forEach((el) => el.addEventListener("click", () => this.saveNormalProfile()));
-    this.querySelectorAll("[data-reload-normal-profile]").forEach((el) => el.addEventListener("click", () => this.reloadNormalProfileSlot(el.dataset.reloadNormalProfile)));
-    this.querySelectorAll("[data-reload-charge-profile]").forEach((el) => el.addEventListener("click", () => this.reloadChargeProfileSlot(el.dataset.reloadChargeProfile)));
-    this.querySelectorAll("[data-save-default-settings]").forEach((el) => el.addEventListener("click", () => this.saveDefaultSettings()));
-    this.querySelectorAll("[data-charge-profile-number]").forEach((el) => {
+    root.querySelectorAll("[data-save-default-settings]").forEach((el) => el.addEventListener("click", () => this.saveDefaultSettings()));
+    root.querySelectorAll("[data-charge-profile-number]").forEach((el) => {
       const saveDraft = () => { this._chargeProfileDraft[el.dataset.chargeProfileNumber] = el.value; };
       el.addEventListener("input", saveDraft);
       el.addEventListener("change", saveDraft);
     });
-    this.querySelectorAll('[data-raw="charge-profile-grid"]').forEach((el) => {
+    root.querySelectorAll('[data-raw="charge-profile-grid"]').forEach((el) => {
       el.addEventListener("change", () => { this._chargeProfileGridDraft = el.value === "on"; });
     });
-    this.querySelectorAll("[data-normal-profile-number]").forEach((el) => {
+    root.querySelectorAll("[data-normal-profile-number]").forEach((el) => {
       const saveDraft = () => { this._normalProfileDraft[el.dataset.normalProfileNumber] = el.value; };
       el.addEventListener("input", saveDraft);
       el.addEventListener("change", saveDraft);
     });
-    this.querySelectorAll('[data-raw="normal-profile-mode"]').forEach((el) => {
+    root.querySelectorAll('[data-raw="normal-profile-mode"]').forEach((el) => {
       el.addEventListener("change", () => { this._normalProfileDraft.physical_work_mode = el.value; });
     });
-    this.querySelectorAll("[data-default-profile-number]").forEach((el) => {
+    root.querySelectorAll("[data-default-profile-number]").forEach((el) => {
       const saveDraft = () => { this._defaultSettingsDraft[el.dataset.defaultProfileNumber] = el.value; };
       el.addEventListener("input", saveDraft);
       el.addEventListener("change", saveDraft);
     });
-    this.querySelectorAll("[data-action='select-all']").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-action='select-all']").forEach((el) => el.addEventListener("click", () => {
       slots.forEach(([key]) => this._selectedSlots.add(key));
       this._selectionMode = true;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-action='clear-selected']").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-action='clear-selected']").forEach((el) => el.addEventListener("click", () => {
       this._selectedSlots.clear();
-      this.render();
+      this.renderDialogOnly();
     }));
     const saveAiValue = (el) => {
       const settings = this.aiSettings();
@@ -4560,57 +4696,57 @@ class DeyeEnergyManagerCard extends HTMLElement {
       }
       this.saveAiSettings(settings);
     };
-    this.querySelectorAll("[data-ai-setting]").forEach((el) => {
+    root.querySelectorAll("[data-ai-setting]").forEach((el) => {
       el.addEventListener("change", () => saveAiValue(el));
       if (el.tagName !== "SELECT" && el.type !== "checkbox") {
         el.addEventListener("input", () => saveAiValue(el));
       }
     });
-    this.querySelectorAll("[data-clear-ai-history]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-clear-ai-history]").forEach((el) => el.addEventListener("click", () => {
       this.clearAiHistory();
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-history-filter]").forEach((el) => el.addEventListener("change", () => {
+    root.querySelectorAll("[data-history-filter]").forEach((el) => el.addEventListener("change", () => {
       this._historyFilters = { ...(this._historyFilters || {}), [el.dataset.historyFilter]: el.value };
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-export-history]").forEach((el) => el.addEventListener("click", () => this.exportHistory(el.dataset.exportHistory)));
-    this.querySelectorAll("[data-export-monthly]").forEach((el) => el.addEventListener("click", () => this.exportMonthlyReport()));
-    this.querySelectorAll("[data-rate-history]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-export-history]").forEach((el) => el.addEventListener("click", () => this.exportHistory(el.dataset.exportHistory)));
+    root.querySelectorAll("[data-export-monthly]").forEach((el) => el.addEventListener("click", () => this.exportMonthlyReport()));
+    root.querySelectorAll("[data-rate-history]").forEach((el) => el.addEventListener("click", () => {
       const timestamp = Number(el.dataset.rateHistory);
       const rating = Number(el.dataset.rating);
       this.callService("deye_energy_manager", "rate_ai_analysis", { timestamp, rating });
       const item = this.aiHistory().find((entry) => Number(entry.timestamp) === timestamp);
       if (item) item.rating = rating;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-clear-all-history]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-clear-all-history]").forEach((el) => el.addEventListener("click", () => {
       if (!window.confirm("Usunąć historię sugestii, dane uczenia i porównania Solcast? Tej operacji nie można cofnąć.")) return;
       this._aiHistoryCache = [];
       this.callService("deye_energy_manager", "clear_history", {});
       try { localStorage.removeItem("deye_energy_manager_ai_history_v073"); } catch (_err) { /* ignored */ }
       this.render();
     }));
-    this.querySelectorAll("[data-resume-manager]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-resume-manager]").forEach((el) => el.addEventListener("click", () => {
       if (window.confirm("W\u0142\u0105czy\u0107 Manager i harmonogram? Nie w\u0142\u0105czy to harmonogramu \u0142adowania z sieci.")) this.resumeManager();
     }));
-    this.querySelectorAll("[data-system-defaults]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-system-defaults]").forEach((el) => el.addEventListener("click", () => {
       if (window.confirm("Zatrzymać managera i zastosować ustawienia domyślne?")) this.restoreDefaults();
     }));
-    this.querySelectorAll("[data-refresh-entities]").forEach((el) => el.addEventListener("click", () => this.refreshConfiguredEntities()));
-    this.querySelectorAll("[data-export-config]").forEach((el) => el.addEventListener("click", () => this.exportConfiguration()));
-    this.querySelectorAll("[data-create-backup]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-refresh-entities]").forEach((el) => el.addEventListener("click", () => this.refreshConfiguredEntities()));
+    root.querySelectorAll("[data-export-config]").forEach((el) => el.addEventListener("click", () => this.exportConfiguration()));
+    root.querySelectorAll("[data-create-backup]").forEach((el) => el.addEventListener("click", () => {
       try { this.createConfigurationBackup(); } catch (error) { window.alert(`Nie udało się utworzyć kopii: ${error.message}`); }
     }));
-    this.querySelectorAll("[data-restore-backup]").forEach((el) => el.addEventListener("click", async () => {
+    root.querySelectorAll("[data-restore-backup]").forEach((el) => el.addEventListener("click", async () => {
       if (!window.confirm("Przywrócić ostatnią lokalną kopię zapasową? Bieżące ustawienia zostaną zastąpione.")) return;
       try { await this.restoreConfigurationBackup(); window.alert("Kopia zapasowa została przywrócona."); } catch (error) { window.alert(error.message); }
     }));
-    this.querySelectorAll("[data-restore-defaults]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-restore-defaults]").forEach((el) => el.addEventListener("click", () => {
       if (window.confirm("Przywrócić ustawienia domyślne i zatrzymać harmonogram?")) this.restoreDefaults();
     }));
-    this.querySelectorAll("[data-import-config-open]").forEach((el) => el.addEventListener("click", () => this.querySelector("[data-import-config]")?.click()));
-    this.querySelectorAll("[data-import-config]").forEach((el) => el.addEventListener("change", async () => {
+    root.querySelectorAll("[data-import-config-open]").forEach((el) => el.addEventListener("click", () => root.querySelector("[data-import-config]")?.click()));
+    root.querySelectorAll("[data-import-config]").forEach((el) => el.addEventListener("change", async () => {
       const file = el.files?.[0];
       if (!file) return;
       try {
@@ -4624,41 +4760,41 @@ class DeyeEnergyManagerCard extends HTMLElement {
         el.value = "";
       }
     }));
-    this.querySelectorAll("[data-apply-ai-proposal]").forEach((el) => el.addEventListener("click", () => this.applyAiProposal(slots)));
-    this.querySelectorAll("[data-ai-proposal-slot]").forEach((el) => el.addEventListener("change", () => {
+    root.querySelectorAll("[data-apply-ai-proposal]").forEach((el) => el.addEventListener("click", () => this.applyAiProposal(slots)));
+    root.querySelectorAll("[data-ai-proposal-slot]").forEach((el) => el.addEventListener("change", () => {
       if (!(this._aiProposalSelection instanceof Set)) this._aiProposalSelection = new Set();
       if (el.checked) this._aiProposalSelection.add(el.dataset.aiProposalSlot);
       else this._aiProposalSelection.delete(el.dataset.aiProposalSlot);
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-select-proposed]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-select-proposed]").forEach((el) => el.addEventListener("click", () => {
       this._aiProposalSelection = new Set(this.aiProposal(slots).rows.filter((row) => row.enabled).map((row) => row.key));
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-clear-proposal]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-clear-proposal]").forEach((el) => el.addEventListener("click", () => {
       this._aiProposalSelection = new Set();
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-view]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-view]").forEach((el) => el.addEventListener("click", () => {
       this._aiView = el.dataset.aiView;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-day]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-day]").forEach((el) => el.addEventListener("click", () => {
       this._aiDay = el.dataset.aiDay;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-weather-mode]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-weather-mode]").forEach((el) => el.addEventListener("click", () => {
       this._aiWeatherMode = el.dataset.aiWeatherMode === "hourly" ? "hourly" : "daily";
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-chart-series]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-chart-series]").forEach((el) => el.addEventListener("click", () => {
       if (!(this._aiChartHiddenSeries instanceof Set)) this._aiChartHiddenSeries = new Set();
       const series = el.dataset.aiChartSeries;
       if (this._aiChartHiddenSeries.has(series)) this._aiChartHiddenSeries.delete(series);
       else this._aiChartHiddenSeries.add(series);
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-chart-point]").forEach((el) => {
+    root.querySelectorAll("[data-ai-chart-point]").forEach((el) => {
       const show = (event, pin = false) => {
         const card = el.closest("[data-ai-chart]");
         if (!card) return;
@@ -4704,31 +4840,41 @@ class DeyeEnergyManagerCard extends HTMLElement {
       el.addEventListener("pointerleave", hide);
       el.addEventListener("click", (event) => { event.stopPropagation(); show(event, true); });
     });
-    this.querySelectorAll("[data-ai-toggle-24]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-toggle-24]").forEach((el) => el.addEventListener("click", () => {
       this._aiShow24 = !this._aiShow24;
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-plan-row]").forEach((el) => el.addEventListener("change", () => {
+    root.querySelectorAll("[data-ai-plan-row]").forEach((el) => el.addEventListener("change", () => {
       const selected = this.aiSelection();
       if (el.checked) selected.add(el.dataset.aiPlanRow);
       else selected.delete(el.dataset.aiPlanRow);
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-ai-toggle-selection]").forEach((el) => el.addEventListener("click", () => {
+    root.querySelectorAll("[data-ai-toggle-selection]").forEach((el) => el.addEventListener("click", () => {
       const planner = this.aiPlannerData(slots);
       const proposedKeys = this.aiRowsForDay(planner).filter((row) => row.proposed).map((row) => this.aiSlotKey(row.hour));
       const selected = this.aiSelection();
       const allSelected = proposedKeys.length && proposedKeys.every((key) => selected.has(key));
       if (allSelected) selected.clear();
       else proposedKeys.forEach((key) => selected.add(key));
-      this.render();
+      this.renderDialogOnly();
     }));
-    this.querySelectorAll("[data-apply-ai-day]").forEach((el) => el.addEventListener("click", () => this.applyAiDayPlan(slots)));
-    this.querySelectorAll("[data-cancel-future-plan]").forEach((el) => el.addEventListener("click", async () => {
+    root.querySelectorAll("[data-apply-ai-day]").forEach((el) => el.addEventListener("click", () => this.applyAiDayPlan(slots)));
+    root.querySelectorAll("[data-cancel-future-plan]").forEach((el) => el.addEventListener("click", async () => {
       if (!window.confirm("Anulować zapisany plan na jutro?")) return;
       await this.callService("deye_energy_manager", "cancel_future_plan", {});
       this.render();
     }));
+  }
+
+  renderDialogOnly() {
+    if (!this._lastSlots) return;
+    const host = this.querySelector(".dialog-host");
+    if (!host) return;
+    this.captureScrollPositions();
+    host.innerHTML = this.renderDialog(this._lastSlots, this._lastTouStarts);
+    this.bindDialogControls(this._lastSlots);
+    this.restoreScrollPositions();
   }
 
   render() {

@@ -23,13 +23,13 @@ Automatyczne mapowanie niczego nie zapisuje bez końcowego potwierdzenia. Kreato
 Dodaj zasób JavaScript:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=19
+/deye_energy_manager/deye-energy-manager-card.js?v=20
 ```
 
 Przy instalacji ręcznej użyj:
 
 ```text
-/local/deye-energy-manager-card.js?v=19
+/local/deye-energy-manager-card.js?v=20
 ```
 
 Następnie dodaj kartę ręczną:
@@ -38,11 +38,48 @@ Następnie dodaj kartę ręczną:
 type: custom:deye-energy-manager-card
 ```
 
+### Opcjonalna konfiguracja układu
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: auto
+  dashboard_width: 1184
+  center_dashboard: true
+  fit_to_width: false
+  allow_horizontal_scroll: false
+  grid_columns: null
+  grid_gap: 16
+  section: null
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: true
+    sales_stats: true
+  mobile:
+    mode: auto
+    preserve_desktop_layout: false
+    fit_to_width: true
+    allow_horizontal_scroll: false
+    grid_columns: 1
+    mobile_breakpoint: 768
+  prices_ratio: 0.85
+  buy_prices_ratio: 0.85
+  solcast_ratio: 1.30
+  energy_tile_width: 230
+  energy_tile_gap: 28
+  inverter_scale: 1
+  flow_animation_speed: 6
+```
+
+Wszystkie pola są opcjonalne; nieprawidłowe wartości są zastępowane domyślnymi. Przykład pojedynczej sekcji: `layout_mode: single`, `section: schedule`. Przykład siatki: `layout_mode: grid`, `grid_columns: 2`.
+
 ## Aktualizacja z 0.7.5
 
 1. Wykonaj kopię konfiguracji w panelu **System i diagnostyka**.
 2. Zaktualizuj integrację i uruchom ponownie Home Assistant.
-3. Zmień parametr cache zasobu na `v=19`.
+3. Zmień parametr cache zasobu na `v=20`.
 4. Odśwież przeglądarkę przez `Ctrl + F5`.
 5. Sprawdź mapowanie encji w opcjach integracji.
 6. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**, wybierz operatora i taryfę, a następnie użyj przycisku **Zapisz ustawienia taryfy**.
@@ -74,7 +111,7 @@ Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_ho
 
 Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
 
-Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=19`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=19`.
+Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=20`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=20`.
 
 Plan na jutro wymaga ręcznego zaznaczenia godzin i potwierdzenia przyciskiem **Zaplanuj wybrane na jutro**. Plan jest zapisany z datą i pozostaje oczekujący po restarcie Home Assistant. W dniu wykonania integracja sprawdza encje sterujące oraz tylko SOC i ceny wymagane przez zatwierdzony slot `Selling First`, po czym stosuje dokładnie zaakceptowane pozycje. Nie tworzy planu zastępczego. W razie błędu plan jest oznaczony jako nieudany, a falownik otrzymuje pełne **Ustawienia domyślne** 1:1.
 
