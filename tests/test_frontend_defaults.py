@@ -138,16 +138,52 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_energy_flow_panel_has_scaling_logic(self):
         method = extract_method(self.sources[0], "scaleFlowPanel() {")
-        self.assertIn("baseWidth = 1500", method)
-        self.assertIn("baseHeight = 680", method)
-        self.assertIn("Math.max(available / baseWidth, 0.2)", method)
+        self.assertIn("baseWidth = 1320", method)
+        self.assertIn("baseHeight = 570", method)
+        self.assertIn("Math.min(1, Math.max(available / baseWidth, 0.2))", method)
         self.assertIn("scaler.style.transform", method)
         self.assertIn("wrapper.style.height", method)
+
+    def test_energy_flow_panel_matches_reference_2(self):
+        method = extract_method(self.sources[0], "energyFlowPanel()")
+        # No big arrow markers
+        self.assertNotIn("marker-end", method)
+        self.assertNotIn("markerWidth", method)
+        # Segmented lines with moving dots
+        self.assertIn("<animateMotion", method)
+        self.assertIn("repeatCount=\"indefinite\"", method)
+        # Power values next to lines
+        self.assertIn("flow-value-pv", method)
+        self.assertIn("flow-value-bat", method)
+        self.assertIn("flow-value-grid", method)
+        self.assertIn("flow-value-home", method)
+        self.assertIn('data-live="pv-line-value"', method)
+        self.assertIn('data-live="battery-line-value"', method)
+        self.assertIn('data-live="grid-line-value"', method)
+        self.assertIn('data-live="load-line-value"', method)
+        # Centered layout with tiles in correct corners
+        self.assertIn(".flow-tile-pv{grid-column:1;grid-row:1", method)
+        self.assertIn(".flow-tile-grid{grid-column:1;grid-row:1", method)
+        self.assertIn(".flow-tile-battery{grid-column:3;grid-row:1", method)
+        self.assertIn(".flow-tile-home{grid-column:3;grid-row:1", method)
+        self.assertIn(".flow-inverter{grid-column:2;grid-row:1", method)
+        # New SVG icons
+        self.assertIn('this.iconSvg("pv2")', method)
+        self.assertIn('this.iconSvg("grid2")', method)
+        self.assertIn('this.iconSvg("battery2")', method)
+        self.assertIn('this.iconSvg("home2")', method)
+        # Bottom bar separators and 4 sections
+        self.assertIn(".flow-status-tile{", method)
+        self.assertIn("border-right", method)
+        self.assertIn("grid-template-columns:repeat(4,1fr)", method)
+        # External container is centered and capped
+        self.assertIn("max-width:1320px", method)
+        self.assertIn("margin:0 auto", method)
 
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=14", source)
+            self.assertIn("deye-energy-manager-card.js?v=16", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
             self.assertNotIn("deye-energy-manager-card.js?v=08", source)

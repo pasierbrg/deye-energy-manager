@@ -59,6 +59,20 @@
 - Wprowadzono skalowanie całego panelu **Status energii** względem bazowej szerokości 1500 px: panel zachowuje stały układ desktopowy na każdej szerokości (1920, 1366, 768, 430, 390, 320 px) i jest proporcjonalnie pomniejszany bez przechodzenia na układ pionowy, bez ukrywania linii ani legendy.
 - Rewizja karty JavaScript: `v=14`.
 
+### Etap 5.3.2 — dopasowanie 1:1 do zdjęcia referencyjnego nr 2
+
+- Zmniejszono bazowy rozmiar panelu do **1320 × 570 px**; panel nie jest już automatycznie powiększany powyżej skali 1.
+- Wprowadzono skalowanie `scale = Math.min(1, availableWidth / 1320)` z zachowaniem stałego układu desktopowego na komputerze, tablecie i telefonie.
+- Wyśrodkowano panel (`max-width: 1320px`, `margin: 0 auto`) i dynamicznie dostosowano wysokość kontenera do `570 × scale`.
+- Zastąpiono linie przepływu nowymi, gładkimi, symetrycznymi łukami bez dużych grotów; dodano małe przesuwające się kropki na aktywnych liniach.
+- Dodano wartości mocy przy liniach przepływu (PV, bateria, sieć, dom) w kolorach odpowiednich linii.
+- Narysowano nowe ikony SVG dla kafli: PV (słońce + panele), Sieć (słup energetyczny), Bateria (zielona bateria z błyskawicą), Dom (niebieski kontur domu).
+- Poprawiono wygląd centralnego falownika Deye (jasna obudowa, zaokrąglone rogi, niebieski obrys, czarny ekran, trzy zielone kontrolki, cień).
+- Uporządkowano środek panelu: odległości, długości linii, położenie legendy i wartości mocy.
+- Dolny pasek z czterema sekcjami otrzymał pionowe separatory, większe ikony i wyraźniejszy podział.
+- Usunięto wszystkie media queries zmieniające układ panelu na pionowy lub ukrywające linie.
+- Rewizja karty JavaScript: `v=16`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.
