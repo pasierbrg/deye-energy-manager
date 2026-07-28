@@ -99,6 +99,16 @@
 - Naprawiono kafelek **Tryb Deye** — wyświetla oryginalną fizyczną wartość z `select.deye_inverter_system_work_mode` (np. `Selling First`, `Zero Export To Load`, `Zero Export To CT`), bez tłumaczenia na tryb managera.
 - Rewizja karty JavaScript: `v=18`.
 
+### Etap 5.3.5 — poprawki dialogów i wyrównania sekcji
+
+- Przeniesiono overlay/dialogi poza `.dashboard-scaler`, dzięki czemu `position: fixed; inset: 0` odnosi się do viewportu, a nie do przeskalowanego kontenera.
+- Dialogi nie są już skalowane razem z dashboardem i otwierają się na środku aktualnie widocznego ekranu.
+- Dodano jawne zapisywanie pozycji przewijania strony przed otwarciem dialogu i przywracanie jej po zamknięciu.
+- Wyrównano zewnętrzne krawędzie wszystkich głównych sekcji dashboardu: **Status energii**, **Ceny sprzedaży/zakupu**, **Prognoza Solcast**, **Harmonogram pracy**, **Statystyki sprzedaży**.
+- Zmieniono proporcje kolumn w wierszu informacyjnym na `0.85fr 0.85fr 1.30fr`, zwężając ceny i poszerzając Solcast.
+- Dostosowano wewnętrzne elementy prognozy Solcast, aby wyeliminować poziome przewijanie na komputerze.
+- Rewizja karty JavaScript: `v=19`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

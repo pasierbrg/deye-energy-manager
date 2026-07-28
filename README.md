@@ -141,7 +141,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=18
+/deye_energy_manager/deye-energy-manager-card.js?v=19
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -153,10 +153,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=18
+/local/deye-energy-manager-card.js?v=19
 ```
 
-Po podmianie pliku karty ustaw parametr `v=18`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `18` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=19`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `19` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
