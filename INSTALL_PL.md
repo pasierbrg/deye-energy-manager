@@ -38,13 +38,23 @@ Następnie dodaj kartę ręczną:
 type: custom:deye-energy-manager-card
 ```
 
-### Opcjonalna konfiguracja układu
+### Konfiguracja rozmiaru i układu karty
+
+W edytorze karty Lovelace dodaj sekcję `layout:` bezpośrednio pod `type: custom:deye-energy-manager-card`. Wszystkie pola są opcjonalne; nieprawidłowe wartości są zastępowane domyślnymi.
+
+#### Minimalny przykład
+
+```yaml
+type: custom:deye-energy-manager-card
+```
+
+#### Przykład pełny
 
 ```yaml
 type: custom:deye-energy-manager-card
 layout:
   layout_mode: auto
-  dashboard_width: 1184
+  dashboard_width: 1280
   center_dashboard: true
   fit_to_width: false
   allow_horizontal_scroll: false
@@ -64,16 +74,78 @@ layout:
     allow_horizontal_scroll: false
     grid_columns: 1
     mobile_breakpoint: 768
-  prices_ratio: 0.85
-  buy_prices_ratio: 0.85
-  solcast_ratio: 1.30
+  prices_ratio: 0.80
+  buy_prices_ratio: 0.80
+  solcast_ratio: 1.40
   energy_tile_width: 230
   energy_tile_gap: 28
   inverter_scale: 1
   flow_animation_speed: 6
 ```
 
-Wszystkie pola są opcjonalne; nieprawidłowe wartości są zastępowane domyślnymi. Przykład pojedynczej sekcji: `layout_mode: single`, `section: schedule`. Przykład siatki: `layout_mode: grid`, `grid_columns: 2`.
+#### Telefon (jedna kolumna, brak przewijania poziomego)
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 1
+  mobile:
+    mode: grid
+    grid_columns: 1
+    fit_to_width: true
+```
+
+#### Pojedynczy panel
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: single
+  section: schedule
+```
+
+#### Układ grid
+
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 2
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: true
+    sales_stats: true
+```
+
+#### Ważne uwagi
+
+- `layout_mode: fit` nie skaluje proporcjonalnie całego dashboardu. Włącza tylko dopasowanie zewnętrznego kontenera do szerokości karty przy zachowaniu wewnętrznego układu sekcji.
+- `max_scale` i `min_scale` są obecnie zarezerwowane. Są wczytywane przez `layoutConfig()`, ale **nie wpływają na renderowanie**.
+
+#### Zmiana wersji zasobu i odświeżenie cache
+
+Po każdej aktualizacji karty ustaw w zasobie JavaScript parametr `v=20`:
+
+```text
+/deye_energy_manager/deye-energy-manager-card.js?v=20
+```
+
+jeśli korzystasz z karty dostarczanej przez integrację, albo:
+
+```text
+/local/deye-energy-manager-card.js?v=20
+```
+
+jeśli skopiowałeś plik ręcznie do `/config/www/`.
+
+Następnie w Home Assistant:
+1. przeładuj zasoby Lovelace (trzy kropki w prawym górnym rogu dashboardu → **Odśwież**),
+2. wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5` lub `Cmd + Shift + R`).
+
+Błędne wartości w konfiguracji YAML są automatycznie zastępowane bezpiecznymi domyślnymi.
 
 ## Aktualizacja z 0.7.5
 

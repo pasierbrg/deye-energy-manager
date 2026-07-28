@@ -105,17 +105,37 @@
 - Dialogi nie są już skalowane razem z dashboardem i otwierają się na środku aktualnie widocznego ekranu.
 - Dodano jawne zapisywanie pozycji przewijania strony przed otwarciem dialogu i przywracanie jej po zamknięciu.
 - Wyrównano zewnętrzne krawędzie wszystkich głównych sekcji dashboardu: **Status energii**, **Ceny sprzedaży/zakupu**, **Prognoza Solcast**, **Harmonogram pracy**, **Statystyki sprzedaży**.
-- Zmieniono proporcje kolumn w wierszu informacyjnym na `0.85fr 0.85fr 1.30fr`, zwężając ceny i poszerzając Solcast.
+- Zmieniono proporcje kolumn w wierszu informacyjnym na `0.80fr 0.80fr 1.40fr`, zwężając ceny i poszerzając Solcast.
 - Dostosowano wewnętrzne elementy prognozy Solcast, aby wyeliminować poziome przewijanie na komputerze.
 - Rewizja karty JavaScript: `v=19`.
 
 ### Etap 5.3.6 — konfigurowalny układ YAML i powrót do stabilnego skalowania (v=20)
 
-- Przywrócono stabilny układ znany z rewizji v=17: brak wspólnego skalowania całego dashboardu, dialogi renderowane poza skalowanym kontenerem w osobnym hoście `.dialog-host`.
-- Energia (Status energii) nadal korzysta z własnego skalowania `.flow-wrapper`/`.flow-scaler` opartego na szerokości 1116 px.
-- Dodano konfigurowalny układ YAML (`config.layout`) z opcjami: `layout_mode`, `dashboard_width`, `max_scale`, `min_scale`, `center_dashboard`, `fit_to_width`, `allow_horizontal_scroll`, `grid_columns`, `grid_gap`, `section`, `sections`, `mobile`, `prices_ratio`, `buy_prices_ratio`, `solcast_ratio`, `energy_tile_width`, `energy_tile_gap`, `inverter_scale`, `flow_animation_speed`.
-- Dialogi są teraz aktualizowane niezależnie od dashboardu przez `renderDialogOnly()`, co zachowuje focus i pozycję przewijania podczas przełączania zakładek.
-- Zachowano dobre zmiany z v18/v19: nowe ikony, zwężone kafle, brak wiersza Razem, kafel Sprzedano dzisiaj, surowy Tryb Deye, pełne odświeżanie, animacje przepływów, brak legendy/wartości nad liniami, wyrównane sekcje i proporcje 0.85/0.85/1.30.
+- Przywrócono stabilny układ znany z rewizji v=17:
+  - brak wspólnego skalowania całego dashboardu;
+  - dialogi renderowane poza skalowanym kontenerem w osobnym hoście `.dialog-host`;
+  - brak migotania okien i niechcianego przeskakiwania scrollu.
+- Rozdzielono renderowanie dashboardu i dialogów:
+  - `renderDialogOnly()` aktualizuje wyłącznie treść dialogu bez pełnego rerenderu całej karty;
+  - `bindDashboardControls()` i `bindDialogControls()` obsługują osobno zdarzenia dashboardu i okien modalnych;
+  - dialogi zachowują focus i pozycję przewijania podczas przełączania zakładek.
+- Dodano konfigurowalny układ YAML (`config.layout`) z pełną walidacją i domyślnymi wartościami:
+  - tryby `layout_mode`: `auto`, `full`, `section`, `single`, `grid`, `fit`;
+  - szerokość dashboardu `dashboard_width` (domyślnie 1280 px);
+  - widoczność sekcji `sections` oraz wyboru pojedynczej sekcji `section`;
+  - ustawienia mobilne `mobile` z własnym breakpointem, trybem, przewijaniem i liczbą kolumn;
+  - proporcje górnego rzędu informacyjnego: `prices_ratio` (0.80), `buy_prices_ratio` (0.80), `solcast_ratio` (1.40);
+  - parametry panelu Status energii: `energy_tile_width` (230), `energy_tile_gap` (28), `inverter_scale` (1), `flow_animation_speed` (6);
+  - opcje `max_scale` i `min_scale` są odczytywane przez `layoutConfig()`, ale obecnie nie wpływają na renderowanie (zarezerwowane na przyszłość).
+- Panel **Status energii** został całkowicie sparametryzowany:
+  - szerokość kafli, odstępy, skala invertera oraz prędkość animacji przepływów pochodzą z `effectiveLayout()`;
+  - ścieżki SVG przeliczane są dynamicznie dla każdej kombinacji `energy_tile_width`, `energy_tile_gap` i `inverter_scale`;
+  - `scaleFlowPanel()` odczytuje rzeczywistą bazową szerokość z atrybutu `data-base-width`;
+  - `updateFlowLines()` odczytuje geometrię z atrybutów `data-tile-width`, `data-tile-gap`, `data-inverter-width`.
+- Zachowano dobre zmiany z v18/v19: nowe ikony SVG, zwężone kafle 230 px, brak wiersza Razem, kafel Sprzedano dzisiaj, surowy Tryb Deye, pełne odświeżanie co 5 s, płynne animacje przepływów, brak legendy/wartości nad liniami, wyrównane sekcje i proporcje kolumn 0.80/0.80/1.40.
+- Zaktualizowano dokumentację: `README.md`, `INSTALL_PL.md`, `dashboard/energy_manager.yaml` i `CHANGELOG.md` z pełnym opisem konfiguracji układu i przykładami.
+- Dodano testy regresji dla layoutu, dialog host, `renderDialogOnly`, dynamicznej geometrii panelu energii oraz synchronizacji kopii karty JS.
+- Testy: `197/197` jednostek przechodzi; `node --check` poprawne dla obu kopii JS; obie kopie są identyczne.
 - Rewizja karty JavaScript: `v=20`.
 
 ### Bezpieczeństwo

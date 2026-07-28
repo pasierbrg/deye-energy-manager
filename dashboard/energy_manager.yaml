@@ -5,3 +5,49 @@ views:
     icon: mdi:solar-power-variant
     cards:
       - type: custom:deye-energy-manager-card
+        # Optional layout configuration (v=20)
+        # Remove the `layout:` block entirely to use the defaults.
+        layout:
+          # Layout mode:
+          #   auto   - full dashboard on desktop, auto-adjusted on mobile
+          #   full   - dashboard always stretches to the card width
+          #   section - show a single selected section (see `section` below)
+          #   single - show only the energy-flow panel
+          #   grid   - dashboard as a 2-column grid of sections
+          #   fit    - full dashboard scaled to fit the card width
+          layout_mode: auto
+
+          # Section to show when layout_mode: section
+          # allowed: status_energy, prices, solcast, schedule, sales_stats, ai, settings
+          # section: status_energy
+
+          # Section visibility toggles (sections not listed are hidden)
+          sections:
+            status_energy: true
+            prices: true
+            solcast: true
+            schedule: true
+            sales_stats: true
+
+          # Dashboard width used in auto/fit/section modes (px)
+          dashboard_width: 1280
+
+          # Mobile overrides
+          mobile:
+            mode: auto
+            preserve_desktop_layout: false
+            fit_to_width: true
+            allow_horizontal_scroll: false
+            grid_columns: 1
+            mobile_breakpoint: 768
+
+          # Energy-flow panel sizing
+          energy_tile_width: 230
+          energy_tile_gap: 28
+          inverter_scale: 1
+          flow_animation_speed: 6
+
+          # Relative chart heights
+          prices_ratio: 0.80
+          buy_prices_ratio: 0.80
+          solcast_ratio: 1.40

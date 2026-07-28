@@ -57,7 +57,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     };
     const defaults = {
       layout_mode: "auto",
-      dashboard_width: 1184,
+      dashboard_width: 1280,
       max_scale: 1,
       min_scale: 0.2,
       center_dashboard: true,
@@ -81,9 +81,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
         grid_columns: 1,
         mobile_breakpoint: 768,
       },
-      prices_ratio: 0.85,
-      buy_prices_ratio: 0.85,
-      solcast_ratio: 1.30,
+      prices_ratio: 0.80,
+      buy_prices_ratio: 0.80,
+      solcast_ratio: 1.40,
       energy_tile_width: 230,
       energy_tile_gap: 28,
       inverter_scale: 1,
@@ -125,6 +125,35 @@ class DeyeEnergyManagerCard extends HTMLElement {
       inverter_scale: asNumber(cfg.inverter_scale, defaults.inverter_scale, 0.5, 2),
       flow_animation_speed: asNumber(cfg.flow_animation_speed, defaults.flow_animation_speed, 1, 20),
     };
+  }
+
+  isMobileLayout(layout) {
+    const width = window.innerWidth || 0;
+    return width > 0 && width <= layout.mobile.mobile_breakpoint;
+  }
+
+  effectiveLayout() {
+    const layout = this.layoutConfig();
+    const isMobile = this.isMobileLayout(layout);
+    if (isMobile && !layout.mobile.preserve_desktop_layout) {
+      const mobileMode = layout.mobile.mode;
+      if (mobileMode !== "auto") {
+        layout.layout_mode = mobileMode;
+      }
+      layout.fit_to_width = layout.mobile.fit_to_width;
+      layout.allow_horizontal_scroll = layout.mobile.allow_horizontal_scroll;
+      if (layout.mobile.grid_columns !== null && layout.mobile.grid_columns !== undefined) {
+        layout.grid_columns = layout.mobile.grid_columns;
+      }
+    }
+    if (layout.layout_mode === "full") {
+      layout.fit_to_width = true;
+      layout.center_dashboard = false;
+    } else if (layout.layout_mode === "fit") {
+      layout.fit_to_width = true;
+      layout.center_dashboard = true;
+    }
+    return layout;
   }
 
   connectedCallback() {
@@ -2269,6 +2298,21 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const currentMode = this.state(this.entity("select", "work_mode_select"), "");
     const currentModeMeta = this.modeMeta(currentMode, true);
     const managerModeClass = this.modeTextClass(modeText);
+    const layout = this.effectiveLayout();
+    const tileWidth = layout.energy_tile_width;
+    const tileGap = layout.energy_tile_gap;
+    const inverterScale = layout.inverter_scale;
+    const flowSpeed = layout.flow_animation_speed;
+    const inverterWidth = Math.round(640 * inverterScale);
+    const boardWidth = tileWidth * 2 + inverterWidth + tileGap * 2;
+    const panelWidth = boardWidth + 16;
+    const inverterLeft = tileWidth + tileGap;
+    const inverterRight = inverterLeft + inverterWidth;
+    const inverterCenterX = inverterLeft + inverterWidth / 2;
+    const leftCenterX = tileWidth / 2;
+    const rightCenterX = inverterRight + tileGap + tileWidth / 2;
+    const flowDuration = Math.max(0.5, 18 / flowSpeed).toFixed(2);
+    const flowOffset = Math.round(220 * flowDuration / 3);
 
     const st = (key, fallback = null) => this.asNumber(this.state(this.entity("sensor", key)), fallback);
     const pvPower = st("pv_power", 0) || 0;
@@ -2331,10 +2375,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <div class="flow-phase-volt">${volt}</div>
       </div>`;
 
-    const pvPath = "M230,110 C350,110 450,160 475,220";
-    const batPath = active.batteryCharge ? "M625,220 C650,160 750,110 870,110" : "M870,110 C750,110 650,160 625,220";
-    const gridPath = active.gridExport ? "M475,220 C450,280 350,330 230,330" : "M230,330 C350,330 450,280 475,220";
-    const homePath = "M625,220 C650,280 750,330 870,330";
+    const pvPath = `M${leftCenterX},110 C${leftCenterX + 120},110 ${inverterLeft - 25},160 ${inverterLeft},220`;
+    const batPath = active.batteryCharge
+      ? `M${inverterRight},220 C${inverterRight + 25},160 ${rightCenterX - 120},110 ${rightCenterX},110`
+      : `M${rightCenterX},110 C${rightCenterX - 120},110 ${inverterRight + 25},160 ${inverterRight},220`;
+    const gridPath = active.gridExport
+      ? `M${inverterLeft},220 C${inverterLeft - 25},280 ${leftCenterX + 120},330 ${leftCenterX},330`
+      : `M${leftCenterX},330 C${leftCenterX + 120},330 ${inverterLeft - 25},280 ${inverterLeft},220`;
+    const homePath = `M${inverterRight},220 C${inverterRight + 25},280 ${rightCenterX - 120},330 ${rightCenterX},330`;
 
     const lineClass = (isActive) => isActive ? "flow-line flow-active" : "flow-line";
 
@@ -2360,11 +2408,11 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <section class="panel status-panel">
         <h2 class="panel-title">${this.iconSvg("chart")} Status energii</h2>
         <style>
-           .flow-wrapper{max-width:1116px;margin:0 auto;overflow:hidden;position:relative}
-           .flow-scaler{width:1116px;transform-origin:top left;transform:scale(1);line-height:1}
-           .energy-flow-panel{width:1116px;height:540px;padding:8px;box-sizing:border-box;position:relative}
-           .flow-board{position:relative;display:grid;grid-template-columns:230px 640px 230px;grid-template-rows:420px;gap:0;align-items:center;justify-items:center;width:1100px;height:420px}
-          .flow-tile{width:230px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
+.flow-wrapper{max-width:${panelWidth}px;margin:0 auto;overflow:hidden;position:relative}
+.flow-scaler{width:${panelWidth}px;transform-origin:top left;transform:scale(1);line-height:1}
+           .energy-flow-panel{width:${panelWidth}px;height:540px;padding:8px;box-sizing:border-box;position:relative}
+           .flow-board{position:relative;display:grid;grid-template-columns:${tileWidth}px ${inverterWidth}px ${tileWidth}px;grid-template-rows:420px;gap:0 ${tileGap}px;align-items:center;justify-items:center;width:${boardWidth}px;height:420px}
+          .flow-tile{width:${tileWidth}px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
           .flow-tile-battery{grid-column:3;grid-row:1;justify-self:end;align-self:start}
@@ -2402,9 +2450,9 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .flow-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;overflow:visible;pointer-events:none}
           .flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none}
           .flow-line-bg{stroke:rgba(255,255,255,.08);stroke-width:6}
-          .flow-active{stroke-dasharray:4 20;animation:flowDash 3s linear infinite}
-          @keyframes flowDash{to{stroke-dashoffset:-220}}
-          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:1100px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
+.flow-active{stroke-dasharray:4 20;animation:flowDash ${flowDuration}s linear infinite}
+          @keyframes flowDash{to{stroke-dashoffset:-${flowOffset}}}
+          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:${boardWidth}px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
           .flow-status-tile{display:flex;align-items:center;gap:9px;padding:8px 12px;min-height:58px;box-sizing:border-box;border-right:1px solid rgba(107,157,182,.2)}
           .flow-status-tile:last-child{border-right:0}
           .flow-status-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
@@ -2418,10 +2466,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .mode-normal{color:#4dabf7}
           .mode-charge{color:#f6a619}
           .mode-disabled{color:#b9c9d4}
-          .flow-footer{text-align:center;width:1100px;margin-top:4px;font-size:10px;color:#6b8a9c}
+.flow-footer{text-align:center;width:${boardWidth}px;margin-top:4px;font-size:10px;color:#6b8a9c}
         </style>
         <div class="flow-wrapper">
-          <div class="flow-scaler">
+          <div class="flow-scaler" data-base-width="${panelWidth}" data-tile-width="${tileWidth}" data-tile-gap="${tileGap}" data-inverter-width="${inverterWidth}">
             <div class="energy-flow-panel">
               <div class="flow-board">
                 <div class="flow-tile flow-tile-pv">
@@ -2553,7 +2601,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const wrapper = this.querySelector(".flow-wrapper");
     const scaler = this.querySelector(".flow-scaler");
     if (!wrapper || !scaler) return;
-    const baseWidth = 1116;
+    const baseWidth = parseFloat(scaler.dataset.baseWidth) || 1116;
     const baseHeight = 540;
     const available = wrapper.clientWidth || this.clientWidth || baseWidth;
     const scale = Math.min(1, Math.max(available / baseWidth, 0.2));
@@ -2574,14 +2622,22 @@ class DeyeEnergyManagerCard extends HTMLElement {
     };
     const svg = this.querySelector(".flow-svg");
     if (!svg) return;
-    const pvPath = "M230,110 C350,110 450,160 475,220";
+    const scaler = this.querySelector(".flow-scaler");
+    const tileWidth = parseFloat(scaler?.dataset.tileWidth) || 230;
+    const tileGap = parseFloat(scaler?.dataset.tileGap) || 0;
+    const inverterWidth = parseFloat(scaler?.dataset.inverterWidth) || 640;
+    const inverterLeft = tileWidth + tileGap;
+    const inverterRight = inverterLeft + inverterWidth;
+    const leftCenterX = tileWidth / 2;
+    const rightCenterX = inverterRight + tileGap + tileWidth / 2;
+    const pvPath = `M${leftCenterX},110 C${leftCenterX + 120},110 ${inverterLeft - 25},160 ${inverterLeft},220`;
     const batPath = active.batteryDischarge
-      ? "M870,110 C750,110 650,160 625,220"
-      : "M625,220 C650,160 750,110 870,110";
+      ? `M${inverterRight},220 C${inverterRight + 25},160 ${rightCenterX - 120},110 ${rightCenterX},110`
+      : `M${rightCenterX},110 C${rightCenterX - 120},110 ${inverterRight + 25},160 ${inverterRight},220`;
     const gridPath = active.gridImport
-      ? "M230,330 C350,330 450,280 475,220"
-      : "M475,220 C450,280 350,330 230,330";
-    const homePath = "M625,220 C650,280 750,330 870,330";
+      ? `M${leftCenterX},330 C${leftCenterX + 120},330 ${inverterLeft - 25},280 ${inverterLeft},220`
+      : `M${inverterLeft},220 C${inverterLeft - 25},280 ${leftCenterX + 120},330 ${leftCenterX},330`;
+    const homePath = `M${inverterRight},220 C${inverterRight + 25},280 ${rightCenterX - 120},330 ${rightCenterX},330`;
     const setPath = (key, d, color, isActive) => {
       const path = svg.querySelector(`path[data-flow-line="${key}"]`);
       if (!path) return;
@@ -4303,20 +4359,124 @@ class DeyeEnergyManagerCard extends HTMLElement {
       </tr>`;
     }).join("");
 
-    const layout = this.layoutConfig();
+    const layout = this.effectiveLayout();
     const dashStyle = [];
     dashStyle.push(`max-width:${layout.dashboard_width}px`);
     if (layout.center_dashboard) dashStyle.push("margin:0 auto");
     if (layout.fit_to_width) dashStyle.push("width:100%");
     if (layout.allow_horizontal_scroll) dashStyle.push("overflow-x:auto");
+    if (layout.layout_mode === "section" || layout.layout_mode === "single" || layout.layout_mode === "full" || layout.layout_mode === "fit") {
+      dashStyle.push("grid-template-columns:1fr");
+    } else if (layout.layout_mode === "grid" && layout.grid_columns) {
+      dashStyle.push(`grid-template-columns:repeat(${layout.grid_columns},minmax(0,1fr))`);
+      dashStyle.push(`gap:${layout.grid_gap}px`);
+    }
     const demStyle = dashStyle.join(";");
-    const infoGridStyle = `grid-template-columns:${layout.prices_ratio}fr ${layout.buy_prices_ratio}fr ${layout.solcast_ratio}fr`;
+    const infoGridStyle = layout.layout_mode === "grid" ? "display:contents" : `grid-template-columns:${layout.prices_ratio}fr ${layout.buy_prices_ratio}fr ${layout.solcast_ratio}fr`;
+
+    const isSingle = layout.layout_mode === "single";
+    const showStatus = isSingle ? layout.section === "status_energy" : layout.sections.status_energy;
+    const showPrices = isSingle ? layout.section === "prices" : layout.sections.prices;
+    const showBuyPrices = isSingle ? layout.section === "prices" : layout.sections.prices;
+    const showSolcast = isSingle ? layout.section === "solcast" : layout.sections.solcast;
+    const showSchedule = isSingle ? layout.section === "schedule" : layout.sections.schedule;
+    const showSales = isSingle ? layout.section === "sales_stats" : layout.sections.sales_stats;
+    if (isSingle && ["ai", "settings"].includes(layout.section) && !this._dialog) {
+      this._dialog = { type: layout.section };
+    }
+
+    const statusSection = showStatus ? this.energyFlowPanel() : "";
+    const pricesSection = showPrices ? `
+             <section class="panel price-panel">
+               <h2 class="panel-title">Ceny sprzedaży</h2>
+               <div class="price-summary single">
+                 ${this.stat("Teraz", `${this.formatPrice(this.state(sellPriceToday))} PLN/kWh`, "", "sell-now")}
+               </div>
+               ${this.priceTable(sellPriceToday, sellPriceTomorrow, priceThreshold, true, "sell-prices")}
+             </section>` : "";
+    const buyPricesSection = showBuyPrices ? `
+             <section class="panel price-panel">
+               <h2 class="panel-title">Ceny zakupu</h2>
+               <div class="price-summary single">
+                 ${this.stat("Teraz", `${this.formatPrice(this.state(buyPriceToday))} PLN/kWh`, "", "buy-now")}
+               </div>
+               ${this.priceTable(buyPriceToday, buyPriceTomorrow, 0, false, "buy-prices")}
+             </section>` : "";
+    const solcastSection = showSolcast ? `
+             <section class="panel solcast-panel">
+               <h2 class="panel-title">Prognoza Solcast</h2>
+               <div class="solcast-summary">
+                 ${this.stat("Teraz", this.formatPower(this.state(solcastPower)), "", "solcast-power")}
+                 ${this.stat("Dziś", this.formatEnergy(this.state(solcastToday)), "", "solcast-today")}
+                 ${this.stat("Pozostało", this.formatEnergy(this.state(solcastRemaining)), "", "solcast-remaining")}
+                 ${this.stat("Jutro", this.formatEnergy(this.state(solcastTomorrow)), "", "solcast-tomorrow")}
+                 ${this.stat("Szczyt", this.formatPower(this.state(solcastPeakPower)), "", "solcast-peak-power")}
+                 ${this.stat("Najlepszy dzień", this.bestSolcastDay(solcastEntities), "", "solcast-best-day")}
+               </div>
+               <div data-live-html="solcast-days">${this.solcastDaysChart(solcastEntities)}</div>
+               <div data-live-html="solcast-chart">${this.solcastChart(solcastToday, solcastTomorrow)}</div>
+               <div class="solcast-performance">
+                 ${this.stat("Prognoza na dziś", this.formatEnergy(solcastForecastValue), "", "solcast-performance-forecast")}
+                 ${this.stat("Produkcja rzeczywista", this.formatEnergy(dailyPvValue), "", "solcast-performance-actual")}
+                 ${this.stat("Różnica", this.formatSignedEnergy(solcastDifference), "", "solcast-performance-difference")}
+                 ${this.stat("Realizacja dzisiaj", forecastProgressValue === null ? "brak" : `${forecastProgressValue.toFixed(1)} %`, "", "solcast-performance-progress")}
+                 ${this.stat("Trafność historyczna", solcastAccuracyValue === null ? "brak" : `${solcastAccuracyValue.toFixed(1)} %`, "", "solcast-performance-accuracy")}
+               </div>
+             </section>` : "";
+    const infoGridSection = (showPrices || showBuyPrices || showSolcast) ? `
+           <div class="info-grid" style="${infoGridStyle}">
+            ${pricesSection}
+            ${buyPricesSection}
+            ${solcastSection}
+           </div>` : "";
+    const scheduleSection = showSchedule ? `
+           <section class="schedule-shell">
+             <div class="schedule-head">
+               <div class="schedule-title">
+                 <h2>Harmonogram pracy <button class="title-icon ai" data-open-ai="1" title="Sugestie AI">${this.iconSvg("ai")}</button><span class="save-indicator ${this._saveStatus}" data-save-indicator>${this._saveStatus === "saving" ? this._saveMessage || "Zapisywanie..." : this._saveStatus === "saved" ? this._saveMessage || "Zapisano" : this._saveStatus === "error" ? this._saveMessage : ""}</span></h2>
+                 <p>Kliknij godzinę, aby edytować pojedynczy slot lub zaznacz wiele, aby edytować zbiorczo.</p>
+               </div>
+               <div class="schedule-tools">
+                 <button class="tool-btn ${this._selectionMode ? "active" : ""}" data-toggle-selection="1">${this.iconSvg("check")} Tryb zaznaczania</button>
+                 <button class="tool-btn" data-schedule-select-all="1">${this.iconSvg("copy")} Zaznacz wszystko</button>
+                 <button class="tool-btn" data-schedule-clear="1">${this.iconSvg("close")} Odznacz wszystko</button>
+                 <button class="gear-btn" data-open-settings="1" title="Ustawienia">${this.iconSvg("gear")}</button>
+               </div>
+             </div>
+             <div class="schedule-main ${this._selectionMode ? "selecting" : ""}">
+               <div class="schedule-left">
+                 <div class="mode-legend">${this.modeLegend()}</div>
+                 <div class="schedule-table-card">
+                   <table class="schedule-table">
+                     <colgroup>
+                       <col class="col-check"><col class="col-time"><col class="col-mode"><col class="col-power">
+                       <col class="col-current"><col class="col-current"><col class="col-grid"><col class="col-grid-current">
+                       <col class="col-soc"><col class="col-price"><col class="col-active"><col class="col-action">
+                     </colgroup>
+                     <thead><tr><th class="check-col"></th><th class="time-col">Godz.</th><th>Tryb</th><th>Moc</th><th>Rozł.</th><th>Ład.</th><th>Ładowanie z sieci</th><th>Prąd ładowania z sieci</th><th>SOC</th><th>Cena min.</th><th>Aktywne</th><th>Akcja</th></tr></thead>
+                     <tbody>${scheduleRows}</tbody>
+                   </table>
+                   <div class="schedule-foot">
+                     <span>Zaznaczonych: <strong>${selectedCount} godzin</strong></span>
+                     <div class="foot-actions">
+                       <button data-schedule-clear="1">${this.iconSvg("close")} Odznacz</button>
+                       <button class="primary" data-open-multi="1" ${selectedCount ? "" : "disabled"}>${this.iconSvg("edit")} Edytuj zaznaczone (${selectedCount})</button>
+                       <button data-open-settings="mapping">${this.iconSvg("copy")} Mapowanie Deye</button>
+                     </div>
+                   </div>
+                 </div>
+               </div>
+               ${selectedInfo}
+             </div>
+           </section>` : "";
+    const salesSection = showSales ? `
+           <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>` : "";
 
     this.innerHTML = `
       <ha-card class="theme-schedule-dark">
         <style>
           ha-card{--bg:#020b12;--panel:rgba(9,24,35,.92);--panel2:rgba(13,31,45,.88);--panel3:rgba(16,38,54,.72);--line:rgba(118,166,190,.22);--line2:rgba(80,169,226,.38);--text:#eef7ff;--muted:#9eb8c8;--blue:#159bff;--blue2:#0a6ad8;--green:#7ee22d;--green2:#35d66f;--purple:#bc63ff;--gold:#f6a619;--red:#ff4242;overflow:hidden;background:radial-gradient(circle at 18% 0%,rgba(26,106,164,.22),transparent 34%),linear-gradient(180deg,#020913,#06131c 54%,#050b10);color:var(--text);border:1px solid rgba(101,142,164,.32);box-shadow:0 18px 45px rgba(0,0,0,.35)}
-           .dem-v073{padding:18px;display:grid;gap:16px;margin:0 auto;max-width:1184px;font-family:Roboto,Arial,sans-serif;font-size:14px}.dialog-host{position:relative}
+           .dem-v073{padding:18px;display:grid;gap:16px;margin:0 auto;max-width:1280px;font-family:Roboto,Arial,sans-serif;font-size:14px}.dialog-host{position:relative}
           svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
           button{font:inherit}
            .panel,.schedule-shell,.table-wrap{box-sizing:border-box;border:1px solid rgba(107,157,182,.34);border-radius:10px;background:radial-gradient(circle at 12% 8%,rgba(20,85,130,.16),transparent 32%),linear-gradient(180deg,rgba(5,16,26,.98),rgba(7,21,32,.98));box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 12px 28px rgba(0,0,0,.18)}
@@ -4376,87 +4536,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
              .sales-summary{padding:8px}.sales-chart{min-height:150px}.sales-tables{gap:8px}.sales-table-card h3{font-size:14px;padding:9px}.sales-table-card th,.sales-table-card td{font-size:11px;padding:6px 8px}
               .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}
            }
-         </style>
-          <div class="dem-v073" style="${demStyle}">
-           ${this.energyFlowPanel()}
-           <div class="info-grid" style="${infoGridStyle}">
-            <section class="panel price-panel">
-              <h2 class="panel-title">Ceny sprzedaży</h2>
-              <div class="price-summary single">
-                ${this.stat("Teraz", `${this.formatPrice(this.state(sellPriceToday))} PLN/kWh`, "", "sell-now")}
-              </div>
-              ${this.priceTable(sellPriceToday, sellPriceTomorrow, priceThreshold, true, "sell-prices")}
-            </section>
-            <section class="panel price-panel">
-              <h2 class="panel-title">Ceny zakupu</h2>
-              <div class="price-summary single">
-                ${this.stat("Teraz", `${this.formatPrice(this.state(buyPriceToday))} PLN/kWh`, "", "buy-now")}
-              </div>
-              ${this.priceTable(buyPriceToday, buyPriceTomorrow, 0, false, "buy-prices")}
-            </section>
-            <section class="panel solcast-panel">
-              <h2 class="panel-title">Prognoza Solcast</h2>
-              <div class="solcast-summary">
-                ${this.stat("Teraz", this.formatPower(this.state(solcastPower)), "", "solcast-power")}
-                ${this.stat("Dziś", this.formatEnergy(this.state(solcastToday)), "", "solcast-today")}
-                ${this.stat("Pozostało", this.formatEnergy(this.state(solcastRemaining)), "", "solcast-remaining")}
-                ${this.stat("Jutro", this.formatEnergy(this.state(solcastTomorrow)), "", "solcast-tomorrow")}
-                ${this.stat("Szczyt", this.formatPower(this.state(solcastPeakPower)), "", "solcast-peak-power")}
-                ${this.stat("Najlepszy dzień", this.bestSolcastDay(solcastEntities), "", "solcast-best-day")}
-              </div>
-              <div data-live-html="solcast-days">${this.solcastDaysChart(solcastEntities)}</div>
-              <div data-live-html="solcast-chart">${this.solcastChart(solcastToday, solcastTomorrow)}</div>
-              <div class="solcast-performance">
-                ${this.stat("Prognoza na dziś", this.formatEnergy(solcastForecastValue), "", "solcast-performance-forecast")}
-                ${this.stat("Produkcja rzeczywista", this.formatEnergy(dailyPvValue), "", "solcast-performance-actual")}
-                ${this.stat("Różnica", this.formatSignedEnergy(solcastDifference), "", "solcast-performance-difference")}
-                ${this.stat("Realizacja dzisiaj", forecastProgressValue === null ? "brak" : `${forecastProgressValue.toFixed(1)} %`, "", "solcast-performance-progress")}
-                ${this.stat("Trafność historyczna", solcastAccuracyValue === null ? "brak" : `${solcastAccuracyValue.toFixed(1)} %`, "", "solcast-performance-accuracy")}
-              </div>
-            </section>
+          </style>
+           <div class="dem-v073" style="${demStyle}">
+            ${statusSection}
+            ${infoGridSection}
+            ${scheduleSection}
+            ${salesSection}
           </div>
-          <section class="schedule-shell">
-            <div class="schedule-head">
-              <div class="schedule-title">
-                <h2>Harmonogram pracy <button class="title-icon ai" data-open-ai="1" title="Sugestie AI">${this.iconSvg("ai")}</button><span class="save-indicator ${this._saveStatus}" data-save-indicator>${this._saveStatus === "saving" ? this._saveMessage || "Zapisywanie..." : this._saveStatus === "saved" ? this._saveMessage || "Zapisano" : this._saveStatus === "error" ? this._saveMessage : ""}</span></h2>
-                <p>Kliknij godzinę, aby edytować pojedynczy slot lub zaznacz wiele, aby edytować zbiorczo.</p>
-              </div>
-              <div class="schedule-tools">
-                <button class="tool-btn ${this._selectionMode ? "active" : ""}" data-toggle-selection="1">${this.iconSvg("check")} Tryb zaznaczania</button>
-                <button class="tool-btn" data-schedule-select-all="1">${this.iconSvg("copy")} Zaznacz wszystko</button>
-                <button class="tool-btn" data-schedule-clear="1">${this.iconSvg("close")} Odznacz wszystko</button>
-                <button class="gear-btn" data-open-settings="1" title="Ustawienia">${this.iconSvg("gear")}</button>
-              </div>
-            </div>
-            <div class="schedule-main ${this._selectionMode ? "selecting" : ""}">
-              <div class="schedule-left">
-                <div class="mode-legend">${this.modeLegend()}</div>
-                <div class="schedule-table-card">
-                  <table class="schedule-table">
-                    <colgroup>
-                      <col class="col-check"><col class="col-time"><col class="col-mode"><col class="col-power">
-                      <col class="col-current"><col class="col-current"><col class="col-grid"><col class="col-grid-current">
-                      <col class="col-soc"><col class="col-price"><col class="col-active"><col class="col-action">
-                    </colgroup>
-                    <thead><tr><th class="check-col"></th><th class="time-col">Godz.</th><th>Tryb</th><th>Moc</th><th>Rozł.</th><th>Ład.</th><th>Ładowanie z sieci</th><th>Prąd ładowania z sieci</th><th>SOC</th><th>Cena min.</th><th>Aktywne</th><th>Akcja</th></tr></thead>
-                    <tbody>${scheduleRows}</tbody>
-                  </table>
-                  <div class="schedule-foot">
-                    <span>Zaznaczonych: <strong>${selectedCount} godzin</strong></span>
-                    <div class="foot-actions">
-                      <button data-schedule-clear="1">${this.iconSvg("close")} Odznacz</button>
-                      <button class="primary" data-open-multi="1" ${selectedCount ? "" : "disabled"}>${this.iconSvg("edit")} Edytuj zaznaczone (${selectedCount})</button>
-                      <button data-open-settings="mapping">${this.iconSvg("copy")} Mapowanie Deye</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              ${selectedInfo}
-            </div>
-          </section>
-          <section class="panel sales-panel"><h2 class="panel-title">${this.iconSvg("chart")} Statystyki sprzedaży</h2><div data-live-html="sales-stats">${this.salesStatsPanel()}</div></section>
-        </div>
-        <div class="dialog-host">${this.renderDialog(slots, touStarts)}</div>
+          <div class="dialog-host">${this.renderDialog(slots, touStarts)}</div>
       </ha-card>`;
 
     this._lastSlots = slots;

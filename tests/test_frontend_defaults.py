@@ -139,10 +139,18 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_dashboard_has_common_scaling_logic(self):
         method = extract_method(self.sources[0], "scaleFlowPanel() {")
-        self.assertIn("baseWidth = 1116", method)
+        self.assertIn("const baseWidth = parseFloat(scaler.dataset.baseWidth) || 1116", method)
         self.assertIn("Math.min(1, Math.max(available / baseWidth, 0.2))", method)
         self.assertIn("scaler.style.transform", method)
         self.assertIn("wrapper.style.height", method)
+
+    def test_update_flow_lines_uses_dynamic_geometry(self):
+        method = extract_method(self.sources[0], "updateFlowLines() {")
+        self.assertIn("const scaler = this.querySelector(\".flow-scaler\");", method)
+        self.assertIn("parseFloat(scaler?.dataset.tileWidth) || 230", method)
+        self.assertIn("parseFloat(scaler?.dataset.tileGap) || 0", method)
+        self.assertIn("parseFloat(scaler?.dataset.inverterWidth) || 640", method)
+        self.assertIn("path.setAttribute(\"d\", d);", method)
 
     def test_energy_flow_panel_matches_reference_2(self):
         method = extract_method(self.sources[0], "energyFlowPanel()")
@@ -152,7 +160,14 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         # Smooth dashed-line animation instead of jumping SVG dots
         self.assertIn("@keyframes flowDash", method)
         self.assertIn("stroke-dasharray:4 20", method)
-        self.assertIn("animation:flowDash 3s linear infinite", method)
+        # Energy panel uses configurable layout
+        self.assertIn("const layout = this.effectiveLayout();", method)
+        self.assertIn("const tileWidth = layout.energy_tile_width;", method)
+        self.assertIn("const inverterWidth = Math.round(640 * inverterScale);", method)
+        self.assertIn("const boardWidth = tileWidth * 2 + inverterWidth + tileGap * 2;", method)
+        self.assertIn("animation:flowDash ${flowDuration}s linear infinite", method)
+        self.assertIn("grid-template-columns:${tileWidth}px ${inverterWidth}px ${tileWidth}px", method)
+        self.assertIn(".flow-tile{width:${tileWidth}px", method)
         # No power values next to lines
         self.assertNotIn("flow-value-pv", method)
         self.assertNotIn("flow-value-bat", method)
@@ -170,9 +185,6 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn('data-live="sold-today-line"', method)
         self.assertNotIn("flow-legend", method)
         self.assertNotIn("Falownik Deye", method)
-        # Narrower tiles
-        self.assertIn(".flow-tile{width:230px", method)
-        self.assertIn(".flow-board{position:relative;display:grid;grid-template-columns:230px 640px 230px", method)
         # Centered layout with tiles in correct corners
         self.assertIn(".flow-tile-pv{grid-column:1;grid-row:1", method)
         self.assertIn(".flow-tile-grid{grid-column:1;grid-row:1", method)
@@ -196,7 +208,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn('data-live="decision-reason"', method)
         # External container is centered and capped
         self.assertIn(".dem-v073{", self.sources[0])
-        self.assertIn("max-width:1184px", self.sources[0])
+        self.assertIn("max-width:1280px", self.sources[0])
         self.assertIn("margin:0 auto", self.sources[0])
 
     def test_deye_mode_shows_raw_system_work_mode(self):
@@ -265,6 +277,26 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             self.assertNotIn("deye-energy-manager-card.js?v=0773", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0772", source)
             self.assertNotIn("deye-energy-manager-card.js?v=0765", source)
+
+    def test_dashboard_yaml_includes_layout_examples(self):
+        yaml_path = ROOT / "dashboard" / "energy_manager.yaml"
+        self.assertTrue(yaml_path.exists(), "dashboard/energy_manager.yaml must exist")
+        source = yaml_path.read_text(encoding="utf-8")
+        for key in (
+            "layout:",
+            "layout_mode:",
+            "sections:",
+            "dashboard_width:",
+            "mobile:",
+            "energy_tile_width:",
+            "energy_tile_gap:",
+            "inverter_scale:",
+            "flow_animation_speed:",
+            "prices_ratio:",
+            "buy_prices_ratio:",
+            "solcast_ratio:",
+        ):
+            self.assertIn(key, source)
 
     def test_card_has_explicit_direct_edit_path_for_physical_tou_entities(self):
         source = self.sources[0]
@@ -578,13 +610,13 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         method = extract_method(source, "layoutConfig() {")
         for required in (
             'layout_mode: "auto"',
-            "dashboard_width: 1184",
+            "dashboard_width: 1280",
             "center_dashboard: true",
             "fit_to_width: false",
             "allow_horizontal_scroll: false",
-            "prices_ratio: 0.85",
-            "buy_prices_ratio: 0.85",
-            "solcast_ratio: 1.30",
+            "prices_ratio: 0.80",
+            "buy_prices_ratio: 0.80",
+            "solcast_ratio: 1.40",
             "energy_tile_width: 230",
             "energy_tile_gap: 28",
             "inverter_scale: 1",
@@ -603,20 +635,26 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_render_uses_layout_config_for_dashboard(self):
         source = self.sources[0]
         render = extract_method(source, "renderV073()")
-        self.assertIn("const layout = this.layoutConfig();", render)
+        self.assertIn("const layout = this.effectiveLayout();", render)
         self.assertIn(r"dashStyle.push(`max-width:${layout.dashboard_width}px`)", render)
         self.assertIn('if (layout.center_dashboard) dashStyle.push("margin:0 auto")', render)
         self.assertIn('if (layout.fit_to_width) dashStyle.push("width:100%")', render)
         self.assertIn('if (layout.allow_horizontal_scroll) dashStyle.push("overflow-x:auto")', render)
-        self.assertIn(r"const infoGridStyle = `grid-template-columns:${layout.prices_ratio}fr ${layout.buy_prices_ratio}fr ${layout.solcast_ratio}fr`", render)
+        self.assertIn(r"grid-template-columns:${layout.prices_ratio}fr ${layout.buy_prices_ratio}fr ${layout.solcast_ratio}fr", render)
+        self.assertIn('if (layout.layout_mode === "grid" && layout.grid_columns)', render)
+        self.assertIn("const showStatus = isSingle ? layout.section === \"status_energy\" : layout.sections.status_energy;", render)
+        self.assertIn("if (isSingle && [\"ai\", \"settings\"].includes(layout.section) && !this._dialog)", render)
         self.assertIn('<div class="dem-v073" style="${demStyle}">', render)
-        self.assertIn('<div class="info-grid" style="${infoGridStyle}">', render)
+        self.assertIn("${statusSection}", render)
+        self.assertIn("${infoGridSection}", render)
+        self.assertIn("${scheduleSection}", render)
+        self.assertIn("${salesSection}", render)
 
     def test_dialog_host_renders_outside_dashboard_container(self):
         source = self.sources[0]
         render = extract_method(source, "renderV073()")
         # Dialog host must be a sibling of .dem-v073, not inside it.
-        self.assertIn('</div>\n        <div class="dialog-host">${this.renderDialog(slots, touStarts)}</div>', render)
+        self.assertIn('</div>\n          <div class="dialog-host">${this.renderDialog(slots, touStarts)}</div>', render)
         self.assertIn("this._lastSlots = slots;", render)
         self.assertIn("this._lastTouStarts = touStarts;", render)
 
