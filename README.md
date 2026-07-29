@@ -141,7 +141,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0780
+/deye_energy_manager/deye-energy-manager-card.js?v=21
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -153,10 +153,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=0780
+/local/deye-energy-manager-card.js?v=21
 ```
 
-Po podmianie pliku karty ustaw parametr `v=0780`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `0780` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=21`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `20` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
@@ -165,6 +165,159 @@ type: custom:deye-energy-manager-card
 ```
 
 Przykład kompletnego dashboardu znajduje się w `dashboard/energy_manager.yaml`.
+
+### Konfiguracja układu (opcjonalna)
+
+Wszystkie ustawienia są opcjonalne. Niepoprawne wartości są automatycznie zastępowane domyślnymi.
+
+#### Tryby układu
+
+| Tryb | Opis |
+|------|------|
+| `auto` | Pełny dashboard na komputerze. Na urządzeniach wąskich (poniżej `mobile.mobile_breakpoint`) aktywne są ustawienia mobilne; główny rząd **Ceny / Solcast** automatycznie składa się w jedną kolumnę zamiast trzech proporcjonalnych kolumn. Domyślny tryb. |
+| `full` | Dashboard rozciąga się na pełną szerokość karty; kontener nie jest wyśrodkowywany. |
+| `section` | Wyświetla tylko jedną sekcję główną wybraną w `section`. |
+| `single` | Wyświetla tylko panel **Status energii** lub wybraną sekcję. Jeśli wybierzesz `ai` lub `settings`, otwiera się odpowiedni dialog. |
+| `grid` | Sekcje główne (ceny, Solcast, harmonogram, statystyki) układane są w siatkę o liczbie kolumn określonej w `grid_columns`. Panel **Status energii** zachowuje pełną szerokość. |
+| `fit` | Dashboard rozciąga się do szerokości karty, ale pozostaje wyśrodkowany w swoim maksymalnym rozmiarze. **Nie skaluje proporcjonalnie całego dashboardu** — dostosowuje tylko zewnętrzny kontener. |
+
+```yaml
+# Domyślny układ
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: auto
+
+# Tylko harmonogram, na przykład do osobnej karty/karty mobilnej
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: single
+  section: schedule
+
+# Układ siatki 2 kolumny
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 2
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: false
+    sales_stats: false
+```
+
+#### Pełna tabela opcji konfiguracyjnych
+
+| Nazwa | Typ | Domyślnie | Zakres / wartości | Opis |
+|-------|-----|-----------|-------------------|------|
+| `layout_mode` | string | `auto` | `auto`, `full`, `section`, `single`, `grid`, `fit` | Główny tryb układu dashboardu. |
+| `dashboard_width` | number | `1280` | 320–2400 | Maksymalna szerokość wewnętrznego kontenera dashboardu w pikselach. |
+| `center_dashboard` | boolean | `true` | `true` / `false` | Wyśrodkowanie dashboardu w karcie. |
+| `fit_to_width` | boolean | `false` | `true` / `false` | Rozciągnięcie kontenera do pełnej szerokości karty. |
+| `allow_horizontal_scroll` | boolean | `false` | `true` / `false` | Gdy `true`, główny kontener `.dem-v073` dostaje `overflow-x: auto`. Gdy `false`, główny kontener dostaje `overflow-x: hidden`, aby zapobiec globalnemu poziomemu przewijaniu strony. Lokalne przewijanie wewnątrz tabeli czy listy dni Solcast nie jest blokowane. |
+| `grid_columns` | number | `null` | 1–6 | Liczba kolumn w trybie `grid`. `null` oznacza automatyczną jedną kolumnę. |
+| `grid_gap` | number | `16` | 0–64 | Odstęp między kolumnami w trybie `grid`. |
+| `section` | string | `null` | `status_energy`, `prices`, `solcast`, `schedule`, `sales_stats`, `ai`, `settings` | Sekcja do wyświetlenia w trybach `section` lub `single`. |
+| `sections.status_energy` | boolean | `true` | `true` / `false` | Widoczność panelu **Status energii**. |
+| `sections.prices` | boolean | `true` | `true` / `false` | Widoczność panelu **Ceny sprzedaży/zakupu**. |
+| `sections.solcast` | boolean | `true` | `true` / `false` | Widoczność panelu **Prognoza Solcast**. |
+| `sections.schedule` | boolean | `true` | `true` / `false` | Widoczność panelu **Harmonogram pracy**. |
+| `sections.sales_stats` | boolean | `true` | `true` / `false` | Widoczność panelu **Statystyki sprzedaży**. |
+| `mobile.mode` | string | `auto` | `auto`, `full`, `section`, `single`, `grid`, `fit` | Tryb układu stosowany na urządzeniach mobilnych. |
+| `mobile.preserve_desktop_layout` | boolean | `false` | `true` / `false` | Jeśli `true`, mobilne urządzenie używa tego samego layoutu co desktop. |
+| `mobile.fit_to_width` | boolean | `true` | `true` / `false` | Rozciągnięcie do szerokości ekranu na urządzeniach mobilnych. |
+| `mobile.allow_horizontal_scroll` | boolean | `false` | `true` / `false` | Poziome przewijanie na urządzeniach mobilnych. |
+| `mobile.grid_columns` | number | `1` | 1–4 | Liczba kolumn w trybie `grid` na urządzeniach mobilnych. |
+| `mobile.mobile_breakpoint` | number | `768` | 320–1600 | Szerokość ekranu (px), poniżej której stosowane są ustawienia mobilne. |
+| `prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny sprzedaży** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
+| `buy_prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny zakupu** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
+| `solcast_ratio` | number | `1.40` | 0.1–5.0 | Względna szerokość kolumny **Prognoza Solcast** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
+| `energy_tile_width` | number | `230` | 120–360 | Szerokość bocznych kafli PV/sieć/bateria/dom w panelu **Status energii**. |
+| `energy_tile_gap` | number | `28` | 0–100 | Odstęp między kaflem a inverterem w panelu **Status energii**. |
+| `inverter_scale` | number | `1` | 0.5–2.0 | Skala centralnego invertera w panelu **Status energii**. |
+| `flow_animation_speed` | number | `6` | 1–20 | Szybkość animacji przepływów (wyższa wartość = szybsza animacja). |
+| `max_scale` | number | `1` | 0.2–3.0 | **Zarezerwowane.** Wczytywane przez `layoutConfig()`, ale obecnie nie wpływa na renderowanie. |
+| `min_scale` | number | `0.2` | 0.1–1.0 | **Zarezerwowane.** Wczytywane przez `layoutConfig()`, ale obecnie nie wpływa na renderowanie. |
+
+> **Uwagi do trybów i zarezerwowanych opcji**
+> - `layout_mode: fit` nie wykonuje globalnego, proporcjonalnego skalowania całego dashboardu. Włącza tylko `fit_to_width` i `center_dashboard`, dzięki czemu kontener dashboardu dostosowuje się do szerokości karty, ale zachowuje swój wewnętrzny układ.
+> - `max_scale` i `min_scale` są obecnie zarezerwowane. Wartości są walidowane i zapamiętywane, ale nie są używane przez `renderV073()` ani przez panel energii.
+
+#### Przykłady
+
+##### Domyślny układ
+```yaml
+type: custom:deye-energy-manager-card
+```
+
+##### Szeroki monitor (pełna szerokość)
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: full
+  fit_to_width: true
+```
+
+##### Telefon (pojedyncza kolumna, brak przewijania poziomego)
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 1
+  mobile:
+    mode: grid
+    grid_columns: 1
+    fit_to_width: true
+```
+
+##### Pojedyncza sekcja
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: single
+  section: schedule
+```
+
+##### Układ grid z wyłączonymi sekcjami
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  layout_mode: grid
+  grid_columns: 2
+  sections:
+    status_energy: true
+    prices: true
+    solcast: false
+    schedule: true
+    sales_stats: false
+```
+
+##### Szerszy Solcast
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  solcast_ratio: 2.0
+  prices_ratio: 0.6
+  buy_prices_ratio: 0.6
+```
+
+##### Zmiana rozmiaru panelu Status energii
+```yaml
+type: custom:deye-energy-manager-card
+layout:
+  energy_tile_width: 260
+  energy_tile_gap: 20
+  inverter_scale: 1.1
+  flow_animation_speed: 8
+```
+
+#### Dialogi
+
+W `v=21` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Dzięki temu:
+- dialogi nie są skalowane razem z dashboardem;
+- otwarcie dialogu nie powoduje pełnego rerenderu całego dashboardu (`renderDialogOnly()`);
+- dialogi nie migają przy przełączaniu zakładek;
+- pozycja przewijania strony jest zapamiętywana przed otwarciem i przywracana po zamknięciu.
 
 ## Zasady bezpieczeństwa
 
