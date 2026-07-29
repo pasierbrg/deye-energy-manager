@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.7.7] - 2026-07-29
+
+### Added
+
+- Deterministyczny backendowy Optimizer Core z planem bazowym, trzema wariantami,
+  48-godzinnym bilansem przepływów, wynikiem netto, progiem neutralności i
+  lokalną symulacją alternatywy.
+- Profil zużycia domu 7×24, lokalna korekta PV miesiąc×godzina, etapy uczenia
+  oraz rozpoznawanie próbek z curtailmentem.
+- Sekwencyjny model SOC 48 h z osobnymi sprawnościami, limitami mocy/prądu,
+  rezerwą energetyczną i obsługą niepełnej bieżącej godziny.
+- Profile Poranna sprzedaż, Wieczorna sprzedaż i Ładowanie z walidacją,
+  priorytetami, celami, oknami przez północ i trzema metodami rozłożenia energii.
+- Opcjonalny asystent AI przez Gemini, OpenRouter, OpenAI, OpenCode lub własny
+  zgodny endpoint HTTPS, z JSON Schema, redakcją danych i lokalną walidacją.
+- Opcjonalne mapowanie PV3 Power i Battery SOH oraz diagnostyka źródeł/fallbacków.
+
+### Changed
+
+- Historia aplikacyjna i profile użytkownika używają wersjonowanego schematu v2.
+- `Load Power` jest źródłem głównym obciążenia; komplet L1/L2/L3 i bilans są
+  jednoznacznie oznaczonymi fallbackami bez podwójnego liczenia.
+- Solcast przechowuje oddzielnie prognozę początkową, najnowszą i skorygowaną.
+- Sugestie AI pokazują baseline, warianty, pewność, rozbicie finansowe, status
+  wykonania oraz ustawienia profili i API.
+
+### Fixed
+
+- Liczniki `total_increasing` poprawnie obsługują jednostki i reset o północy,
+  bez ujemnych delt.
+- Prognoza SOC zachowuje ciągłość dziś/jutro i nie zmienia punktów historycznych
+  po zmianie bieżącego SOC.
+- Dystrybucja nie jest doliczana ponownie, gdy cena zakupu już ją zawiera.
+
+### Security
+
+- Zewnętrzny model nie ma dostępu do usług Deye i nie może zapisać planu.
+- Klucz API nie trafia do historii, encji ani diagnostyki; payload nie zawiera
+  identyfikatorów encji/urządzeń, lokalizacji ani surowej historii.
+- Brak SOC pozostaje warunkiem fail-closed; zachowano walidację, confirm/retry,
+  limit 6/6 TOU i ręczne zatwierdzanie.
+
+### Migration
+
+- Migracja 0.7.6 → 0.7.7 jest idempotentna, zachowuje historię, licznik dni,
+  mapowania, taryfę i harmonogram. Nowe profile są domyślnie wyłączone.
+- Koperta Home Assistant Store pozostaje kompatybilna ze starszymi danymi.
+
+### Documentation
+
+- Rozszerzono README i polską instrukcję o uczenie, profile, taryfy, migrację,
+  prywatność oraz opcjonalną konfigurację API.
+- Dodano `IMPLEMENTATION_0.7.7.md` i `RELEASE_NOTES_0.7.7.md`.
+
 ## 0.7.6
 
 ### Poprawki po audycie

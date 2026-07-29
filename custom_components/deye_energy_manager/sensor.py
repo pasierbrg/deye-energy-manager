@@ -90,6 +90,9 @@ def sales_stats_attrs(runtime):
 def ai_state_attrs(runtime):
     return {
         "settings": runtime.ai_settings,
+        "user_profiles": runtime.user_profiles,
+        "optimizer_plan_history": runtime.optimizer_plan_history[:30],
+        "api_assistant": runtime.ai_api_public_context(),
         "history": runtime.ai_history,
         "history_count": len(runtime.ai_history),
         "learning_summary": runtime.learning_summary(),
@@ -238,6 +241,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                 attrs_fn=ai_state_attrs,
                 unrecorded_attributes={
                     "settings",
+                    "user_profiles",
+                    "optimizer_plan_history",
+                    "api_assistant",
                     "history",
                     "learning_summary",
                     "learning_recent",

@@ -1,4 +1,4 @@
-// Resource revision: v=23
+// Resource revision: v=24
 class DeyeEnergyManagerCard extends HTMLElement {
   setConfig(config) {
     this.config = config || {};
@@ -31,11 +31,17 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this._historyFilters = { from: "", to: "", type: "all" };
     this._lastAiAnalysisCheck = 0;
     this._aiSettingsSaveTimer = null;
+    this._aiSettingsSection = "general";
+    this._aiProfileDraft = null;
+    this._aiProfileStatus = "";
+    this._aiDetailKey = null;
+    this._aiApiDraft = null;
+    this._aiApiMessage = "";
     this._updateFrame = null;
     this._lastSlowSignature = "";
     this._tariffDraft = null;
     this._tariffSaveStatus = "";
-    this._aiView = "proposals";
+    this._aiView = "overview";
     this._aiDay = "today";
     this._aiShow24 = false;
     this._aiWeatherMode = "daily";
@@ -631,6 +637,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
   formatNumber(value, digits = 2) {
     const number = this.asNumber(value);
     return number === null ? "0" : number.toFixed(digits);
+  }
+
+  formatSignedMoney(value) {
+    const number = this.asNumber(value);
+    if (number === null) return "brak danych";
+    return `${number >= 0 ? "+" : ""}${number.toFixed(2).replace(".", ",")} zł`;
   }
 
   hourLabel(hour) {
@@ -1985,7 +1997,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const tariff = this.tariffData();
     return {
       format: "deye-energy-manager-config",
-      version: "0.7.6",
+      version: "0.7.7",
       created_at: new Date().toISOString(),
       values,
       ai_settings: this.aiSettings(),
@@ -2088,7 +2100,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       <div><span>Ostatni zapis</span><strong>${this.formatAppliedAt(attrs.last_saved_at)}</strong></div>
       <div><span>Ostatnie zastosowanie</span><strong>${this.formatAppliedAt(attrs.last_applied_at)}</strong></div>
       <div><span>Ostatni b\u0142\u0105d</span><strong class="${attrs.last_error && attrs.last_error !== "none" ? "bad" : "good"}">${attrs.last_error && attrs.last_error !== "none" ? this.escapeHtml(attrs.last_error) : "Brak"}</strong></div>
-      <div><span>Wersje</span><strong>Integracja ${this.escapeHtml(attrs.integration_version || "0.7.6")} \u00b7 karta 0.7.6</strong></div>
+      <div><span>Wersje</span><strong>Integracja ${this.escapeHtml(attrs.integration_version || "0.7.7")} \u00b7 karta 0.7.7</strong></div>
     </div>
     ${attemptSection}
     ${activeControlSection}
@@ -2218,6 +2230,280 @@ class DeyeEnergyManagerCard extends HTMLElement {
         return `<option value="${this.escapeHtml(optionValue)}" ${optionValue === value ? "selected" : ""}>${this.escapeHtml(optionLabel)}</option>`;
       }).join("")}
     </select></div>`;
+  }
+
+  aiProfiles() {
+    if (this._aiProfileDraft) return this._aiProfileDraft;
+    const aiState = this._hass?.states?.[this.entity("sensor", "ai_state")];
+    const source = aiState?.attributes?.user_profiles;
+    const defaults = {
+      schema_version: 2,
+      profiles: {
+        morning_sale: { enabled: false, type: "sale", name: "Poranna sprzedaż", active_days: [], start: "06:00", end: "09:00", priority: "normal", goal_character: "preferred", allow_partial: true, minimum_confidence: 50, note: "", target_energy_kwh: 0, target_basis: "battery_to_grid", min_price: 0, preferred_power_w: "", distribution_method: "best_hours", min_soc_after: 30, allow_earlier_grid_charge: false, min_net_result: 0 },
+        evening_sale: { enabled: false, type: "sale", name: "Wieczorna sprzedaż", active_days: [], start: "17:00", end: "22:00", priority: "normal", goal_character: "preferred", allow_partial: true, minimum_confidence: 50, note: "", target_energy_kwh: 0, target_basis: "battery_to_grid", min_price: 0, preferred_power_w: "", distribution_method: "best_hours", min_soc_after: 30, allow_earlier_grid_charge: false, min_net_result: 0 },
+        charging: { enabled: false, type: "charging", name: "Ładowanie", active_days: [], start: "22:00", end: "06:00", priority: "normal", goal_character: "preferred", allow_partial: true, minimum_confidence: 50, note: "", source: "auto", target_type: "soc", target_value: 80, deadline: "06:00", max_effective_price: 0, max_grid_energy_kwh: "", preferred_power_w: "", purpose: "general", charge_missing_only: true, use_corrected_pv: true, preserve_pv_room: true, minimum_free_room_kwh: 0, profitable_only: true },
+      },
+    };
+    const profiles = {};
+    Object.entries(defaults.profiles).forEach(([key, value]) => {
+      profiles[key] = { ...value, ...(source?.profiles?.[key] || {}) };
+      if (!["low", "normal", "high"].includes(String(profiles[key].priority))) profiles[key].priority = "normal";
+    });
+    this._aiProfileDraft = { schema_version: 2, profiles };
+    return this._aiProfileDraft;
+  }
+
+  aiProfileInput(profileId, field, label, value, type = "text", unit = "") {
+    const inputType = type === "number" ? 'type="text" inputmode="decimal"' : `type="${type}"`;
+    return `<div class="settings-row"><span>${this.escapeHtml(label)}</span><label class="field compact-field"><input data-ai-profile="${profileId}" data-ai-profile-field="${field}" ${inputType} value="${this.escapeHtml(value ?? "")}"><span>${this.escapeHtml(unit)}</span></label></div>`;
+  }
+
+  aiProfileCheck(profileId, field, label, value) {
+    return `<div class="settings-row"><span>${this.escapeHtml(label)}</span><input data-ai-profile="${profileId}" data-ai-profile-field="${field}" type="checkbox" ${value ? "checked" : ""}></div>`;
+  }
+
+  aiProfileSelect(profileId, field, label, options, value) {
+    return `<div class="settings-row"><span>${this.escapeHtml(label)}</span><select data-ai-profile="${profileId}" data-ai-profile-field="${field}">${options.map(([key, text]) => `<option value="${this.escapeHtml(key)}" ${key === value ? "selected" : ""}>${this.escapeHtml(text)}</option>`).join("")}</select></div>`;
+  }
+
+  aiProfileCommon(profileId, profile) {
+    const dayNames = [["0", "Pon"], ["1", "Wt"], ["2", "Śr"], ["3", "Czw"], ["4", "Pt"], ["5", "Sob"], ["6", "Niedz"]];
+    const selected = new Set(Array.isArray(profile.active_days) ? profile.active_days.map(String) : []);
+    return `${this.aiProfileCheck(profileId, "enabled", "Włącz profil", profile.enabled)}
+      <div class="settings-row ai-days-row"><span>Aktywne dni</span><div class="ai-day-presets"><button type="button" data-ai-profile-days="${profileId}" data-days="">Codziennie</button><button type="button" data-ai-profile-days="${profileId}" data-days="0,1,2,3,4">Dni robocze</button><button type="button" data-ai-profile-days="${profileId}" data-days="5,6">Weekend</button></div></div>
+      <div class="ai-weekdays">${dayNames.map(([key, label]) => `<label><input type="checkbox" data-ai-profile-day="${profileId}" value="${key}" ${selected.has(key) ? "checked" : ""}>${label}</label>`).join("")}</div>
+      ${this.aiProfileInput(profileId, "start", "Godzina od", profile.start, "time")}
+      ${this.aiProfileInput(profileId, "end", "Godzina do", profile.end, "time")}
+      ${this.aiProfileSelect(profileId, "priority", "Priorytet", [["low", "Niski"], ["normal", "Normalny"], ["high", "Wysoki"]], profile.priority)}
+      ${this.aiProfileSelect(profileId, "goal_character", "Charakter celu", [["preferred", "Preferowany"], ["required", "Wymagany w granicach bezpieczeństwa"]], profile.goal_character)}
+      ${this.aiProfileCheck(profileId, "allow_partial", "Zezwalaj na częściową realizację", profile.allow_partial)}
+      ${this.aiProfileInput(profileId, "minimum_confidence", "Minimalna pewność rekomendacji", profile.minimum_confidence, "number", "%")}
+      <div class="settings-row ai-note-row"><span>Notatka lokalna</span><textarea data-ai-profile="${profileId}" data-ai-profile-field="note" maxlength="500">${this.escapeHtml(profile.note || "")}</textarea></div>`;
+  }
+
+  renderAiSaleProfile(profileId) {
+    const profile = this.aiProfiles().profiles[profileId];
+    const planner = this.aiPlannerData(this._lastSlots || []);
+    const impact = (planner.profile_impacts || []).find((item) => item.profile_id === profileId);
+    const validation = profile.start === profile.end ? "Błąd: przedział nie może być pusty." : "Konfiguracja lokalna jest kompletna.";
+    return `<div class="ai-settings-pane"><div class="hint">Profil jest polityką Optimizer Core. Sam zapis nie zmienia Deye ani harmonogramu TOU.</div>
+      <div class="ai-profile-summary"><div><span>Stan</span><strong>${profile.enabled ? "Włączony" : "Wyłączony"}</strong></div><div><span>Okno</span><strong>${this.escapeHtml(profile.start)}–${this.escapeHtml(profile.end)}</strong></div><div><span>Planowana realizacja</span><strong>${impact ? `${this.formatNumber(impact.planned_energy_kwh, 2)} kWh` : "brak planu"}</strong></div><div><span>Walidacja</span><strong class="${validation.startsWith("Błąd") ? "bad" : "good"}">${validation}</strong></div></div>
+      ${this.aiProfileCommon(profileId, profile)}
+      ${this.aiProfileInput(profileId, "target_energy_kwh", "Docelowa energia sprzedaży", profile.target_energy_kwh, "number", "kWh")}
+      ${this.aiProfileSelect(profileId, "target_basis", "Sposób liczenia celu", [["battery_to_grid", "Energia z baterii do sieci"], ["total_export", "Całkowity eksport do sieci"]], profile.target_basis)}
+      ${this.aiProfileInput(profileId, "min_price", "Minimalna cena sprzedaży", profile.min_price, "number", "zł/kWh")}
+      ${this.aiProfileInput(profileId, "preferred_power_w", "Opcjonalna preferowana moc", profile.preferred_power_w ?? "", "number", "W")}
+      ${this.aiProfileSelect(profileId, "distribution_method", "Sposób rozłożenia energii", [["best_hours", "Najwyższe ceny najpierw"], ["even", "Równomiernie w oknie"], ["constant_power", "Możliwie stała moc"]], profile.distribution_method)}
+      ${this.aiProfileInput(profileId, "min_soc_after", "Minimalny SOC po oknie", profile.min_soc_after, "number", "%")}
+      ${this.aiProfileCheck(profileId, "allow_earlier_grid_charge", "Zezwalaj na wcześniejsze ładowanie z sieci", profile.allow_earlier_grid_charge)}
+      ${this.aiProfileInput(profileId, "min_net_result", "Minimalny wynik netto cyklu", profile.min_net_result, "number", "zł")}
+      <button class="wide-action" data-save-ai-profiles="1">Zapisz wszystkie profile</button>${this._aiProfileStatus ? `<div class="hint">${this.escapeHtml(this._aiProfileStatus)}</div>` : ""}</div>`;
+  }
+
+  renderAiChargeProfile() {
+    const profileId = "charging";
+    const profile = this.aiProfiles().profiles[profileId];
+    const energyTarget = profile.target_type === "energy";
+    return `<div class="ai-settings-pane"><div class="hint">Optimizer wykorzysta profil wraz z prognozą PV, domu i efektywnym kosztem taryfy. Sam zapis nie uruchamia ładowania.</div>
+      ${this.aiProfileCommon(profileId, profile)}
+      ${this.aiProfileSelect(profileId, "source", "Źródło ładowania", [["auto", "Automatycznie"], ["pv", "Tylko PV"], ["grid", "Tylko sieć"], ["pv_and_grid", "PV i sieć"]], profile.source)}
+      ${this.aiProfileSelect(profileId, "target_type", "Cel ładowania", [["soc", "Docelowy SOC"], ["energy", "Docelowa energia doładowania"]], profile.target_type)}
+      ${this.aiProfileInput(profileId, "target_value", energyTarget ? "Docelowa energia doładowania" : "Docelowy SOC", profile.target_value, "number", energyTarget ? "kWh" : "%")}
+      ${this.aiProfileInput(profileId, "deadline", "Cel najpóźniej do", profile.deadline, "time")}
+      ${this.aiProfileInput(profileId, "max_effective_price", "Maksymalna efektywna cena zakupu", profile.max_effective_price, "number", "zł/kWh")}
+      ${this.aiProfileInput(profileId, "max_grid_energy_kwh", "Maksymalna energia z sieci", profile.max_grid_energy_kwh ?? "", "number", "kWh")}
+      ${this.aiProfileInput(profileId, "preferred_power_w", "Opcjonalny limit mocy profilu", profile.preferred_power_w ?? "", "number", "W")}
+      ${this.aiProfileSelect(profileId, "purpose", "Przeznaczenie ładowania", [["general", "Automatycznie"], ["home_reserve", "Rezerwa domu"], ["morning_sale", "Poranna sprzedaż"], ["evening_sale", "Wieczorna sprzedaż"], ["both_sales", "Oba okna sprzedaży"], ["cheap_home", "Tani zakup na potrzeby domu"]], profile.purpose)}
+      ${this.aiProfileCheck(profileId, "charge_missing_only", "Doładuj tylko brakującą energię", profile.charge_missing_only)}
+      ${this.aiProfileCheck(profileId, "use_corrected_pv", "Uwzględniaj skorygowaną prognozę PV", profile.use_corrected_pv)}
+      ${this.aiProfileCheck(profileId, "preserve_pv_room", "Zachowaj miejsce na prognozowaną produkcję PV", profile.preserve_pv_room)}
+      ${this.aiProfileInput(profileId, "minimum_free_room_kwh", "Minimalne wolne miejsce na PV", profile.minimum_free_room_kwh, "number", "kWh")}
+      ${this.aiProfileCheck(profileId, "profitable_only", "Ładuj z sieci tylko przy dodatnim wyniku cyklu", profile.profitable_only)}
+      <button class="wide-action" data-save-ai-profiles="1">Zapisz wszystkie profile</button>${this._aiProfileStatus ? `<div class="hint">${this.escapeHtml(this._aiProfileStatus)}</div>` : ""}</div>`;
+  }
+
+  renderAiGeneralSettings() {
+    const settings = this.aiSettings();
+    return `<div class="ai-settings-pane"><div class="hint">Lokalny Optimizer Core tworzy wyłącznie propozycje. Zapis do Deye wymaga wyboru godzin, lokalnej walidacji i ręcznego potwierdzenia.</div>
+      ${this.aiCheck("enabled", "Włącz inteligentne planowanie", settings.enabled)}
+      ${this.row("Tryb działania", "Sugestie z ręcznym zatwierdzeniem")}
+      ${this.aiSelect("strategy", "Priorytet", [["balanced", "Zrównoważony"], ["profit", "Maksymalny zysk"], ["autoconsumption", "Maksymalna autokonsumpcja"]], settings.strategy)}
+      ${this.aiCheck("forecastEnabled", "Uwzględniaj prognozę Solcast", settings.forecastEnabled)}
+      ${this.aiNumber("forecastMargin", "Margines bezpieczeństwa prognozy", settings.forecastMargin, "%")}
+      ${this.aiCheck("realPv", "Porównuj z realną produkcją PV", settings.realPv)}
+      ${this.aiCheck("history", "Uwzględniaj historię produkcji i sprzedaży", settings.history)}
+      ${this.aiCheck("prices", "Uwzględniaj ceny energii", settings.prices)}
+      ${this.aiNumber("minSellPrice", "Minimalna cena sprzedaży", settings.minSellPrice, "zł/kWh")}
+      ${this.aiNumber("maxBuyPrice", "Maksymalna cena zakupu", settings.maxBuyPrice, "zł/kWh")}
+      ${this.aiNumber("minSoc", "Minimalny SOC", settings.minSoc, "%")}
+      ${this.aiNumber("targetSoc", "Docelowy SOC magazynu", settings.targetSoc, "%")}
+      ${this.aiNumber("batteryCapacityKwh", "Pojemność użytkowa magazynu", settings.batteryCapacityKwh, "kWh")}
+      ${this.aiNumber("batteryEfficiency", "Sprawność pełnego cyklu", settings.batteryEfficiency, "%")}
+      ${this.aiNumber("reserveKwh", "Dodatkowa rezerwa ponad minimalny SOC", settings.reserveKwh, "kWh")}
+      ${this.aiNumber("maxSellPower", "Maksymalna moc planu AI", settings.maxSellPower, "W")}
+      ${this.aiNumber("batteryCycleCostPerKwh", "Koszt zużycia magazynu", settings.batteryCycleCostPerKwh ?? 0, "zł/kWh")}
+      ${this.aiNumber("terminalEnergyValuePerKwh", "Konserwatywna wartość energii końcowej", settings.terminalEnergyValuePerKwh ?? 0, "zł/kWh")}
+      ${this.aiCheck("allowGridCharge", "AI może sugerować ładowanie z sieci", settings.allowGridCharge)}
+      ${this.aiCheck("allowBatterySell", "AI może sugerować sprzedaż z baterii", settings.allowBatterySell)}
+      ${this.aiCheck("allowDeyeMode", "AI może sugerować zmianę trybu Deye", settings.allowDeyeMode)}</div>`;
+  }
+
+  renderAiSettingsPanel() {
+    const section = this._aiSettingsSection || "general";
+    const tabs = [
+      ["general", "Ogólne"], ["morning_sale", "Poranna sprzedaż"],
+      ["evening_sale", "Wieczorna sprzedaż"], ["charging", "Ładowanie"],
+      ["api", "Asystent AI przez API"],
+    ].map(([key, label]) => `<button class="${section === key ? "active" : ""}" data-ai-settings-section="${key}">${label}</button>`).join("");
+    let body = this.renderAiGeneralSettings();
+    if (section === "morning_sale" || section === "evening_sale") body = this.renderAiSaleProfile(section);
+    if (section === "charging") body = this.renderAiChargeProfile();
+    if (section === "api") body = this.renderAiApiSettings ? this.renderAiApiSettings() : '<div class="hint">Asystent API jest opcjonalny. Lokalny Optimizer Core działa bez niego.</div>';
+    return `<div class="settings-tabs ai-settings-tabs">${tabs}</div>${body}`;
+  }
+
+  aiApiContext() {
+    const aiState = this._hass?.states?.[this.entity("sensor", "ai_state")];
+    return aiState?.attributes?.api_assistant || {};
+  }
+
+  aiApiDraft() {
+    if (this._aiApiDraft) return this._aiApiDraft;
+    const config = this.aiApiContext().config || {};
+    this._aiApiDraft = {
+      enabled: Boolean(config.enabled),
+      provider: config.provider || "openrouter",
+      model: config.model || "",
+      endpoint: config.provider === "custom" ? (config.endpoint || "") : "",
+      role: config.role || "review",
+      hourly_only: config.hourly_only !== false,
+      remove_entity_names: config.remove_entity_names !== false,
+      remove_exact_location: config.remove_exact_location !== false,
+      max_history_hours: config.max_history_hours ?? 0,
+    };
+    return this._aiApiDraft;
+  }
+
+  renderAiApiSettings() {
+    const context = this.aiApiContext();
+    const draft = this.aiApiDraft();
+    const custom = draft.provider === "custom";
+    const analysis = context.last_analysis;
+    const providerNote = draft.provider === "opencode"
+      ? "Preset używa oficjalnego OpenCode Console Inference API. Wklej osobny klucz usługi; integracja nie odczytuje auth.json, sesji ani konfiguracji lokalnego OpenCode."
+      : "Dane instalacji są wysyłane wyłącznie po włączeniu asystenta. Lokalny plan pozostaje nadrzędny.";
+    return `<div class="ai-settings-pane ai-api-settings"><div class="hint">${this.escapeHtml(providerNote)}</div>
+      <div class="ai-profile-summary"><div><span>Status</span><strong>${this.escapeHtml(context.status || "wyłączone")}</strong></div><div><span>Model użyty</span><strong>${this.escapeHtml(context.model || draft.model || "brak")}</strong></div><div><span>Czas odpowiedzi</span><strong>${context.response_ms === undefined ? "brak" : `${this.formatNumber(context.response_ms, 0)} ms`}</strong></div><div><span>JSON Schema</span><strong>${this.escapeHtml(context.json_schema || "brak testu")}</strong></div></div>
+      <div class="settings-row"><span>Włącz asystenta AI</span><input data-ai-api-field="enabled" type="checkbox" ${draft.enabled ? "checked" : ""}></div>
+      <div class="settings-row"><span>Dostawca</span><select data-ai-api-field="provider"><option value="gemini" ${draft.provider === "gemini" ? "selected" : ""}>Google Gemini</option><option value="openrouter" ${draft.provider === "openrouter" ? "selected" : ""}>OpenRouter</option><option value="openai" ${draft.provider === "openai" ? "selected" : ""}>OpenAI</option><option value="opencode" ${draft.provider === "opencode" ? "selected" : ""}>OpenCode / OpenCode Go</option><option value="custom" ${custom ? "selected" : ""}>Własny endpoint OpenAI-compatible</option></select></div>
+      <div class="settings-row"><span>Klucz API</span><label class="field compact-field"><input data-ai-api-field="api_key" type="password" autocomplete="new-password" value="" placeholder="${context.config?.api_key_configured ? "Klucz zapisany — pozostaw puste, aby zachować" : "Wklej osobny klucz API"}"><span>🔒</span></label></div>
+      <div class="settings-row"><span>Model</span><input data-ai-api-field="model" type="text" value="${this.escapeHtml(draft.model)}" placeholder="Identyfikator modelu z dokumentacji dostawcy"></div>
+      ${custom ? `<div class="settings-row"><span>Własny endpoint HTTPS</span><input data-ai-api-field="endpoint" type="url" value="${this.escapeHtml(draft.endpoint)}" placeholder="https://…/v1/chat/completions"></div>` : ""}
+      <div class="settings-row"><span>Rola modelu</span><select data-ai-api-field="role"><option value="explain" ${draft.role === "explain" ? "selected" : ""}>Tylko uzasadnia plan</option><option value="review" ${draft.role === "review" ? "selected" : ""}>Sprawdza plan i proponuje alternatywę</option><option value="experimental" ${draft.role === "experimental" ? "selected" : ""}>Zaawansowana analiza eksperymentalna</option></select></div>
+      <h3>Prywatność</h3>
+      <div class="settings-row"><span>Wysyłaj tylko dane godzinowe</span><input data-ai-api-field="hourly_only" type="checkbox" ${draft.hourly_only ? "checked" : ""}></div>
+      <div class="settings-row"><span>Usuń nazwy encji i urządzeń</span><input data-ai-api-field="remove_entity_names" type="checkbox" ${draft.remove_entity_names ? "checked" : ""}></div>
+      <div class="settings-row"><span>Nie wysyłaj dokładnej lokalizacji</span><input data-ai-api-field="remove_exact_location" type="checkbox" ${draft.remove_exact_location ? "checked" : ""}></div>
+      <div class="settings-row"><span>Maksymalny zakres historii</span><label class="field compact-field"><input data-ai-api-field="max_history_hours" type="text" inputmode="numeric" value="${this.escapeHtml(draft.max_history_hours)}"><span>h</span></label></div>
+      <div class="diagnostic-actions"><button data-save-ai-api="1">Zapisz konfigurację</button><button data-test-ai-api="1">Testuj połączenie</button><button data-analyze-ai-api="1">Analizuj ponownie</button></div>
+      ${context.last_error ? `<div class="hint bad">${this.escapeHtml(context.last_error)}</div>` : ""}
+      ${this._aiApiMessage ? `<div class="hint">${this.escapeHtml(this._aiApiMessage)}</div>` : ""}
+      ${analysis ? `<section class="diagnostic-section"><h3>Ostatnia alternatywa AI — niezastosowana</h3><p>${this.escapeHtml(analysis.summary || "")}</p><p><b>Ocena:</b> ${this.escapeHtml(analysis.plan_assessment || "brak")} · <b>Wariant:</b> ${this.escapeHtml(analysis.best_option || "brak")}</p><p><b>Ryzyka:</b> ${this.escapeHtml((analysis.risks || []).join(" · ") || "brak")}</p><div class="hint">Wymaga lokalnej walidacji. Zewnętrzne AI nie może bezpośrednio zapisać niczego do Deye.</div></section>` : ""}</div>`;
+  }
+
+  collectAiApiDraft() {
+    const draft = { ...this.aiApiDraft() };
+    this.querySelectorAll("[data-ai-api-field]").forEach((el) => {
+      const field = el.dataset.aiApiField;
+      if (field === "api_key") return;
+      if (el.type === "checkbox") draft[field] = el.checked;
+      else if (field === "max_history_hours") draft[field] = this.asNumber(el.value) ?? el.value;
+      else draft[field] = el.value;
+    });
+    this._aiApiDraft = draft;
+    return draft;
+  }
+
+  async saveAiApiSettings() {
+    const draft = this.collectAiApiDraft();
+    const secret = this.querySelector('[data-ai-api-field="api_key"]')?.value || "";
+    try {
+      await this.callService("deye_energy_manager", "save_ai_api_settings", {
+        data: JSON.stringify({ ...draft, api_key: secret }),
+      });
+      this._aiApiMessage = "Konfiguracja zapisana bez uruchamiania Deye. Puste pole klucza zachowuje poprzedni sekret.";
+    } catch (error) {
+      this._aiApiMessage = `Błąd konfiguracji: ${error?.message || error}`;
+    }
+    const input = this.querySelector('[data-ai-api-field="api_key"]');
+    if (input) input.value = "";
+    this.renderDialogOnly();
+  }
+
+  async runAiApiService(service) {
+    this._aiApiMessage = service === "test_ai_api" ? "Trwa bezpieczny test bez danych instalacji…" : "Trwa analiza ostatniego lokalnego planu…";
+    this.renderDialogOnly();
+    try {
+      await this.callService("deye_energy_manager", service, {});
+      this._aiApiMessage = "Żądanie zakończone. Status zostanie odświeżony z backendu.";
+    } catch (error) {
+      this._aiApiMessage = `Błąd API: ${error?.message || error}`;
+    }
+    this.render();
+  }
+
+  collectAiProfiles() {
+    const draft = this.aiProfiles();
+    this.querySelectorAll("[data-ai-profile][data-ai-profile-field]").forEach((el) => {
+      const profile = draft.profiles[el.dataset.aiProfile];
+      if (!profile) return;
+      const field = el.dataset.aiProfileField;
+      if (el.type === "checkbox") profile[field] = el.checked;
+      else if (el.inputMode === "decimal") profile[field] = el.value === "" ? null : (this.asNumber(el.value) ?? el.value);
+      else profile[field] = el.value;
+    });
+    Object.keys(draft.profiles).forEach((profileId) => {
+      const boxes = [...this.querySelectorAll(`[data-ai-profile-day="${profileId}"]`)];
+      if (boxes.length) draft.profiles[profileId].active_days = boxes.filter((box) => box.checked).map((box) => box.value);
+    });
+    return draft;
+  }
+
+  validateAiProfiles(profiles) {
+    for (const [key, profile] of Object.entries(profiles.profiles || {})) {
+      if (!profile.start || !profile.end || profile.start === profile.end) return `Profil ${key}: przedział czasu nie może być pusty.`;
+      const confidence = this.asNumber(profile.minimum_confidence);
+      if (confidence === null || confidence < 0 || confidence > 100) return `Profil ${key}: pewność musi mieścić się w zakresie 0–100%.`;
+      if (key !== "charging") {
+        const target = this.asNumber(profile.target_energy_kwh);
+        const price = this.asNumber(profile.min_price);
+        const soc = this.asNumber(profile.min_soc_after);
+        if (target === null || target < 0) return `Profil ${key}: cel kWh nie może być ujemny.`;
+        if (price === null || price < 0) return `Profil ${key}: cena nie może być ujemna.`;
+        if (soc === null || soc < 0 || soc > 100) return `Profil ${key}: SOC musi mieścić się w zakresie 0–100%.`;
+      } else {
+        const target = this.asNumber(profile.target_value);
+        if (target === null || target <= 0 || (profile.target_type === "soc" && target > 100)) return "Profil ładowania: nieprawidłowy cel.";
+      }
+    }
+    return "";
+  }
+
+  async saveAiProfiles() {
+    const profiles = this.collectAiProfiles();
+    const error = this.validateAiProfiles(profiles);
+    if (error) {
+      this._aiProfileStatus = error;
+      this.renderDialogOnly();
+      return;
+    }
+    try {
+      await this.callService("deye_energy_manager", "save_ai_profiles", { data: JSON.stringify(profiles) });
+      this._aiProfileStatus = "Zapisano. Zmiana wpłynie na kolejną lokalną analizę; Deye nie został zmieniony.";
+    } catch (errorValue) {
+      this._aiProfileStatus = `Błąd zapisu: ${errorValue?.message || errorValue}`;
+    }
+    this.renderDialogOnly();
   }
 
   async applyMultiEdit(slots) {
@@ -3464,6 +3750,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
 
   async applyAiDayPlan(slots, day = this._aiDay) {
     const planner = this.aiPlannerData(slots);
+    if (planner.recommended_write === false || planner.plan_status === "blocked") {
+      window.alert(planner.plan_status === "blocked"
+        ? "Plan jest zablokowany z powodu krytycznego braku danych."
+        : `Korzyść mieści się w progu neutralności (${this.formatNumber(planner.neutrality_threshold, 2)} zł). Plan można analizować, ale nie jest rekomendowany do zapisu.`);
+      return;
+    }
     const selected = this.aiSelection(day);
     const rows = this.aiRowsForDay(planner, day).filter((row) => row.proposed && selected.has(this.aiSlotKey(row.hour)));
     if (!rows.length) return;
@@ -3975,11 +4267,20 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const summaries = new Map((planner.days || []).map((row) => [row.day, row]));
     const checkpoints = planner.checkpoints || {};
     const future = this._hass?.states?.[this.entity("sensor", "ai_state")]?.attributes?.future_plan || {};
+    const api = this.aiApiContext();
+    const proposed = (planner.rows || []).filter((row) => row.proposed);
+    const best = proposed.slice().sort((a, b) => (this.asNumber(b.net_result ?? b.balance_pln) || 0) - (this.asNumber(a.net_result ?? a.balance_pln) || 0))[0];
+    const confidence = proposed.length ? Math.min(...proposed.map((row) => this.asNumber(row.confidence) || 0)) : 0;
+    const profiles = (planner.profile_impacts || []).map((item) => `<li><span>${this.escapeHtml({ morning_sale: "Poranna sprzedaż", evening_sale: "Wieczorna sprzedaż", charging: "Ładowanie" }[item.profile_id] || item.profile_id)}</span><strong>${this.formatNumber(item.planned_energy_kwh, 2)} / ${this.formatNumber(item.requested_energy_kwh, 2)} kWh</strong></li>`).join("");
     return `<div class="ai-overview-grid">
+      <section class="ai-metric-card ai-best-decision"><h3>Najlepsza decyzja</h3><strong>${best ? `${this.escapeHtml(best.label)} · ${best.action === "sell" ? "sprzedaż" : "ładowanie"}` : "Brak zmiany spełniającej warunki"}</strong><p>${best ? `Wynik netto godziny: ${this.formatSignedMoney(best.net_result ?? best.balance_pln)}. ${this.escapeHtml((best.reason_codes || []).join(", "))}` : "Lokalny plan może poprawnie zakończyć się bez zakupu i sprzedaży."}</p></section>
+      <section class="ai-metric-card"><h3>Wynik i porównanie</h3><div class="ai-kpis"><div><span>Wynik netto</span><strong>${this.formatSignedMoney(planner.optimized_result)}</strong></div><div><span>Korzyść vs baseline</span><strong>${this.formatSignedMoney(planner.benefit)}</strong></div><div><span>SOC koniec jutro</span><strong>${this.formatNumber(checkpoints.tomorrow_end, 1)}%</strong></div><div><span>Pewność planu</span><strong>${this.formatNumber(confidence, 0)}%</strong></div></div><small>${this.escapeHtml(planner.comparison || "")} · próg neutralności ${this.formatNumber(planner.neutrality_threshold, 2)} zł</small></section>
       <section class="ai-metric-card"><h3>Najlepsze godziny sprzedaży</h3>${this.aiPriceColumns(slots, "sell")}</section>
       <section class="ai-metric-card"><h3>Najtańsze godziny zakupu</h3>${this.aiPriceColumns(slots, "buy")}</section>
       <section class="ai-metric-card"><h3>Prognoza SOC 48h</h3><div class="ai-kpis"><div><span>Koniec dziś</span><strong>${this.formatNumber(checkpoints.today_end, 1)}%</strong></div><div><span>Jutro 05:00</span><strong>${this.formatNumber(checkpoints.tomorrow_05, 1)}%</strong></div><div><span>Jutro 09:00</span><strong>${this.formatNumber(checkpoints.tomorrow_09, 1)}%</strong></div><div><span>Koniec jutro</span><strong>${this.formatNumber(checkpoints.tomorrow_end, 1)}%</strong></div></div></section>
-      <section class="ai-metric-card"><h3>Bilans planu</h3><p>Dziś: ${this.formatEnergy(summaries.get("today")?.sold_kwh || 0)} sprzedaży / ${this.formatNumber(summaries.get("today")?.balance_pln, 2)} PLN<br>Jutro: ${this.formatEnergy(summaries.get("tomorrow")?.sold_kwh || 0)} sprzedaży / ${this.formatNumber(summaries.get("tomorrow")?.balance_pln, 2)} PLN</p><p class="${future.status === "scheduled" ? "good" : ""}">Plan na jutro: ${future.status === "scheduled" ? `zaplanowany (${future.date})` : "niezaplanowany"}</p>${future.status === "scheduled" ? '<button class="ai-cancel-plan" data-cancel-future-plan="1">Anuluj plan na jutro</button>' : ""}</section>
+      <section class="ai-metric-card"><h3>Wynik netto planu</h3><p>Dziś: ${this.formatEnergy(summaries.get("today")?.sold_kwh || 0)} eksportu / ${this.formatSignedMoney(summaries.get("today")?.balance_pln)}<br>Jutro: ${this.formatEnergy(summaries.get("tomorrow")?.sold_kwh || 0)} eksportu / ${this.formatSignedMoney(summaries.get("tomorrow")?.balance_pln)}</p><p class="${future.status === "scheduled" ? "good" : ""}">Plan na jutro: ${future.status === "scheduled" ? `zaplanowany (${future.date})` : "niezaplanowany"}</p>${future.status === "scheduled" ? '<button class="ai-cancel-plan" data-cancel-future-plan="1">Anuluj plan na jutro</button>' : ""}</section>
+      <section class="ai-metric-card"><h3>Profile użytkownika</h3>${profiles ? `<ul class="ai-profile-impact">${profiles}</ul>` : '<p>Profile są wyłączone lub nie wpływają na bieżący plan.</p>'}</section>
+      <section class="ai-metric-card"><h3>Status planu</h3><ul class="ai-status-list"><li><span>Uczenie</span><strong>${this.escapeHtml(planner.learning_status || planner.data_quality?.learning_stage || "brak")}</strong></li><li><span>Plan</span><strong>${this.escapeHtml(planner.plan_status || "brak")}</strong></li><li><span>Asystent API</span><strong>${this.escapeHtml(api.status || "wyłączone")}${api.model ? ` · ${this.escapeHtml(api.model)}` : ""}</strong></li><li><span>Przeliczono</span><strong>${this.formatTimeShort(planner.generated_at)}</strong></li><li><span>Powód</span><strong>${this.escapeHtml(planner.generation_reason || "brak")}</strong></li><li><span>Czas</span><strong>${this.formatNumber(planner.duration_ms, 1)} ms</strong></li></ul></section>
       ${this.aiReadableEnergyChart((planner.rows || []).slice(0, 48), "Plan energii 48h")}
     </div>`;
   }
@@ -3998,7 +4299,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       const selling = row.action === "sell";
       const charging = row.action === "charge";
       const confidence = this.asNumber(row.confidence) || 0;
-      return `<tr class="${row.proposed ? "proposed" : "unchanged"}"><td>${row.proposed ? `<input type="checkbox" data-ai-plan-row="${key}" ${selected.has(key) ? "checked" : ""}>` : "–"}</td><td>${row.label || this.hourLabel(row.hour)}</td><td>${row.proposed ? this.modePill(row.mode, true) : '<span class="mode-pill off">Bez zmiany</span>'}</td><td>${selling ? `${Math.round(this.asNumber(settings.maxSellPower) || 0)} W` : "–"}</td><td>${selling ? `${Number(settings.maxDischargeCurrent) || 0} A` : "–"}</td><td>${charging ? `${Number(settings.maxGridChargeCurrent) || 0} A` : "–"}</td><td>${row.proposed ? this.formatEnergy(row.energy_kwh) : "–"}</td><td>${this.formatNumber(row.soc_after, 1)}%</td><td class="${(this.asNumber(row.balance_pln) || 0) >= 0 ? "good" : "warn"}">${this.formatNumber(row.balance_pln, 2)} PLN</td><td><span class="ai-confidence ${this.aiConfidenceClass(confidence)}">${this.formatNumber(confidence, 0)}%</span></td></tr>`;
+      return `<tr class="${row.proposed ? "proposed" : "unchanged"} ${this._aiDetailKey === `${day}-${row.hour}` ? "selected-detail" : ""}" data-ai-hour-detail="${day}-${row.hour}"><td>${row.proposed ? `<input type="checkbox" data-ai-plan-row="${key}" ${selected.has(key) ? "checked" : ""}>` : "–"}</td><td>${row.label || this.hourLabel(row.hour)}</td><td>${row.proposed ? this.modePill(row.mode, true) : '<span class="mode-pill off">Bez zmiany</span>'}</td><td>${selling || charging ? `${Math.round(this.asNumber(row.planned_power_w) || this.asNumber(settings.maxSellPower) || 0)} W` : "–"}</td><td>${selling ? `${Number(settings.maxDischargeCurrent) || 0} A` : "–"}</td><td>${charging ? `${Number(settings.maxGridChargeCurrent) || 0} A` : "–"}</td><td>${row.proposed ? this.formatEnergy(row.energy_kwh) : "–"}</td><td>${this.formatNumber(row.soc_after, 1)}%</td><td class="${(this.asNumber(row.net_result ?? row.balance_pln) || 0) >= 0 ? "good" : "warn"}">${this.formatSignedMoney(row.net_result ?? row.balance_pln)}</td><td><span class="ai-confidence ${this.aiConfidenceClass(confidence)}">${this.formatNumber(confidence, 0)}%</span></td></tr>`;
     }).join("") : `<tr><td colspan="10" class="ai-empty">Brak propozycji — integracja nie tworzy danych zastępczych.</td></tr>`;
     const best = proposed.slice().sort((a, b) => (this.asNumber(b.balance_pln) || 0) - (this.asNumber(a.balance_pln) || 0))[0];
     const variants = planner.variants || {};
@@ -4007,13 +4308,16 @@ class DeyeEnergyManagerCard extends HTMLElement {
       return `<button class="${planner.selected_strategy === key ? "active" : ""}" disabled><strong>${label}</strong><span>${summary ? `SOC ${this.formatNumber(summary.end_soc, 1)}% · ${this.formatNumber(summary.balance_pln, 2)} PLN` : "brak danych"}</span></button>`;
     };
     const quality = planner.data_quality || {};
+    const detail = allRows.find((row) => `${day}-${row.hour}` === this._aiDetailKey) || best;
+    const detailCard = detail ? `<section class="ai-hour-detail"><h3>Szczegóły decyzji · ${this.escapeHtml(detail.label || this.hourLabel(detail.hour))}</h3><div class="ai-hour-detail-grid"><div><span>Akcja</span><strong>${this.escapeHtml(detail.action || "none")}</strong></div><div><span>Cena</span><strong>${this.formatNumber(detail.action === "sell" ? detail.sell_price : detail.effective_buy_price, 4)} zł/kWh</strong></div><div><span>SOC przed / po</span><strong>${this.formatNumber(detail.soc_start_pct, 1)}% / ${this.formatNumber(detail.soc_end_pct ?? detail.soc_after, 1)}%</strong></div><div><span>PV / dom</span><strong>${this.formatNumber(detail.pv_corrected_kwh ?? detail.corrected_pv_kwh, 2)} / ${this.formatNumber(detail.home_load_kwh ?? detail.load_kwh, 2)} kWh</strong></div><div><span>Wynik netto</span><strong>${this.formatSignedMoney(detail.net_result ?? detail.balance_pln)}</strong></div><div><span>Korzyść vs baseline</span><strong>${this.formatSignedMoney(detail.benefit)}</strong></div><div><span>Pewność</span><strong>${this.formatNumber(detail.confidence, 0)}%</strong></div><div><span>Główne ograniczenie</span><strong>${this.escapeHtml(detail.limit_reason || "brak")}</strong></div></div><p>${this.escapeHtml((detail.reason_codes || []).join(" · ") || "Brak dodatkowego uzasadnienia.")}</p></section>` : "";
     return `<div class="ai-proposals-view"><h2>Proponowane zmiany</h2>
       <div class="ai-proposal-toolbar"><div class="ai-day-tabs"><button class="${day === "today" ? "active" : ""}" data-ai-day="today">Dziś</button><button class="${day === "tomorrow" ? "active" : ""}" data-ai-day="tomorrow">Jutro</button></div><div class="ai-view-tools"><button data-ai-toggle-24="1">${this._aiShow24 ? "Tylko propozycje" : "Pełne 24h"}</button><button class="${allSelected ? "neutral" : "select"}" data-ai-toggle-selection="1" ${!proposed.length ? "disabled" : ""}>${allSelected ? "× Odznacz wszystkie" : "✓ Zaznacz wszystkie"}</button></div></div>
-      <div class="ai-plan-table-wrap"><table class="ai-plan-table"><thead><tr><th>Wybór</th><th>Godzina</th><th>Tryb</th><th>Moc</th><th>Rozł.</th><th>Ład.</th><th>Energia</th><th>SOC po</th><th>Bilans</th><th>Pewność</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      <div class="ai-plan-table-wrap"><table class="ai-plan-table"><thead><tr><th>Wybór</th><th>Godzina</th><th>Tryb</th><th>Moc</th><th>Rozł.</th><th>Ład.</th><th>Energia</th><th>SOC po</th><th>Wynik netto</th><th>Pewność</th></tr></thead><tbody>${tableRows}</tbody></table></div>
+      ${detailCard}
       <div class="ai-decision-grid"><section><h3>🏆 Najlepsza decyzja</h3><p>${best ? `${best.label}<br>${best.mode} · pewność ${this.formatNumber(best.confidence, 0)}%` : "Brak decyzji spełniającej warunki"}</p></section><section><h3>⚖ Trzy warianty</h3><div class="ai-variants">${variantSummary("safe", "Bezpieczny")}${variantSummary("balanced", "Zrównoważony")}${variantSummary("profit", "Maksymalny zysk")}</div></section><section><h3>💡 Uzasadnienie AI</h3><p>Plan uwzględnia ceny energii i dystrybucji, Solcast, pogodę pomocniczą, wyuczony profil domu, sprawność i rezerwę baterii. ${quality.learning_stage === "gotowe" ? "Model ma wystarczającą historię." : "Model jest na etapie wstępnego uczenia, dlatego pewność jest ograniczona."}</p></section></div>
       ${this.aiReadableEnergyChart(allRows, `Plan na ${day === "today" ? "dziś" : "jutro"}`)}
       <div class="ai-support-grid">${this.aiWeatherCard(planner, day)}${this.renderAiQualityCard(planner)}</div>
-      <button class="ai-apply-plan" data-apply-ai-day="1" ${!selectedCount ? "disabled" : ""}>${day === "today" ? "Zastosuj wybrane na dziś" : "Zaplanuj wybrane na jutro"} (${selectedCount})</button>
+      <button class="ai-apply-plan" data-apply-ai-day="1" ${!selectedCount || planner.recommended_write === false || planner.plan_status === "blocked" ? "disabled" : ""}>${day === "today" ? "Zastosuj wybrane na dziś" : "Zaplanuj wybrane na jutro"} (${selectedCount})</button>
     </div>`;
   }
 
@@ -4039,13 +4343,32 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const weatherStatus = weather.available
       ? `${weather.entity_id || "encja pogody"} · ${weather.hourly_count || 0}/48 h · ${weather.daily_count || 0}/7 dni · ${this.formatTimeShort(weather.last_updated)}`
       : `${weather.entity_id || "brak encji"} · niedostępna${weather.last_error ? ` · ${weather.last_error}` : ""}`;
-    return `<section class="ai-metric-card ai-quality-card"><h3>Dane i jakość</h3><ul><li><span>Status uczenia</span><strong>${quality.learning_stage || "brak"}</strong></li><li><span>Zapisane dni / godziny</span><strong>${quality.recorded_days || 0} / ${learning.recorded_hours || 0}</strong></li><li><span>Trafność zakończonych dni</span><strong>${accuracy === null ? "brak danych" : `${accuracy.toFixed(1)}% (${learning.solcast_accuracy_days || 0} dni)`}</strong></li><li><span>Ceny jutra</span><strong>sprzedaż ${quality.tomorrow_sell_prices || 0}/24 · zakup ${quality.tomorrow_buy_prices || 0}/24</strong></li><li><span>Pogoda / aktualizacja</span><strong>${this.escapeHtml(weatherStatus)}</strong></li><li><span>Profil PV</span><strong>${quality.pv_profile_learned ? "wyuczony" : "krzywa pomocnicza"}</strong></li><li><span>OSD / taryfa</span><strong>${tariff.provider_name || tariff.provider || "brak"} · ${tariff.plan_name || tariff.plan || "brak"}</strong></li><li><span>Wersja katalogu</span><strong>${tariff.catalog_version || "wbudowana"}</strong></li><li><span>Mapowanie Deye</span><strong>${mapping}</strong></li><li><span>Ostatnia analiza</span><strong>${this.formatTimeShort(planner.generated_at)}</strong></li></ul></section>`;
+    const pvDiagnostics = learning.pv_profile_diagnostics || learning.pv_diagnostics || {};
+    const loadDiagnostics = learning.load_profile_diagnostics || learning.load_diagnostics || {};
+    const apiStatus = aiState?.attributes?.api_assistant || {};
+    return `<section class="ai-metric-card ai-quality-card"><h3>Dane i jakość</h3><ul>
+      <li><span>Status uczenia</span><strong>${quality.learning_stage || planner.learning_status || "brak"}</strong></li>
+      <li><span>Status planu / wykonania</span><strong>${this.escapeHtml(planner.plan_status || "brak")} · ${this.escapeHtml((planner.rows || []).find((row) => row.hour === new Date().getHours() && row.day === "today")?.dispatch_status || "brak")}</strong></li>
+      <li><span>Zapisane dni / godziny</span><strong>${quality.recorded_days || 0} / ${learning.recorded_hours || 0}</strong></li>
+      <li><span>Trafność zakończonych dni</span><strong>${(learning.solcast_accuracy_days || 0) < 1 ? "Brak zakończonych dni" : accuracy === null ? "brak danych" : `${accuracy.toFixed(1)}% (${learning.solcast_accuracy_days} dni)`}</strong></li>
+      <li><span>Profil PV</span><strong>${quality.pv_profile_learned ? "wyuczony" : "krzywa pomocnicza"} · próbki ${pvDiagnostics.accepted_samples ?? "brak"}/${pvDiagnostics.rejected_samples ?? "brak"}</strong></li>
+      <li><span>Profil domu 7×24</span><strong>pokrycie ${loadDiagnostics.coverage_cells ?? learning.coverage?.load_cells ?? "brak"}/168 · fallback ${loadDiagnostics.fallback_count ?? "brak"}</strong></li>
+      <li><span>Kompletność próbek</span><strong>${this.escapeHtml(quality.fail_closed ? "krytyczny brak SOC" : "plan policzony")}</strong></li>
+      <li><span>Ceny jutra</span><strong>sprzedaż ${quality.tomorrow_sell_prices || 0}/24 · zakup ${quality.tomorrow_buy_prices || 0}/24</strong></li>
+      <li><span>Pogoda / aktualizacja</span><strong>${this.escapeHtml(weatherStatus)}</strong></li>
+      <li><span>OSD / taryfa</span><strong>${tariff.provider_name || tariff.provider || "brak"} · ${tariff.plan_name || tariff.plan || "brak"}</strong></li>
+      <li><span>Dystrybucja</span><strong>${tariff.price_includes_distribution ? "zawarta w cenie źródłowej" : "doliczana z profilu OSD"}</strong></li>
+      <li><span>API AI</span><strong>${this.escapeHtml(apiStatus.status || "wyłączone")}${apiStatus.last_error ? ` · ${this.escapeHtml(apiStatus.last_error)}` : ""}</strong></li>
+      <li><span>Mapowanie Deye</span><strong>${mapping}</strong></li>
+      <li><span>Schemat historii / algorytm</span><strong>${planner.history_schema_version || "brak"} · ${this.escapeHtml(planner.algorithm_version || "brak")}</strong></li>
+      <li><span>Ostatnia analiza</span><strong>${this.formatTimeShort(planner.generated_at)} · ${this.escapeHtml(planner.generation_reason || "brak")} · ${this.formatNumber(planner.duration_ms, 1)} ms</strong></li>
+    </ul></section>`;
   }
 
   renderAiPlanDay(planner, day) {
     const rows = this.aiRowsForDay(planner, day);
     const summary = (planner.days || []).find((item) => item.day === day) || {};
-    return `<div class="ai-day-plan"><div class="ai-kpis"><div><span>SOC start</span><strong>${this.formatNumber(summary.start_soc, 1)}%</strong></div><div><span>SOC koniec</span><strong>${this.formatNumber(summary.end_soc, 1)}%</strong></div><div><span>Sprzedaż</span><strong>${this.formatEnergy(summary.sold_kwh || 0)}</strong></div><div><span>Zakup</span><strong>${this.formatEnergy(summary.bought_kwh || 0)}</strong></div><div><span>Bilans</span><strong>${this.formatNumber(summary.balance_pln, 2)} PLN</strong></div></div>${this.aiReadableEnergyChart(rows, day === "today" ? "Plan na dziś" : "Plan na jutro")}${this.aiWeatherCard(planner, day)}</div>`;
+    return `<div class="ai-day-plan"><div class="ai-kpis"><div><span>SOC start</span><strong>${this.formatNumber(summary.start_soc, 1)}%</strong></div><div><span>SOC koniec</span><strong>${this.formatNumber(summary.end_soc, 1)}%</strong></div><div><span>Eksport</span><strong>${this.formatEnergy(summary.sold_kwh || 0)}</strong></div><div><span>Import</span><strong>${this.formatEnergy(summary.bought_kwh || 0)}</strong></div><div><span>Wynik netto</span><strong>${this.formatSignedMoney(summary.balance_pln)}</strong></div></div>${this.aiReadableEnergyChart(rows, day === "today" ? "Plan na dziś" : "Plan na jutro")}${this.aiWeatherCard(planner, day)}</div>`;
   }
 
   renderAiDialog(slots) {
@@ -4221,31 +4544,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
         body = `<div class="hint">${this.mapWarning(slots)}. Harmonogram 24h jest kompresowany do zakresów zgodnych z 6 slotami Deye.</div>
           <table class="settings-table"><thead><tr><th>Slot Deye</th><th>Od</th><th>Do</th><th>Funkcja</th><th>Ładowanie z sieci</th><th>SOC</th></tr></thead><tbody>${segmentRows}</tbody></table>`;
       } else if (tab === "ai") {
-        body = `
-          <div class="hint">Inteligentny optymalizator 0.7.6 analizuje dane i pokazuje sugestie. Harmonogram zmienia dopiero po ręcznym wyborze godzin i potwierdzeniu.</div>
-          ${this.aiCheck("enabled", "Włącz inteligentne planowanie", aiSettings.enabled)}
-          ${this.row("Tryb działania", "Sugestie z ręcznym zatwierdzeniem")}
-          ${this.aiSelect("strategy", "Priorytet", [["balanced", "Zrównoważony"], ["profit", "Maksymalny zysk"], ["autoconsumption", "Maksymalna autokonsumpcja"]], aiSettings.strategy)}
-          ${this.aiCheck("forecastEnabled", "Uwzględniaj prognozę Solcast", aiSettings.forecastEnabled)}
-          ${this.aiNumber("forecastMargin", "Margines bezpieczeństwa prognozy", aiSettings.forecastMargin, "%")}
-          ${this.aiCheck("realPv", "Porównuj z realną produkcją PV", aiSettings.realPv)}
-          ${this.aiCheck("history", "Uwzględniaj historię produkcji i sprzedaży", aiSettings.history)}
-          ${this.aiCheck("prices", "Uwzględniaj ceny energii", aiSettings.prices)}
-          ${this.aiNumber("minSellPrice", "Minimalna cena sprzedaży", aiSettings.minSellPrice, "PLN")}
-          ${this.aiNumber("maxBuyPrice", "Maksymalna cena zakupu", aiSettings.maxBuyPrice, "PLN")}
-          ${this.aiNumber("minSoc", "Minimalny SOC", aiSettings.minSoc, "%")}
-          ${this.aiNumber("targetSoc", "Docelowy SOC magazynu", aiSettings.targetSoc, "%")}
-          ${this.aiNumber("batteryCapacityKwh", "Pojemność użytkowa magazynu", aiSettings.batteryCapacityKwh, "kWh")}
-          ${this.aiNumber("batteryEfficiency", "Sprawność magazynu", aiSettings.batteryEfficiency, "%")}
-          ${this.aiNumber("reserveKwh", "Rezerwa energii w magazynie", aiSettings.reserveKwh, "kWh")}
-          ${this.aiNumber("maxSellPower", "Maksymalna moc sprzedaży", aiSettings.maxSellPower, "W")}
-          ${this.aiNumber("gridExportLimit", "Limit oddawania do sieci", aiSettings.gridExportLimit, "W")}
-          ${this.aiNumber("maxDischargeCurrent", "Limit prądu rozładowania", aiSettings.maxDischargeCurrent, "A")}
-          ${this.aiNumber("maxChargeCurrent", "Limit prądu ładowania", aiSettings.maxChargeCurrent, "A")}
-          ${this.aiNumber("maxGridChargeCurrent", "Limit prądu ładowania z sieci", aiSettings.maxGridChargeCurrent, "A")}
-          ${this.aiCheck("allowGridCharge", "AI może sugerować ładowanie z sieci", aiSettings.allowGridCharge)}
-           ${this.aiCheck("allowBatterySell", "AI może sugerować sprzedaż z baterii", aiSettings.allowBatterySell)}
-           ${this.aiCheck("allowDeyeMode", "AI może sugerować zmianę trybu Deye", aiSettings.allowDeyeMode)}`;
+        body = this.renderAiSettingsPanel();
       } else if (tab === "tariff") {
         body = this.renderTariffTab();
       } else if (tab === "history") {
@@ -4694,6 +4993,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
            .ai-energy-48-crisp{grid-column:1/-1;min-width:0}.ai-energy-48-crisp>h3{margin:0 0 10px;color:#7ee22d}.ai-readable-stack{display:grid;gap:12px}.ai-crisp-chart{position:relative;overflow:visible;padding:15px 14px 12px;background:radial-gradient(circle at 50% 0%,rgba(18,86,117,.12),transparent 46%),linear-gradient(180deg,rgba(9,34,49,.92),rgba(5,22,33,.94))}.ai-crisp-chart h3{margin:0 0 9px;color:#7ee22d;font-size:16px}.ai-crisp-legend{display:flex;justify-content:center;flex-wrap:wrap;gap:5px 12px;margin:0 0 12px}.ai-crisp-legend button{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:4px;background:transparent;color:#b8cdd7;font:inherit;font-size:11px;padding:3px 4px;cursor:pointer}.ai-crisp-legend button:hover{background:rgba(69,149,188,.12);color:#fff}.ai-crisp-legend button.disabled{opacity:.32;text-decoration:line-through}.ai-crisp-legend i{display:block;width:13px;height:7px;border-radius:2px;background:#35aee8}.ai-crisp-legend .actual i{background:#ff8a32}.ai-crisp-legend .solcast i,.ai-crisp-legend .corrected i,.ai-crisp-legend .soc i,.ai-crisp-legend .minimum i{height:3px}.ai-crisp-legend .solcast i{background:#67c842}.ai-crisp-legend .corrected i{background:#bd6dff}.ai-crisp-legend .band i{height:9px;background:rgba(151,191,213,.34);border:1px solid rgba(161,205,228,.55)}.ai-crisp-legend .soc i{background:#ffd200}.ai-crisp-legend .minimum i{background:repeating-linear-gradient(90deg,#ff6577 0 5px,transparent 5px 8px)}.ai-crisp-layout{display:grid;grid-template-columns:44px minmax(0,1fr) 38px;gap:7px;align-items:stretch}.ai-crisp-main{min-width:0}.ai-crisp-plot{position:relative;height:268px;border-bottom:1px solid rgba(119,166,188,.3);background:linear-gradient(180deg,rgba(4,18,28,.25),rgba(4,18,28,.52))}.ai-crisp-svg{display:block!important;width:100%!important;min-width:0!important;height:100%!important;max-height:none!important;overflow:visible}.ai-crisp-grid{stroke:rgba(118,164,185,.18);stroke-width:1}.ai-crisp-guide{stroke:rgba(123,170,191,.2);stroke-width:1;stroke-dasharray:5 6}.ai-crisp-baseline{stroke:rgba(157,202,222,.58);stroke-width:1}.ai-crisp-load{fill:#35aee8}.ai-crisp-actual{fill:#ff8a32}.ai-crisp-band{fill:rgba(151,191,213,.18);stroke:rgba(171,210,228,.38);stroke-width:1}.ai-crisp-solcast{fill:none;stroke:#67c842;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-corrected{fill:none;stroke:#bd6dff;stroke-width:2.7;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-soc{fill:none;stroke:#ffd200;stroke-width:2.8;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-min-soc{stroke:#ff6577;stroke-width:1.5;stroke-dasharray:7 5}.ai-crisp-now{stroke:#ff5d70;stroke-width:1.8;stroke-dasharray:6 4}.ai-crisp-now-tag{position:absolute;top:7px;right:8px;border:1px solid #ff5d70;border-radius:4px;background:#f4f7f8;color:#263943;padding:2px 6px;font-size:10px;font-weight:900}.ai-crisp-hit{stroke:none!important;stroke-width:0!important;fill:transparent!important}.ai-crisp-axis{display:flex;flex-direction:column;justify-content:space-between;min-height:268px;color:#a9c3d0;font-size:11px;font-weight:700}.ai-crisp-axis b{color:#e3f2f7;font-size:12px}.ai-crisp-axis-left{align-items:flex-end;text-align:right}.ai-crisp-axis-right{align-items:flex-start;text-align:left}.ai-crisp-time-grid,.ai-crisp-weather-grid{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));margin-left:0}.ai-crisp-time-grid{min-height:25px;align-items:start;padding-top:6px;color:#c6dbe5;font-size:10px;font-weight:800}.ai-crisp-time-grid span{text-align:center;white-space:nowrap}.ai-crisp-weather-grid{min-height:31px;border-top:1px solid rgba(104,151,174,.12);align-items:center}.ai-crisp-weather-cell{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:30px;cursor:default}.ai-crisp-weather-cell b{font-size:18px;line-height:1;font-weight:400}.ai-crisp-weather-cell i{position:absolute;bottom:2px;width:13px;height:2px;border-radius:4px;background:#536d79;opacity:.35}.ai-crisp-weather-cell i.low{background:#65c95a;opacity:.9}.ai-crisp-weather-cell i.medium{background:#ffd166;opacity:.9}.ai-crisp-weather-cell i.high{background:#49aaff;opacity:.9}.ai-crisp-status{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:3px 8px;margin-top:4px;padding-top:5px;border-top:1px solid rgba(104,151,174,.18);font-size:10px}.ai-crisp-status>span{font-weight:800;color:#92afbd}.ai-crisp-status>div{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;height:13px}.ai-crisp-status>div span{display:block;border-radius:3px;background:rgba(102,137,153,.12)}.ai-crisp-status>div span.active.sell{background:#69d438;box-shadow:0 0 0 1px rgba(141,233,96,.55) inset}.ai-crisp-status>div span.active.charge{background:#ffd200;box-shadow:0 0 0 1px rgba(255,227,106,.55) inset}.ai-crisp-status>div span.active.tariff{background:#9f863d;box-shadow:0 0 0 1px rgba(199,173,91,.55) inset}.ai-crisp-chart .ai-chart-tooltip{width:min(300px,calc(100% - 18px))}.ai-crisp-chart .ai-chart-help{margin:8px 1px 0}.ai-energy-48-crisp .ai-crisp-chart{margin-top:0}
            @media(max-width:980px){.ai-energy-48>.ai-support-grid{grid-template-columns:1fr}.ai-chart-v2 svg{min-width:860px}.ai-weather-facts{grid-template-columns:1fr 1fr}.ai-weather-facts span:last-child{grid-column:1/-1}.ai-crisp-chart{padding:12px 9px}.ai-crisp-layout{grid-template-columns:36px minmax(0,1fr) 31px;gap:4px}.ai-crisp-plot{height:236px}.ai-crisp-axis{min-height:236px;font-size:10px}.ai-crisp-legend{justify-content:flex-start;gap:4px 7px}.ai-crisp-legend button{font-size:10px}.ai-crisp-status{grid-template-columns:66px minmax(0,1fr);font-size:9px}.ai-crisp-svg{min-width:0!important}}
            @media(max-width:1500px){.info-grid{grid-template-columns:1fr 1fr}.info-grid>.panel:nth-child(3){grid-column:1/-1}.schedule-main.selecting{grid-template-columns:1fr}.bulk-panel{max-width:none}.mode-legend{grid-template-columns:repeat(3,minmax(0,1fr))}}
+           .ai-settings-pane{min-width:0}.ai-settings-tabs{position:sticky;top:0;z-index:3;background:#071b2a}.ai-days-row{align-items:start}.ai-day-presets{display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end}.ai-day-presets button{border:1px solid var(--line2);border-radius:6px;background:#15354d;color:#e5f3f9;padding:6px 8px}.ai-weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:5px;padding:8px 12px;border-top:1px solid var(--line)}.ai-weekdays label{display:flex;align-items:center;justify-content:center;gap:4px;border:1px solid var(--line);border-radius:6px;padding:7px 3px;font-size:11px}.ai-weekdays input{width:auto}.ai-note-row textarea{width:100%;min-height:70px;box-sizing:border-box;background:#081622;color:#fff;border:1px solid var(--line2);border-radius:7px;padding:8px;resize:vertical}.ai-profile-summary,.ai-hour-detail-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0}.ai-profile-summary>div,.ai-hour-detail-grid>div{border:1px solid var(--line);border-radius:7px;padding:9px;background:rgba(4,20,31,.55)}.ai-profile-summary span,.ai-hour-detail-grid span{display:block;color:#91adbc;font-size:10px}.ai-profile-summary strong,.ai-hour-detail-grid strong{display:block;margin-top:4px;overflow-wrap:anywhere}.ai-hour-detail{margin:10px 0;padding:12px;border:1px solid rgba(22,156,245,.5);border-radius:8px;background:rgba(7,37,55,.78)}.ai-hour-detail p{overflow-wrap:anywhere;color:#bcd0dc}.ai-plan-table tr[data-ai-hour-detail]{cursor:pointer}.ai-plan-table tr.selected-detail{outline:1px solid #169cf5;outline-offset:-1px}.ai-profile-impact,.ai-status-list{list-style:none;margin:0;padding:0}.ai-profile-impact li,.ai-status-list li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line)}.ai-profile-impact span,.ai-status-list span{color:#91adbc}.ai-profile-impact strong,.ai-status-list strong{text-align:right;overflow-wrap:anywhere}
            @media(max-width:980px){.dem-v073{padding:10px}.info-grid{grid-template-columns:1fr}.status-grid,.sales-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.info-grid>.panel{height:auto;min-height:340px}.schedule-head{display:grid}.schedule-tools{justify-content:stretch}.tool-btn{flex:1}.mode-legend{grid-template-columns:1fr 1fr}.schedule-table{min-width:1160px}.schedule-table-card{overflow-x:auto}.sales-tables{grid-template-columns:1fr}.sales-chart{overflow-x:auto;grid-template-columns:repeat(24,24px)}.price-scroll{height:260px;overflow:auto;scrollbar-gutter:stable}.solcast-days{grid-template-columns:repeat(2,1fr)}.settings-layout{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.settings-nav{flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--line)}.settings-nav button{width:auto;min-width:max-content;text-align:center}.diagnostic-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-shell{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.ai-sidebar{border-right:0;border-bottom:1px solid var(--line);padding:7px}.ai-sidebar nav{display:flex;overflow-x:auto}.ai-sidebar nav button{min-width:max-content}.ai-learning-status{display:none}.ai-overview-grid{grid-template-columns:1fr}.ai-overview-grid>.ai-chart-card{grid-column:auto}.ai-decision-grid,.ai-quality-full{grid-template-columns:1fr}.ai-support-grid{grid-template-columns:1fr}.ai-day-plan>.ai-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.ai-dialog-v2{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;overflow:hidden}.ai-dialog-v2 .ai-shell,.ai-dialog-v2 .ai-sidebar,.ai-dialog-v2 .ai-main,.ai-dialog-v2 .ai-overview-grid,.ai-dialog-v2 .ai-price-columns,.ai-dialog-v2 .ai-kpis,.ai-dialog-v2 .ai-decision-grid,.ai-dialog-v2 .ai-support-grid,.ai-dialog-v2 .ai-quality-full,.ai-dialog-v2 .ai-metric-card,.ai-dialog-v2 .ai-chart-card{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.ai-dialog-v2 .ai-sidebar{overflow:hidden}.ai-dialog-v2 .ai-sidebar nav{display:flex;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x}.ai-dialog-v2 .ai-sidebar nav button{flex:0 0 auto;min-width:max-content;max-width:none;white-space:nowrap}.ai-dialog-v2 .ai-main{overflow-x:hidden}.ai-dialog-v2 .ai-plan-table-wrap,.ai-dialog-v2 .ai-chart-scroll,.ai-dialog-v2 .ai-weather-strip{width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}.ai-dialog-v2 .ai-crisp-chart,.ai-dialog-v2 .ai-crisp-layout,.ai-dialog-v2 .ai-crisp-main,.ai-dialog-v2 .ai-crisp-plot{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.ai-dialog-v2 .ai-crisp-chart{overflow:hidden}.ai-dialog-v2 .ai-crisp-svg{width:100%!important;max-width:100%!important;min-width:0!important}.ai-dialog-v2 .ai-weather-head{min-width:0;flex-wrap:wrap}.ai-dialog-v2 .ai-weather-head>div:first-child{min-width:0}.ai-dialog-v2 .ai-weather-day,.ai-dialog-v2 .ai-weather-hour{flex:0 0 66px}.ai-dialog-v2 .ai-weather-source{max-width:100%;white-space:normal;overflow-wrap:anywhere}}
            @media(max-width:620px){
              .dem-v073{padding:4px;gap:8px}.panel,.schedule-shell,.table-wrap{border-radius:7px}.panel-title{padding:10px 12px;font-size:18px}
@@ -4704,6 +5004,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
              .sales-summary{padding:8px}.sales-chart{min-height:150px}.sales-tables{gap:8px}.sales-table-card h3{font-size:14px;padding:9px}.sales-table-card th,.sales-table-card td{font-size:11px;padding:6px 8px}
               .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}.ai-dialog-v2 .ai-main{padding:10px}.ai-dialog-v2 .ai-overview-grid,.ai-dialog-v2 .ai-price-columns,.ai-dialog-v2 .ai-decision-grid,.ai-dialog-v2 .ai-support-grid,.ai-dialog-v2 .ai-quality-full{grid-template-columns:minmax(0,1fr)}.ai-dialog-v2 .ai-proposal-toolbar{width:100%;max-width:100%;min-width:0}.ai-dialog-v2 .ai-day-tabs,.ai-dialog-v2 .ai-view-tools{width:100%;max-width:100%;min-width:0}.ai-dialog-v2 .ai-day-tabs button,.ai-dialog-v2 .ai-view-tools button{min-width:0;white-space:normal;overflow-wrap:anywhere}.ai-dialog-v2 .ai-chart-card{max-width:100%}.ai-dialog-v2 .ai-crisp-chart{overflow:hidden}.ai-dialog-v2 .ai-crisp-layout{grid-template-columns:30px minmax(0,1fr) 26px}.ai-dialog-v2 .ai-crisp-status{grid-template-columns:58px minmax(0,1fr)}.ai-dialog-v2 .ai-weather-head{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.ai-dialog-v2 .ai-weather-temperature{text-align:left}.ai-dialog-v2 .ai-weather-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-dialog-v2 .ai-quality-card li{min-width:0;flex-wrap:wrap}.ai-dialog-v2 .ai-quality-card li span,.ai-dialog-v2 .ai-quality-card li strong{min-width:0;overflow-wrap:anywhere}.ai-dialog-v2 .ai-quality-card li strong{text-align:left}
            }
+           @media(max-width:620px){.ai-settings-tabs{overflow-x:auto;flex-wrap:nowrap}.ai-settings-tabs button{flex:0 0 auto}.ai-settings-pane .settings-row{grid-template-columns:minmax(0,1fr);gap:7px}.ai-settings-pane .settings-row select,.ai-settings-pane .settings-row .compact-field{max-width:100%;width:100%;justify-self:stretch}.ai-settings-pane .settings-row>input[type=checkbox]{justify-self:start}.ai-weekdays{grid-template-columns:repeat(4,minmax(0,1fr))}.ai-day-presets{justify-content:flex-start}.ai-profile-summary,.ai-hour-detail-grid{grid-template-columns:minmax(0,1fr)}.ai-profile-impact li,.ai-status-list li{min-width:0;flex-wrap:wrap}.ai-profile-impact strong,.ai-status-list strong{text-align:left;min-width:0}.ai-hour-detail{padding:9px}}
           </style>
            <div class="dem-v073" style="${demStyle}">
             ${statusSection}
@@ -4875,6 +5176,40 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._tariffDraft = null;
       this.renderDialogOnly();
     }));
+    root.querySelectorAll("[data-ai-settings-section]").forEach((el) => el.addEventListener("click", () => {
+      this.collectAiProfiles();
+      this._aiSettingsSection = el.dataset.aiSettingsSection;
+      this._aiProfileStatus = "";
+      this.renderDialogOnly();
+    }));
+    root.querySelectorAll("[data-ai-profile][data-ai-profile-field]").forEach((el) => {
+      const update = () => this.collectAiProfiles();
+      el.addEventListener("change", update);
+      if (el.tagName !== "SELECT" && el.type !== "checkbox") el.addEventListener("input", update);
+    });
+    root.querySelectorAll("[data-ai-profile-day]").forEach((el) => el.addEventListener("change", () => this.collectAiProfiles()));
+    root.querySelectorAll("[data-ai-profile-days]").forEach((el) => el.addEventListener("click", () => {
+      const selected = new Set(String(el.dataset.days || "").split(",").filter(Boolean));
+      this.querySelectorAll(`[data-ai-profile-day="${el.dataset.aiProfileDays}"]`).forEach((box) => {
+        box.checked = !selected.size || selected.has(box.value);
+      });
+      const draft = this.collectAiProfiles();
+      draft.profiles[el.dataset.aiProfileDays].active_days = selected.size ? [...selected] : [];
+    }));
+    root.querySelectorAll("[data-save-ai-profiles]").forEach((el) => el.addEventListener("click", () => this.saveAiProfiles()));
+    root.querySelectorAll("[data-ai-api-field]").forEach((el) => {
+      const update = () => {
+        this.collectAiApiDraft();
+        if (el.dataset.aiApiField === "provider") this.renderDialogOnly();
+      };
+      el.addEventListener("change", update);
+      if (el.tagName !== "SELECT" && el.type !== "checkbox" && el.dataset.aiApiField !== "api_key") {
+        el.addEventListener("input", update);
+      }
+    });
+    root.querySelectorAll("[data-save-ai-api]").forEach((el) => el.addEventListener("click", () => this.saveAiApiSettings()));
+    root.querySelectorAll("[data-test-ai-api]").forEach((el) => el.addEventListener("click", () => this.runAiApiService("test_ai_api")));
+    root.querySelectorAll("[data-analyze-ai-api]").forEach((el) => el.addEventListener("click", () => this.runAiApiService("analyze_ai_api")));
     root.querySelectorAll("[data-tariff-field='tariff_mode'],[data-tariff-field='osd_provider']").forEach((el) => el.addEventListener("change", () => {
       const draft = this.collectTariffDraft();
       if (el.dataset.tariffField === "osd_provider") {
@@ -5105,6 +5440,11 @@ class DeyeEnergyManagerCard extends HTMLElement {
       else selected.delete(el.dataset.aiPlanRow);
       this.renderDialogOnly();
     }));
+    root.querySelectorAll("[data-ai-hour-detail]").forEach((el) => el.addEventListener("click", (event) => {
+      if (event.target.closest("input,button,a")) return;
+      this._aiDetailKey = el.dataset.aiHourDetail;
+      this.renderDialogOnly();
+    }));
     root.querySelectorAll("[data-ai-toggle-selection]").forEach((el) => el.addEventListener("click", () => {
       const planner = this.aiPlannerData(slots);
       const proposedKeys = this.aiRowsForDay(planner).filter((row) => row.proposed).map((row) => this.aiSlotKey(row.hour));
@@ -5139,4 +5479,4 @@ class DeyeEnergyManagerCard extends HTMLElement {
 
 customElements.define("deye-energy-manager-card", DeyeEnergyManagerCard);
 window.customCards = window.customCards || [];
-window.customCards.push({ type: "deye-energy-manager-card", name: "Deye Energy Manager", description: "Deye Energy Manager 0.7.6" });
+window.customCards.push({ type: "deye-energy-manager-card", name: "Deye Energy Manager", description: "Deye Energy Manager 0.7.7" });

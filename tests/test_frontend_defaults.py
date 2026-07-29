@@ -54,7 +54,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_card_sources_declare_current_resource_revision(self):
         for source in self.sources:
-            self.assertTrue(source.startswith("// Resource revision: v=23\n"))
+            self.assertTrue(source.startswith("// Resource revision: v=24\n"))
 
     def test_apply_defaults_uses_one_backend_service_call_only(self):
         method = extract_method(self.sources[0], "async applyDefaultValues()")
@@ -423,7 +423,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=23", source)
+            self.assertIn("deye-energy-manager-card.js?v=24", source)
             self.assertNotIn("deye-energy-manager-card.js?v=22", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)

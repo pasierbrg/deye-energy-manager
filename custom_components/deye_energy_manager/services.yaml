@@ -99,6 +99,34 @@ save_ai_settings:
       selector:
         text:
           multiline: true
+save_ai_profiles:
+  name: Zapisz profile Optimizer Core
+  description: Waliduje i zapisuje profile Poranna sprzedaż, Wieczorna sprzedaż i Ładowanie. Nie wykonuje żadnego zapisu do falownika.
+  fields:
+    data:
+      name: Profile JSON
+      description: Kompletny, wersjonowany zestaw profili użytkownika.
+      required: true
+      selector:
+        text:
+          multiline: true
+save_ai_api_settings:
+  name: Zapisz ustawienia asystenta AI
+  description: Zapisuje prywatne opcje dostawcy w config entry Home Assistant. Sekret nie trafia do historii ani atrybutów encji.
+  fields:
+    data:
+      name: Ustawienia JSON
+      description: Dostawca, model, rola, prywatność i opcjonalnie nowy klucz API.
+      required: true
+      selector:
+        text:
+          multiline: true
+test_ai_api:
+  name: Testuj połączenie AI
+  description: Wysyła bezpieczne zapytanie testowe bez danych instalacji.
+analyze_ai_api:
+  name: Analizuj plan ponownie
+  description: Ręcznie uruchamia opcjonalną analizę ostatniego lokalnego planu. Wynik pozostaje doradczy.
 save_ai_analysis:
   name: Zapisz analizę AI
   description: Zapisuje porównanie planu AI z rzeczywistą produkcją i cenami.

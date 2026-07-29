@@ -216,6 +216,24 @@ class ConfigFlowRequiredEntitiesTests(unittest.TestCase):
         self.assertNotIn(const.CONF_PRICE_SENSOR, config_flow.REQUIRED_FIELDS)
         self.assertNotIn(const.CONF_SELL_PRICE_TOMORROW_SENSOR, config_flow.REQUIRED_FIELDS)
 
+    def test_new_pv3_and_battery_soh_mappings_are_optional_and_empty(self):
+        self.assertNotIn(const.CONF_PV3_POWER_SENSOR, config_flow.REQUIRED_FIELDS)
+        self.assertNotIn(const.CONF_BATTERY_SOH_SENSOR, config_flow.REQUIRED_FIELDS)
+        self.assertEqual(config_flow.ENTITY_SPECS[const.CONF_PV3_POWER_SENSOR][0], "")
+        self.assertEqual(config_flow.ENTITY_SPECS[const.CONF_BATTERY_SOH_SENSOR][0], "")
+
+    def test_all_existing_optional_detailed_mappings_remain_single_fields(self):
+        for key in (
+            const.CONF_LOAD_L1_POWER_SENSOR,
+            const.CONF_LOAD_L2_POWER_SENSOR,
+            const.CONF_LOAD_L3_POWER_SENSOR,
+            const.CONF_DAILY_ENERGY_BOUGHT_SENSOR,
+            const.CONF_DAILY_ENERGY_SOLD_SENSOR,
+            const.CONF_DAILY_BATTERY_CHARGE_SENSOR,
+            const.CONF_DAILY_BATTERY_DISCHARGE_SENSOR,
+        ):
+            self.assertEqual(config_flow.ENERGY_DETAIL_FIELDS.count(key), 1)
+
 
 class ServiceJsonValidationTests(unittest.TestCase):
     """Verify that backend services reject malformed JSON with a clear error."""

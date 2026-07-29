@@ -218,6 +218,73 @@ def control_number_calls(runtime):
     ]
 
 
+class DataSourceQualityTests(unittest.TestCase):
+    @staticmethod
+    def _power(value, unit="W"):
+        return FakeState(value, {"unit_of_measurement": unit})
+
+    def test_load_power_remains_primary_and_phases_are_not_added_twice(self):
+        runtime = make_runtime()
+        runtime.hass.states.values.update({
+            const.DEFAULT_LOAD_POWER_SENSOR: self._power(756),
+            const.DEFAULT_LOAD_L1_POWER_SENSOR: self._power(44),
+            const.DEFAULT_LOAD_L2_POWER_SENSOR: self._power(535),
+            const.DEFAULT_LOAD_L3_POWER_SENSOR: self._power(177),
+        })
+        reading = runtime.load_power_reading()
+        self.assertEqual(reading["source"], "primary")
+        self.assertEqual(reading["value"], 756)
+        self.assertEqual(reading["phase_sum_w"], 756)
+
+    def test_complete_load_phases_are_fallback_when_total_is_unavailable(self):
+        runtime = make_runtime()
+        runtime.hass.states.values.update({
+            const.DEFAULT_LOAD_POWER_SENSOR: FakeState("unavailable", {"unit_of_measurement": "W"}),
+            const.DEFAULT_LOAD_L1_POWER_SENSOR: self._power(100),
+            const.DEFAULT_LOAD_L2_POWER_SENSOR: self._power(200),
+            const.DEFAULT_LOAD_L3_POWER_SENSOR: self._power(300),
+        })
+        reading = runtime.load_power_reading()
+        self.assertEqual(reading["source"], "load_phases")
+        self.assertEqual(reading["value"], 600)
+        self.assertEqual(reading["quality"], "degraded")
+
+    def test_missing_phase_prevents_phase_sum_fallback(self):
+        runtime = make_runtime()
+        runtime.hass.states.values.update({
+            const.DEFAULT_LOAD_POWER_SENSOR: FakeState("unavailable", {"unit_of_measurement": "W"}),
+            const.DEFAULT_LOAD_L1_POWER_SENSOR: self._power(100),
+            const.DEFAULT_LOAD_L2_POWER_SENSOR: self._power(200),
+        })
+        reading = runtime.load_power_reading()
+        self.assertNotEqual(reading["source"], "load_phases")
+        self.assertIsNone(reading["value"])
+
+    def test_load_disagreement_reduces_quality_without_replacing_total(self):
+        runtime = make_runtime()
+        runtime.hass.states.values.update({
+            const.DEFAULT_LOAD_POWER_SENSOR: self._power(1000),
+            const.DEFAULT_LOAD_L1_POWER_SENSOR: self._power(100),
+            const.DEFAULT_LOAD_L2_POWER_SENSOR: self._power(100),
+            const.DEFAULT_LOAD_L3_POWER_SENSOR: self._power(100),
+        })
+        reading = runtime.load_power_reading()
+        self.assertEqual(reading["value"], 1000)
+        self.assertEqual(reading["status"], "inconsistent")
+        self.assertEqual(reading["quality"], "degraded")
+
+    def test_direct_battery_power_wins_over_voltage_times_current(self):
+        runtime = make_runtime()
+        runtime.hass.states.values.update({
+            const.DEFAULT_BATTERY_POWER_SENSOR: self._power(500),
+            const.DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR: FakeState(50, {"unit_of_measurement": "V"}),
+            const.DEFAULT_BATTERY_CURRENT_SENSOR: FakeState(20, {"unit_of_measurement": "A"}),
+        })
+        reading = runtime.battery_power_reading()
+        self.assertEqual(reading["source"], "primary")
+        self.assertEqual(reading["value"], 500)
+
+
 class SafetyTests(unittest.TestCase):
     def test_default_control_confirmation_window_is_12_seconds(self):
         self.assertEqual(make_runtime().control_confirmation_timeout, 12.0)
@@ -1601,6 +1668,59 @@ class StatisticsTests(unittest.TestCase):
         runtime.data[const.CONF_BATTERY_POSITIVE_IS_DISCHARGE] = False
         self.assertEqual(runtime.normalized_grid_power(), -500)
         self.assertEqual(runtime.normalized_battery_power(), 700)
+
+
+class AiProfileValidationTests(unittest.IsolatedAsyncioTestCase):
+    def valid_profiles(self):
+        return manager.default_user_profiles()
+
+    def test_safe_migration_profiles_are_disabled_and_versioned(self):
+        profiles = self.valid_profiles()
+        self.assertEqual(2, profiles["schema_version"])
+        self.assertTrue(all(not item["enabled"] for item in profiles["profiles"].values()))
+
+    def test_validation_preserves_independent_sale_profiles_and_midnight_charge(self):
+        profiles = self.valid_profiles()
+        profiles["profiles"]["morning_sale"].update({"enabled": True, "target_energy_kwh": 3.5, "min_price": 0.7})
+        profiles["profiles"]["evening_sale"].update({"enabled": True, "target_energy_kwh": 5.0, "min_price": 1.1})
+        profiles["profiles"]["charging"].update({"enabled": True, "start": "22:00", "end": "06:00", "target_value": 85})
+        result = manager.DeyeEnergyManagerRuntime.validate_user_profiles(profiles)
+        self.assertEqual(3.5, result["profiles"]["morning_sale"]["target_energy_kwh"])
+        self.assertEqual(5.0, result["profiles"]["evening_sale"]["target_energy_kwh"])
+        self.assertEqual(("22:00", "06:00"), (result["profiles"]["charging"]["start"], result["profiles"]["charging"]["end"]))
+
+    def test_invalid_empty_window_soc_power_and_negative_price_are_rejected(self):
+        cases = []
+        profile = self.valid_profiles()
+        profile["profiles"]["morning_sale"]["end"] = profile["profiles"]["morning_sale"]["start"]
+        cases.append(profile)
+        profile = self.valid_profiles()
+        profile["profiles"]["morning_sale"]["min_soc_after"] = 101
+        cases.append(profile)
+        profile = self.valid_profiles()
+        profile["profiles"]["morning_sale"]["preferred_power_w"] = 14000
+        cases.append(profile)
+        profile = self.valid_profiles()
+        profile["profiles"]["morning_sale"]["min_price"] = -0.1
+        cases.append(profile)
+        for payload in cases:
+            with self.assertRaises(ValueError):
+                manager.DeyeEnergyManagerRuntime.validate_user_profiles(payload)
+
+    async def test_saving_profiles_invalidates_plan_without_daye_calls(self):
+        runtime = make_runtime()
+        saved = []
+        async def save():
+            saved.append(True)
+        runtime.async_save_ai_data = save
+        profiles = self.valid_profiles()
+        profiles["profiles"]["morning_sale"]["enabled"] = True
+        runtime._optimizer_input_snapshot_id = "old"
+        await runtime.async_set_user_profiles(profiles)
+        self.assertEqual("", runtime._optimizer_input_snapshot_id)
+        self.assertEqual("user_profiles_changed", runtime._optimizer_generation_reason)
+        self.assertEqual([], runtime.hass.services.calls)
+        self.assertEqual([True], saved)
 
 
 if __name__ == "__main__":

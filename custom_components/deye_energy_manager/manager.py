@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta
 import math
@@ -18,6 +19,7 @@ from homeassistant.util.dt import now as ha_now
 from .const import (
     CONF_BATTERY_BMS_VOLTAGE_SENSOR,
     CONF_BATTERY_CURRENT_SENSOR,
+    CONF_BATTERY_SOH_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
     CONF_BATTERY_POSITIVE_IS_DISCHARGE,
     CONF_BATTERY_TEMPERATURE_SENSOR,
@@ -54,6 +56,7 @@ from .const import (
     CONF_PV2_CURRENT_SENSOR,
     CONF_PV2_POWER_SENSOR,
     CONF_PV2_VOLTAGE_SENSOR,
+    CONF_PV3_POWER_SENSOR,
     CONF_PV_POWER_SENSOR,
     CONF_PRICE_SENSOR,
     CONF_SELL_PRICE_TOMORROW_SENSOR,
@@ -94,6 +97,7 @@ from .const import (
     DEFAULT_BATTERY_SOC,
     DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR,
     DEFAULT_BATTERY_CURRENT_SENSOR,
+    DEFAULT_BATTERY_SOH_SENSOR,
     DEFAULT_BATTERY_TEMPERATURE_SENSOR,
     DEFAULT_BUY_PRICE_TODAY_SENSOR,
     DEFAULT_BUY_PRICE_TOMORROW_SENSOR,
@@ -124,6 +128,7 @@ from .const import (
     DEFAULT_PV2_CURRENT_SENSOR,
     DEFAULT_PV2_POWER_SENSOR,
     DEFAULT_PV2_VOLTAGE_SENSOR,
+    DEFAULT_PV3_POWER_SENSOR,
     DEFAULT_PV_POWER_SENSOR,
     DEFAULT_PRICE_SENSOR,
     DEFAULT_SELL_PRICE_TOMORROW_SENSOR,
@@ -157,7 +162,42 @@ from .const import (
     DEFAULT_WORK_MODE_SELECT,
 )
 from .tariff_catalog import TariffCatalogManager
-from .ai_planner import build_plan_bundle
+from .ai_planner import build_plan_bundle, snapshot_id
+from .ai_assistant import (
+    build_private_payload,
+    normalize_config as normalize_ai_api_config,
+    redact_config as redact_ai_api_config,
+    request_analysis as request_ai_analysis,
+)
+from .battery_model import (
+    build_soc_timeline,
+    effective_minimum,
+    effective_power_limit,
+    migrate_efficiencies,
+    remaining_minutes_in_hour,
+)
+from .history import (
+    HISTORY_SCHEMA_VERSION,
+    default_user_profiles,
+    energy_kwh,
+    finite_float,
+    migrate_ai_payload,
+    migrate_energy_payload,
+    migrate_learning_payload,
+    migrate_solcast_payload,
+    power_w,
+    update_energy_counter,
+)
+from .learning import (
+    corrected_pv_forecast,
+    forecast_load,
+    learning_stage,
+    load_profile_diagnostics,
+    pv_profile_diagnostics,
+    pv_quality_flags,
+    update_load_profile,
+    update_pv_profile,
+)
 from .tariffs import (
     PROVIDER_LABELS,
     TARIFF_LABELS,
@@ -256,6 +296,15 @@ class DeyeEnergyManagerRuntime:
     sales_stats: dict[str, Any] = field(default_factory=dict)
     ai_settings: dict[str, Any] = field(default_factory=dict)
     ai_history: list[dict[str, Any]] = field(default_factory=list)
+    optimizer_plan: dict[str, Any] = field(default_factory=dict)
+    optimizer_plan_history: list[dict[str, Any]] = field(default_factory=list)
+    _optimizer_input_snapshot_id: str = ""
+    _optimizer_generation_reason: str = "startup"
+    ai_api_config: dict[str, Any] = field(default_factory=dict)
+    ai_api_status: dict[str, Any] = field(default_factory=lambda: {"status": "disabled"})
+    ai_api_cache: dict[str, Any] = field(default_factory=dict)
+    _ai_api_last_call: datetime | None = None
+    _ai_api_task: Any = None
     future_plan: dict[str, Any] = field(default_factory=dict)
     solcast_history: list[dict[str, Any]] = field(default_factory=list)
     solcast_tracking: dict[str, Any] = field(default_factory=dict)
@@ -264,6 +313,12 @@ class DeyeEnergyManagerRuntime:
     energy_samples: list[dict[str, Any]] = field(default_factory=list)
     daily_archive: list[dict[str, Any]] = field(default_factory=list)
     monthly_archive: list[dict[str, Any]] = field(default_factory=list)
+    energy_counter_state: dict[str, dict[str, Any]] = field(default_factory=dict)
+    user_profiles: dict[str, Any] = field(default_factory=default_user_profiles)
+    data_quality: dict[str, Any] = field(default_factory=dict)
+    load_profile_7x24: dict[str, Any] = field(default_factory=dict)
+    pv_learning_profile: dict[str, Any] = field(default_factory=dict)
+    profile_execution: list[dict[str, Any]] = field(default_factory=list)
     weather_forecast: list[dict[str, Any]] = field(default_factory=list)
     weather_daily_forecast: list[dict[str, Any]] = field(default_factory=list)
     weather_last_updated: str = ""
@@ -295,6 +350,17 @@ class DeyeEnergyManagerRuntime:
 
     def __post_init__(self) -> None:
         self.slots = {key: SlotSettings(key=key, label=label) for key, label, *_ in SLOTS}
+        raw_ai_api = self.data.get("ai_api") if isinstance(self.data.get("ai_api"), dict) else {}
+        try:
+            self.ai_api_config = normalize_ai_api_config(raw_ai_api)
+        except ValueError:
+            self.ai_api_config = normalize_ai_api_config({"enabled": False, "provider": "openrouter"})
+        self.ai_api_status = {
+            "status": "ready" if self.ai_api_config.get("enabled") else "disabled",
+            "provider": self.ai_api_config.get("provider"),
+            "model": self.ai_api_config.get("model"),
+            "last_error": None,
+        }
 
     @staticmethod
     def normalize_schedule_mode(
@@ -461,6 +527,10 @@ class DeyeEnergyManagerRuntime:
         return self.configured_sensor(CONF_PV2_CURRENT_SENSOR, DEFAULT_PV2_CURRENT_SENSOR)
 
     @property
+    def pv3_power_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_PV3_POWER_SENSOR, DEFAULT_PV3_POWER_SENSOR)
+
+    @property
     def battery_bms_voltage_sensor(self) -> str | None:
         return self.configured_sensor(CONF_BATTERY_BMS_VOLTAGE_SENSOR, DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR)
 
@@ -471,6 +541,10 @@ class DeyeEnergyManagerRuntime:
     @property
     def battery_temperature_sensor(self) -> str | None:
         return self.configured_sensor(CONF_BATTERY_TEMPERATURE_SENSOR, DEFAULT_BATTERY_TEMPERATURE_SENSOR)
+
+    @property
+    def battery_soh_sensor(self) -> str | None:
+        return self.configured_sensor(CONF_BATTERY_SOH_SENSOR, DEFAULT_BATTERY_SOH_SENSOR)
 
     @property
     def daily_battery_charge_sensor(self) -> str | None:
@@ -922,9 +996,113 @@ class DeyeEnergyManagerRuntime:
             factors[index] = round(max(0.65, min(1.05, 1 - cloud * 0.002 - precipitation * 0.001)), 3)
         return factors
 
+    def battery_model_context(self) -> dict[str, Any]:
+        """Return explicit SOC, efficiency and power-limit semantics."""
+        settings = self.ai_settings
+        capacity = max(0.1, self.safe_float(settings.get("batteryCapacityKwh"), 10))
+        legacy_efficiency = self.safe_float(settings.get("batteryEfficiency"), 90)
+        legacy_efficiency = legacy_efficiency / 100 if legacy_efficiency > 1 else legacy_efficiency
+        migrated = migrate_efficiencies(legacy_efficiency)
+
+        def directional(key: str, fallback: float) -> float:
+            value = self.safe_float(settings.get(key), fallback)
+            value = value / 100 if value > 1 else value
+            return max(0.5, min(1.0, value))
+
+        charge_efficiency = directional("chargeEfficiency", migrated["charge_efficiency"])
+        discharge_efficiency = directional("dischargeEfficiency", migrated["discharge_efficiency"])
+        minimum = effective_minimum(
+            hard_min_soc_pct=self.safe_float(settings.get("minSoc"), 20),
+            reserve_kwh=self.safe_float(settings.get("reserveKwh"), 0),
+            capacity_kwh=capacity,
+            reserve_mode=str(settings.get("reserveMode") or "additional"),
+        )
+        voltage = self.state_float_or_none(self.battery_bms_voltage_sensor)
+        if voltage is None:
+            voltage = finite_float(settings.get("nominalBatteryVoltage"))
+        power = effective_power_limit(
+            plan_limit_w=self.safe_float(settings.get("maxSellPower"), 5000),
+            export_limit_w=finite_float(settings.get("exportLimitW")),
+            inverter_limit_w=finite_float(settings.get("inverterPowerW")),
+            current_limit_a=self.safe_float(settings.get("maxBatteryCurrentA"), self.manual_discharge_current or 120),
+            battery_voltage_v=voltage,
+            entity_limit_w=self.state_float_or_none(self.max_sell_power_number),
+        )
+        return {
+            "capacity_kwh": capacity,
+            "charge_efficiency": charge_efficiency,
+            "discharge_efficiency": discharge_efficiency,
+            "round_trip_efficiency": round(charge_efficiency * discharge_efficiency, 6),
+            "efficiency_migration": migrated["migration"],
+            "minimum": minimum,
+            "target_max_soc_pct": max(
+                minimum["effective_min_soc_pct"],
+                min(100.0, self.safe_float(settings.get("targetSoc"), 100)),
+            ),
+            "power_limit": power,
+            "current_hour_remaining_minutes": remaining_minutes_in_hour(ha_now()),
+        }
+
+    def optimizer_baseline_schedule(self) -> list[dict[str, Any]]:
+        """Snapshot the existing user schedule without changing a slot."""
+        voltage = self.state_float_or_none(self.battery_bms_voltage_sensor)
+        result: list[dict[str, Any]] = []
+        for index in range(48):
+            hour = index % 24
+            slot = next(
+                (
+                    self.slots[key]
+                    for key, _label, start, end in SLOTS
+                    if start <= hour < end
+                ),
+                None,
+            )
+            if slot is None:
+                result.append({
+                    "enabled": False,
+                    "mode": MODE_NORMAL_OPERATION,
+                    "sell_power_w": 0.0,
+                    "charge_enabled": False,
+                    "charge_power_w": 0.0,
+                })
+                continue
+            charge_current = min(
+                value
+                for value in (
+                    max(0.0, slot.charge_current),
+                    max(0.0, slot.grid_charge_current),
+                )
+                if value > 0
+            ) if slot.charge_current > 0 and slot.grid_charge_current > 0 else max(
+                0.0,
+                slot.charge_current,
+                slot.grid_charge_current,
+            )
+            result.append({
+                "slot_key": slot.key,
+                "enabled": bool(slot.enabled),
+                "mode": slot.mode,
+                "physical_work_mode": slot.physical_work_mode,
+                "sell_power_w": max(0.0, slot.sell_power),
+                "discharge_current_a": max(0.0, slot.discharge_current),
+                "charge_enabled": bool(slot.charge_enabled),
+                "charge_current_a": max(0.0, slot.charge_current),
+                "grid_charge_current_a": max(0.0, slot.grid_charge_current),
+                "charge_power_w": (
+                    round(charge_current * voltage, 3)
+                    if voltage is not None and charge_current > 0
+                    else 0.0
+                ),
+                "tou_soc": slot.tou_soc,
+                "minimum_sell_soc": slot.minimum_sell_soc,
+                "min_sell_price": slot.min_sell_price,
+            })
+        return result
+
     def ai_plan_48h(self) -> dict[str, Any]:
         """Build the read-only AI proposal payload exposed to the Lovelace card."""
         settings = self.ai_settings
+        battery_model = self.battery_model_context()
         learning = self.learning_summary()
         profile = learning.get("hourly_profile") if isinstance(learning.get("hourly_profile"), list) else []
         by_hour = {int(str(row.get("hour", "0"))[:2]): row for row in profile if isinstance(row, dict)}
@@ -943,16 +1121,31 @@ class DeyeEnergyManagerRuntime:
         selected_strategy = str(settings.get("strategy") or "balanced")
         if selected_strategy == "autoconsumption":
             selected_strategy = "safe"
+        current = ha_now()
+        load_forecasts = [
+            forecast_load(self.load_profile_7x24, current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=index))
+            for index in range(48)
+        ]
         payload = {
-            "date": ha_now().date().isoformat(),
-            "current_hour": ha_now().hour,
-            "soc": self.state_float(self.battery_soc_sensor, 0),
+            "date": current.date().isoformat(),
+            "generated_at": current.isoformat(timespec="seconds"),
+            "current_hour": current.hour,
+            "soc": (
+                round(value, 1)
+                if (value := self.state_float_or_none(self.battery_soc_sensor)) is not None
+                else None
+            ),
             "battery_capacity_kwh": self.safe_float(settings.get("batteryCapacityKwh"), 10),
-            "battery_efficiency": self.safe_float(settings.get("batteryEfficiency"), 90) / 100,
+            "battery_efficiency": battery_model["round_trip_efficiency"],
+            "charge_efficiency": battery_model["charge_efficiency"],
+            "discharge_efficiency": battery_model["discharge_efficiency"],
             "min_soc": self.safe_float(settings.get("minSoc"), 20),
+            "effective_min_soc": battery_model["minimum"]["effective_min_soc_pct"],
             "target_soc": self.safe_float(settings.get("targetSoc"), 100),
             "reserve_kwh": self.safe_float(settings.get("reserveKwh"), 0),
             "max_sell_power_w": self.safe_float(settings.get("maxSellPower"), 5000),
+            "effective_power_limit_w": battery_model["power_limit"]["effective_limit_w"],
+            "current_hour_remaining_minutes": battery_model["current_hour_remaining_minutes"],
             "charge_kwh_per_hour": max(0.25, self.safe_float(settings.get("batteryCapacityKwh"), 10) * 0.25),
             "min_sell_price": self.safe_float(settings.get("minSellPrice"), 0),
             "max_buy_price": self.safe_float(settings.get("maxBuyPrice"), 999),
@@ -972,11 +1165,52 @@ class DeyeEnergyManagerRuntime:
             "forecast_accuracy": learning.get("solcast_accuracy_avg"),
             "pv_profile": [self.safe_float(by_hour.get(hour, {}).get("pv_kwh"), 0) for hour in range(24)],
             "load_profile": [self.safe_float(by_hour.get(hour, {}).get("load_kwh"), 0) for hour in range(24)],
+            "load_profile_48h": [value for value, _source, _samples in load_forecasts],
+            "load_profile_sources_48h": [
+                {"source": source, "samples": samples}
+                for _value, source, samples in load_forecasts
+            ],
             "weather_factors": self._weather_factors_48h(),
             "recorded_days": learning.get("recorded_days", 0),
+            "learning_stage": learning.get("learning_stage", {}),
+            "user_profiles": self.user_profiles,
+            "data_quality": self.source_quality_context(),
+            "history_schema_version": HISTORY_SCHEMA_VERSION,
+            "generation_reason": self._optimizer_generation_reason,
+            "previous_plan_id": self.optimizer_plan.get("plan_id"),
+            "baseline_schedule": self.optimizer_baseline_schedule(),
+            "battery_cycle_cost_per_kwh": self.safe_float(settings.get("batteryCycleCostPerKwh"), 0),
+            "terminal_energy_value_per_kwh": self.safe_float(settings.get("terminalEnergyValuePerKwh"), 0),
         }
-        result = build_plan_bundle(payload, selected_strategy)
-        result["generated_at"] = ha_now().isoformat(timespec="seconds")
+        current_snapshot_id = snapshot_id(payload)
+        if self.optimizer_plan and current_snapshot_id == self._optimizer_input_snapshot_id:
+            result = deepcopy(self.optimizer_plan)
+        else:
+            result = build_plan_bundle(payload, selected_strategy)
+            previous = deepcopy(self.optimizer_plan) if self.optimizer_plan else None
+            if previous:
+                previous["superseded_by_plan_id"] = result.get("plan_id")
+                self.optimizer_plan_history = [previous, *self.optimizer_plan_history][:30]
+            self.optimizer_plan = deepcopy(result)
+            self._optimizer_input_snapshot_id = current_snapshot_id
+            self._optimizer_generation_reason = "cached_until_input_change"
+            if self._ai_store is not None:
+                self.hass.async_create_task(self.async_save_ai_data())
+        forecast_hours = [
+            {
+                "timestamp": f"{row.get('date')}T{int(row.get('hour', 0)):02d}:00:00{current.strftime('%z')[:3]}:{current.strftime('%z')[3:]}",
+                "soc_end_pct": row.get("soc_end_pct", row.get("soc_after")),
+            }
+            for row in result.get("rows", [])
+            if isinstance(row, dict)
+        ]
+        result["battery_model"] = battery_model
+        result["soc_timeline"] = build_soc_timeline(
+            now=current,
+            historical_hours=self.learning_history,
+            current_soc_pct=self.state_float_or_none(self.battery_soc_sensor),
+            forecast_hours=forecast_hours,
+        )
         return result
 
     def register_entity(self, entity: Any) -> None:
@@ -1015,6 +1249,164 @@ class DeyeEnergyManagerRuntime:
         except (TypeError, ValueError):
             return None
         return value if math.isfinite(value) else None
+
+    def _measurement(
+        self,
+        entity_id: str | None,
+        *,
+        kind: str = "power",
+        stale_after_seconds: int = 900,
+    ) -> dict[str, Any]:
+        """Describe one source, normalized to W or kWh, without a zero fallback."""
+        state = self.hass.states.get(entity_id) if entity_id else None
+        unit = str(state.attributes.get("unit_of_measurement") or "") if state is not None else ""
+        value = (
+            power_w(state.state, unit)
+            if state is not None and kind == "power"
+            else energy_kwh(state.state, unit)
+            if state is not None and kind == "energy"
+            else finite_float(state.state) if state is not None else None
+        )
+        updated = getattr(state, "last_updated", None) if state is not None else None
+        stale = False
+        if isinstance(updated, datetime):
+            try:
+                stale = (ha_now() - updated).total_seconds() > stale_after_seconds
+            except TypeError:
+                stale = False
+        status = "not_configured" if not entity_id else "missing" if state is None else "invalid_unit" if value is None and state.state not in ("unknown", "unavailable", "none", "") else "unavailable" if value is None else "stale" if stale else "ok"
+        return {
+            "entity_id": entity_id,
+            "value": value,
+            "unit": unit or None,
+            "last_updated": updated.isoformat() if isinstance(updated, datetime) else None,
+            "status": status,
+            "quality": "good" if status == "ok" else "unavailable" if status in ("not_configured", "missing", "unavailable") else "degraded",
+            "source": "primary",
+        }
+
+    def load_power_reading(self) -> dict[str, Any]:
+        """Resolve total LOAD once, keeping phase measurements as details only."""
+        primary = self._measurement(self.load_power_sensor)
+        phases = [
+            self._measurement(self.load_l1_power_sensor),
+            self._measurement(self.load_l2_power_sensor),
+            self._measurement(self.load_l3_power_sensor),
+        ]
+        phase_values = [item.get("value") for item in phases]
+        complete_phases = all(value is not None for value in phase_values)
+        phase_sum = sum(float(value) for value in phase_values) if complete_phases else None
+
+        if primary["value"] is not None and primary["status"] != "stale":
+            result = dict(primary)
+            if phase_sum is not None:
+                denominator = max(100.0, abs(float(primary["value"])), abs(phase_sum))
+                mismatch = abs(float(primary["value"]) - phase_sum) / denominator
+                result["phase_sum_w"] = round(phase_sum, 3)
+                result["phase_mismatch_percent"] = round(mismatch * 100, 1)
+                if mismatch > 0.15:
+                    result.update(status="inconsistent", quality="degraded")
+            result["phases"] = phases
+            self.data_quality["load_power"] = result
+            return result
+
+        if complete_phases:
+            result = {
+                "entity_id": " + ".join(item.get("entity_id") or "?" for item in phases),
+                "value": phase_sum,
+                "unit": "W",
+                "last_updated": max((item.get("last_updated") or "" for item in phases), default="") or None,
+                "status": "fallback",
+                "quality": "degraded",
+                "source": "load_phases",
+                "fallback_reason": f"Load Power: {primary['status']}",
+                "phases": phases,
+                "phase_sum_w": round(phase_sum, 3),
+            }
+            self.data_quality["load_power"] = result
+            return result
+
+        # Emergency balance uses the same sign conventions as the planner:
+        # load = PV + grid import + battery discharge.
+        pv = self._measurement(self.pv_power_sensor)
+        grid_value = self.normalized_grid_power() if self.entity_available(self.grid_power_sensor) else None
+        battery_value = self.battery_power_reading().get("value")
+        if pv["value"] is not None and grid_value is not None and battery_value is not None:
+            result = {
+                "entity_id": None,
+                "value": max(0.0, float(pv["value"]) + float(grid_value) + float(battery_value)),
+                "unit": "W",
+                "last_updated": None,
+                "status": "emergency_fallback",
+                "quality": "low",
+                "source": "energy_balance",
+                "fallback_reason": f"Load Power: {primary['status']}; niepełne fazy",
+                "phases": phases,
+            }
+            self.data_quality["load_power"] = result
+            return result
+
+        result = {
+            **primary,
+            "value": None,
+            "source": "unavailable",
+            "quality": "unavailable",
+            "phases": phases,
+        }
+        self.data_quality["load_power"] = result
+        return result
+
+    def battery_power_reading(self) -> dict[str, Any]:
+        """Prefer direct battery power; use V×A only as a marked fallback."""
+        direct = self._measurement(self.battery_power_sensor)
+        if direct["value"] is not None and direct["status"] != "stale":
+            value = float(direct["value"])
+            if not bool(self.data.get(CONF_BATTERY_POSITIVE_IS_DISCHARGE, DEFAULT_BATTERY_POSITIVE_IS_DISCHARGE)):
+                value = -value
+            result = {**direct, "value": value}
+            self.data_quality["battery_power"] = result
+            return result
+        voltage = self._measurement(self.battery_bms_voltage_sensor, kind="raw")
+        current = self._measurement(self.battery_current_sensor, kind="raw")
+        if voltage["value"] is not None and current["value"] is not None:
+            value = float(voltage["value"]) * float(current["value"])
+            if not bool(self.data.get(CONF_BATTERY_POSITIVE_IS_DISCHARGE, DEFAULT_BATTERY_POSITIVE_IS_DISCHARGE)):
+                value = -value
+            result = {
+                "entity_id": f"{self.battery_bms_voltage_sensor} × {self.battery_current_sensor}",
+                "value": value,
+                "unit": "W",
+                "last_updated": None,
+                "status": "fallback",
+                "quality": "degraded",
+                "source": "voltage_times_current",
+                "fallback_reason": f"Battery Power: {direct['status']}",
+            }
+            self.data_quality["battery_power"] = result
+            return result
+        result = {**direct, "value": None, "source": "unavailable", "quality": "unavailable"}
+        self.data_quality["battery_power"] = result
+        return result
+
+    def source_quality_context(self) -> dict[str, Any]:
+        """Return the exact source/fallback status consumed by learning."""
+        load = self.load_power_reading()
+        battery = self.battery_power_reading()
+        sources = {
+            "load_power": load,
+            "battery_power": battery,
+            "pv_power": self._measurement(self.pv_power_sensor),
+            "grid_power": self._measurement(self.grid_power_sensor),
+            "battery_soc": self._measurement(self.battery_soc_sensor, kind="raw"),
+        }
+        score_map = {"good": 100, "degraded": 70, "low": 40, "unavailable": 0}
+        quality_values = [score_map.get(str(item.get("quality")), 0) for item in sources.values()]
+        return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "score": round(sum(quality_values) / len(quality_values)) if quality_values else 0,
+            "sources": sources,
+            "fallback_in_use": any(item.get("source") not in ("primary", "unavailable") for item in sources.values()),
+        }
 
     def entity_available(self, entity_id: str | None) -> bool:
         if not entity_id:
@@ -1250,9 +1642,37 @@ class DeyeEnergyManagerRuntime:
                 "configured": is_configured,
                 "default": entity_id == configured.get(entity_id) if entity_id else False,
             })
+        optional_ids = {
+            "load_l1_power": self.load_l1_power_sensor,
+            "load_l2_power": self.load_l2_power_sensor,
+            "load_l3_power": self.load_l3_power_sensor,
+            "pv1_power": self.pv1_power_sensor,
+            "pv2_power": self.pv2_power_sensor,
+            "pv3_power": self.pv3_power_sensor,
+            "battery_voltage": self.battery_bms_voltage_sensor,
+            "battery_current": self.battery_current_sensor,
+            "battery_temperature": self.battery_temperature_sensor,
+            "battery_soh": self.battery_soh_sensor,
+            "daily_energy_bought": self.daily_energy_bought_sensor,
+            "daily_energy_sold": self.daily_energy_sold_sensor,
+            "daily_battery_charge": self.daily_battery_charge_sensor,
+            "daily_battery_discharge": self.daily_battery_discharge_sensor,
+        }
+        optional_entities = [
+            {
+                "name": name,
+                **self._measurement(
+                    entity_id,
+                    kind="energy" if name.startswith("daily_") else "raw" if name.startswith("battery_") and name != "battery_power" else "power",
+                ),
+                "optional": True,
+            }
+            for name, entity_id in optional_ids.items()
+        ]
+        quality_context = self.source_quality_context()
         tou = self.tou_mapping_diagnostics()
         mapping_status = "ERROR" if self.mapping_error else ("TOU ERROR" if not tou["ok"] else "OK")
-        return {"integration_version": "0.7.6", "connected": self.data_available, "required_entities_complete": self.required_entities_complete, "entities": entities,
+        return {"integration_version": "0.7.7", "connected": self.data_available, "required_entities_complete": self.required_entities_complete, "entities": entities,
                 "last_saved_at": self.last_saved_at or "never", "last_applied_at": self.last_applied_at or "never",
                 "last_error": self.last_error or "none", "last_schedule_attempt": self.last_schedule_attempt,
                 "manager_status": self.manager_status, "mapping_status": mapping_status,
@@ -1280,7 +1700,12 @@ class DeyeEnergyManagerRuntime:
                     "tou_soc": self.normal_profile_tou_soc,
                 },
                 "active_slot": self.active_slot_key(), "next_active_slot": self.next_active_slot,
-                "energy_samples": len(self.energy_samples), "weather": self.weather_context(), "tariff": self.tariff_context()}
+                "history_schema_version": HISTORY_SCHEMA_VERSION,
+                "optional_entities": optional_entities,
+                "data_quality": quality_context,
+                "energy_counters": self.data_quality.get("energy_counters", {}),
+                "energy_samples": len(self.energy_samples), "weather": self.weather_context(), "tariff": self.tariff_context(),
+                "ai_api": self.ai_api_public_context()}
 
     def empty_hourly_stats(self) -> dict[str, dict[str, float]]:
         return {f"{hour:02d}": {"kwh": 0.0, "value": 0.0} for hour in range(24)}
@@ -1334,11 +1759,18 @@ class DeyeEnergyManagerRuntime:
     async def async_load_ai_data(self) -> None:
         self._ai_store = Store(self.hass, 1, f"{DOMAIN}_{self.entry_id}_ai_data")
         raw = await self._ai_store.async_load()
-        data = raw if isinstance(raw, dict) else {}
+        data, migrated = migrate_ai_payload(raw)
         settings = data.get("settings")
         history = data.get("history")
         self.ai_settings = settings if isinstance(settings, dict) else {}
         self.ai_history = history[:365] if isinstance(history, list) else []
+        self.user_profiles = data.get("user_profiles") if isinstance(data.get("user_profiles"), dict) else default_user_profiles()
+        optimizer_plan = data.get("optimizer_plan")
+        optimizer_history = data.get("optimizer_plan_history")
+        self.optimizer_plan = optimizer_plan if isinstance(optimizer_plan, dict) else {}
+        self.optimizer_plan_history = optimizer_history[:30] if isinstance(optimizer_history, list) else []
+        self._optimizer_input_snapshot_id = str(data.get("optimizer_input_snapshot_id") or "")
+        self._optimizer_generation_reason = "startup_or_restored_state"
         future_plan = data.get("future_plan")
         self.future_plan = future_plan if isinstance(future_plan, dict) else {}
         self.last_saved_at = str(data.get("last_saved_at") or "")
@@ -1404,13 +1836,20 @@ class DeyeEnergyManagerRuntime:
                 for key, value in numeric.items():
                     setattr(self, key, value)
                 self._normal_profile_loaded_from_store = True
+        if migrated:
+            await self.async_save_ai_data()
 
     async def async_save_ai_data(self) -> None:
         if self._ai_store is None:
             return
         await self._ai_store.async_save({
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "settings": self.ai_settings,
             "history": self.ai_history[:365],
+            "user_profiles": self.user_profiles,
+            "optimizer_plan": self.optimizer_plan,
+            "optimizer_plan_history": self.optimizer_plan_history[:30],
+            "optimizer_input_snapshot_id": self._optimizer_input_snapshot_id,
             "future_plan": self.future_plan,
             "last_saved_at": self.last_saved_at,
             "schedule_schema_version": self.schedule_schema_version,
@@ -1438,8 +1877,231 @@ class DeyeEnergyManagerRuntime:
 
     async def async_set_ai_settings(self, settings: dict[str, Any]) -> None:
         self.ai_settings = dict(settings)
+        self._optimizer_input_snapshot_id = ""
+        self._optimizer_generation_reason = "settings_changed"
         await self.async_save_ai_data()
         self.notify_update()
+
+    @staticmethod
+    def validate_user_profiles(payload: dict[str, Any]) -> dict[str, Any]:
+        """Validate all optimizer profiles atomically without touching Deye."""
+        source = payload.get("profiles") if isinstance(payload.get("profiles"), dict) else payload
+        if not isinstance(source, dict):
+            raise ValueError("Profile użytkownika muszą być obiektem JSON")
+        normalized = default_user_profiles()
+        allowed_days = {
+            "0", "1", "2", "3", "4", "5", "6",
+            "pon", "wt", "śr", "czw", "pt", "sob", "niedz",
+            "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+        }
+        for profile_id in ("morning_sale", "evening_sale", "charging"):
+            raw = source.get(profile_id)
+            if raw is None:
+                continue
+            if not isinstance(raw, dict):
+                raise ValueError(f"Profil {profile_id} musi być obiektem")
+            target = normalized["profiles"][profile_id]
+            target.update(raw)
+            for key in ("start", "end"):
+                value = str(target.get(key) or "")
+                try:
+                    hour_text, minute_text = value.split(":", 1)
+                    hour, minute = int(hour_text), int(minute_text)
+                except (ValueError, TypeError) as err:
+                    raise ValueError(f"Nieprawidłowa godzina {key} w profilu {profile_id}") from err
+                if not 0 <= hour <= 23 or not 0 <= minute <= 59:
+                    raise ValueError(f"Godzina {key} poza zakresem w profilu {profile_id}")
+                target[key] = f"{hour:02d}:{minute:02d}"
+            if target["start"] == target["end"]:
+                raise ValueError(f"Profil {profile_id} ma pusty przedział czasu")
+            target["enabled"] = bool(target.get("enabled"))
+            target["allow_partial"] = bool(target.get("allow_partial", True))
+            days = target.get("active_days")
+            if not isinstance(days, list):
+                raise ValueError(f"Aktywne dni profilu {profile_id} muszą być listą")
+            normalized_days = [str(day).strip().lower() for day in days]
+            if any(day not in allowed_days for day in normalized_days):
+                raise ValueError(f"Profil {profile_id} zawiera nieprawidłowy dzień tygodnia")
+            target["active_days"] = normalized_days
+            if str(target.get("priority")) not in ("low", "normal", "high"):
+                raise ValueError(f"Nieprawidłowy priorytet profilu {profile_id}")
+            if str(target.get("goal_character")) not in ("preferred", "required"):
+                raise ValueError(f"Nieprawidłowy charakter celu profilu {profile_id}")
+            note = str(target.get("note") or "")
+            if len(note) > 500:
+                raise ValueError(f"Notatka profilu {profile_id} jest za długa")
+            target["note"] = note
+            confidence = finite_float(target.get("minimum_confidence"))
+            if confidence is None or not 0 <= confidence <= 100:
+                raise ValueError(f"Pewność profilu {profile_id} musi mieścić się w zakresie 0–100%")
+            target["minimum_confidence"] = confidence
+            if profile_id != "charging":
+                for key, maximum in (
+                    ("target_energy_kwh", 200.0),
+                    ("min_price", 20.0),
+                    ("min_soc_after", 100.0),
+                    ("min_net_result", 10000.0),
+                ):
+                    value = finite_float(target.get(key))
+                    if value is None or not 0 <= value <= maximum:
+                        raise ValueError(f"Nieprawidłowa wartość {key} w profilu {profile_id}")
+                    target[key] = value
+                power = finite_float(target.get("preferred_power_w"))
+                if power is not None and not 0 < power <= 13000:
+                    raise ValueError(f"Moc profilu {profile_id} musi być w zakresie 1–13000 W")
+                target["preferred_power_w"] = power
+                if target.get("target_basis") not in ("battery_to_grid", "total_export"):
+                    raise ValueError(f"Nieprawidłowy sposób liczenia celu profilu {profile_id}")
+                if target.get("distribution_method") not in ("best_hours", "even", "constant_power"):
+                    raise ValueError(f"Nieprawidłowy sposób rozłożenia profilu {profile_id}")
+            else:
+                if target.get("source") not in ("auto", "pv", "grid", "pv_and_grid"):
+                    raise ValueError("Nieprawidłowe źródło profilu ładowania")
+                if target.get("target_type") not in ("soc", "energy"):
+                    raise ValueError("Nieprawidłowy typ celu profilu ładowania")
+                target_value = finite_float(target.get("target_value"))
+                maximum = 100.0 if target.get("target_type") == "soc" else 200.0
+                if target_value is None or not 0 < target_value <= maximum:
+                    raise ValueError("Nieprawidłowy cel profilu ładowania")
+                target["target_value"] = target_value
+                max_price = finite_float(target.get("max_effective_price"))
+                if max_price is None or not 0 <= max_price <= 20:
+                    raise ValueError("Nieprawidłowa maksymalna cena ładowania")
+                target["max_effective_price"] = max_price
+                max_grid = finite_float(target.get("max_grid_energy_kwh"))
+                if max_grid is not None and not 0 <= max_grid <= 200:
+                    raise ValueError("Nieprawidłowy limit energii z sieci")
+                target["max_grid_energy_kwh"] = max_grid
+                free_room = finite_float(target.get("minimum_free_room_kwh"))
+                if free_room is None or not 0 <= free_room <= 200:
+                    raise ValueError("Nieprawidłowa rezerwa miejsca na PV")
+                target["minimum_free_room_kwh"] = free_room
+        return normalized
+
+    async def async_set_user_profiles(self, profiles: dict[str, Any]) -> None:
+        """Save a complete validated policy and only invalidate the local plan."""
+        normalized = self.validate_user_profiles(profiles)
+        self.user_profiles = normalized
+        self._optimizer_input_snapshot_id = ""
+        self._optimizer_generation_reason = "user_profiles_changed"
+        await self.async_save_ai_data()
+        self.notify_update()
+
+    def ai_api_public_context(self) -> dict[str, Any]:
+        """Expose status and masked configuration, never the API secret."""
+        return {
+            "config": redact_ai_api_config(self.ai_api_config),
+            **{
+                key: value
+                for key, value in self.ai_api_status.items()
+                if key not in {"api_key", "authorization", "request_payload"}
+            },
+            "last_analysis": self.ai_api_cache.get("analysis"),
+            "last_analysis_at": self.ai_api_cache.get("at"),
+            "last_plan_id": self.ai_api_cache.get("plan_id"),
+        }
+
+    def update_ai_api_config(self, raw: dict[str, Any]) -> dict[str, Any]:
+        """Validate API options synchronously; caller persists config-entry options."""
+        previous_secret = str(self.ai_api_config.get("api_key") or "")
+        normalized = normalize_ai_api_config(raw, previous_secret)
+        self.ai_api_config = normalized
+        self.ai_api_status = {
+            "status": "ready" if normalized.get("enabled") else "disabled",
+            "provider": normalized.get("provider"),
+            "model": normalized.get("model"),
+            "last_error": None,
+        }
+        self._ai_api_last_call = None
+        self.notify_update()
+        return deepcopy(normalized)
+
+    async def async_run_ai_api(
+        self,
+        *,
+        connection_test: bool = False,
+        force: bool = False,
+    ) -> dict[str, Any]:
+        """Run the optional reviewer; local plan and Deye remain untouched."""
+        if not self.ai_api_config.get("enabled"):
+            self.ai_api_status = {"status": "disabled", "last_error": "Asystent API jest wyłączony"}
+            self.notify_update()
+            return self.ai_api_status
+        now = ha_now()
+        if (
+            not connection_test
+            and not force
+            and self._ai_api_last_call is not None
+            and (now - self._ai_api_last_call).total_seconds() < 3600
+        ):
+            return self.ai_api_public_context()
+        self.ai_api_status = {
+            "status": "testing" if connection_test else "analysing",
+            "provider": self.ai_api_config.get("provider"),
+            "model": self.ai_api_config.get("model"),
+            "last_error": None,
+        }
+        self.notify_update()
+        local_plan = self.ai_plan_48h()
+        battery = self.battery_model_context()
+        payload = build_private_payload(
+            local_plan,
+            {
+                "current_soc_pct": self.state_float_or_none(self.battery_soc_sensor),
+                "capacity_kwh": battery.get("capacity_kwh"),
+                "effective_min_soc_pct": battery.get("minimum", {}).get("effective_min_soc_pct"),
+                "power_limit_w": battery.get("power_limit", {}).get("effective_limit_w"),
+            },
+        )
+        try:
+            from homeassistant.helpers.aiohttp_client import async_get_clientsession
+
+            response = await request_ai_analysis(
+                async_get_clientsession(self.hass),
+                self.ai_api_config,
+                payload,
+                connection_test=connection_test,
+                timeout_seconds=30,
+            )
+        except Exception as err:
+            # Secret, endpoint body and exception traceback are intentionally not stored.
+            self.ai_api_status = {
+                "status": "error",
+                "provider": self.ai_api_config.get("provider"),
+                "model": self.ai_api_config.get("model"),
+                "last_error": str(err)[:500],
+                "at": now.isoformat(timespec="seconds"),
+            }
+            self.notify_update()
+            return self.ai_api_status
+        self._ai_api_last_call = now
+        self.ai_api_status = {
+            "status": "connected" if connection_test else "ok",
+            "provider": response.get("provider"),
+            "model": response.get("model"),
+            "response_ms": response.get("response_ms"),
+            "json_schema": response.get("json_schema"),
+            "last_error": None,
+            "at": now.isoformat(timespec="seconds"),
+        }
+        if not connection_test:
+            self.ai_api_cache = {
+                "at": now.isoformat(timespec="seconds"),
+                "plan_id": local_plan.get("plan_id"),
+                "analysis": response.get("analysis"),
+            }
+        self.notify_update()
+        return self.ai_api_public_context()
+
+    def schedule_ai_api_analysis(self, *, force: bool = False) -> None:
+        """Start at most one asynchronous API review without blocking the tick."""
+        if not self.ai_api_config.get("enabled"):
+            return
+        if self._ai_api_task is not None and not self._ai_api_task.done():
+            return
+        self._ai_api_task = self.hass.async_create_task(
+            self.async_run_ai_api(force=force)
+        )
 
     async def async_add_ai_analysis(self, analysis: dict[str, Any]) -> None:
         analysis = dict(analysis)
@@ -1618,6 +2280,10 @@ class DeyeEnergyManagerRuntime:
         self.energy_samples = []
         self.daily_archive = []
         self.monthly_archive = []
+        self.energy_counter_state = {}
+        self.load_profile_7x24 = {}
+        self.pv_learning_profile = {}
+        self.profile_execution = []
         await self.async_save_ai_data()
         await self.async_save_solcast_history()
         await self.async_save_learning_history()
@@ -1627,16 +2293,22 @@ class DeyeEnergyManagerRuntime:
     async def async_load_solcast_history(self) -> None:
         self._solcast_store = Store(self.hass, 1, f"{DOMAIN}_{self.entry_id}_solcast_history")
         raw = await self._solcast_store.async_load()
-        data = raw if isinstance(raw, dict) else {}
+        data, migrated = migrate_solcast_payload(raw)
         history = data.get("history")
         tracking = data.get("tracking")
         self.solcast_history = history[:1825] if isinstance(history, list) else []
         self.solcast_tracking = tracking if isinstance(tracking, dict) else {}
+        if migrated:
+            await self.async_save_solcast_history()
 
     async def async_save_solcast_history(self) -> None:
         if self._solcast_store is None:
             return
-        await self._solcast_store.async_save({"history": self.solcast_history[:1825], "tracking": self.solcast_tracking})
+        await self._solcast_store.async_save({
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "history": self.solcast_history[:1825],
+            "tracking": self.solcast_tracking,
+        })
 
     async def async_update_solcast_history(self) -> None:
         now = ha_now()
@@ -1646,7 +2318,14 @@ class DeyeEnergyManagerRuntime:
         tracked_day = str(self.solcast_tracking.get("date") or "")
         changed_day = bool(tracked_day and tracked_day != today)
         if changed_day:
-            previous_forecast = self.safe_float(self.solcast_tracking.get("forecast"), 0)
+            previous_forecast = self.safe_float(
+                self.solcast_tracking.get("initial_forecast_kwh", self.solcast_tracking.get("forecast")),
+                0,
+            )
+            previous_latest = self.safe_float(
+                self.solcast_tracking.get("latest_forecast_kwh", self.solcast_tracking.get("forecast")),
+                previous_forecast,
+            )
             previous_actual = self.safe_float(self.solcast_tracking.get("actual"), 0)
             error = previous_actual - previous_forecast
             error_percent = (error / previous_forecast * 100) if previous_forecast > 0 else 0
@@ -1665,6 +2344,9 @@ class DeyeEnergyManagerRuntime:
             self.solcast_history = [{
                 "date": tracked_day,
                 "forecast_kwh": round(previous_forecast, 3),
+                "initial_forecast_kwh": round(previous_forecast, 3),
+                "latest_forecast_kwh": round(previous_latest, 3),
+                "forecast_snapshots": list(self.solcast_tracking.get("forecast_snapshots") or []),
                 "actual_kwh": round(previous_actual, 3),
                 "error_kwh": round(error, 3),
                 "error_percent": round(error_percent, 1),
@@ -1681,51 +2363,80 @@ class DeyeEnergyManagerRuntime:
             })
             self.solcast_tracking = {}
         if not self.solcast_tracking:
-            self.solcast_tracking = {"date": today, "forecast": forecast, "actual": actual}
+            self.solcast_tracking = {
+                "date": today,
+                "forecast": forecast,
+                "initial_forecast_kwh": forecast if forecast > 0 else None,
+                "latest_forecast_kwh": forecast if forecast > 0 else None,
+                "forecast_snapshots": [],
+                "actual": actual,
+            }
         else:
-            if self.safe_float(self.solcast_tracking.get("forecast"), 0) <= 0 and forecast > 0:
+            if self.safe_float(self.solcast_tracking.get("initial_forecast_kwh"), 0) <= 0 and forecast > 0:
+                self.solcast_tracking["initial_forecast_kwh"] = forecast
                 self.solcast_tracking["forecast"] = forecast
+            if forecast > 0:
+                self.solcast_tracking["latest_forecast_kwh"] = forecast
             self.solcast_tracking["actual"] = actual
+        snapshots = self.solcast_tracking.setdefault("forecast_snapshots", [])
+        snapshot_hour = now.replace(minute=0, second=0, microsecond=0).isoformat()
+        if forecast > 0 and not any(str(row.get("timestamp")) == snapshot_hour for row in snapshots if isinstance(row, dict)):
+            snapshots.append({"timestamp": snapshot_hour, "forecast_kwh": round(forecast, 3)})
+            self.solcast_tracking["forecast_snapshots"] = snapshots[-72:]
         if changed_day or now.minute % 15 == 0:
             await self.async_save_solcast_history()
 
     async def async_load_learning_history(self) -> None:
         self._learning_store = Store(self.hass, 1, f"{DOMAIN}_{self.entry_id}_learning_history")
         raw = await self._learning_store.async_load()
-        data = raw if isinstance(raw, dict) else {}
+        data, migrated = migrate_learning_payload(raw)
         history = data.get("history")
         tracking = data.get("tracking")
         self.learning_history = history[:17520] if isinstance(history, list) else []
         self.learning_tracking = tracking if isinstance(tracking, dict) else {}
+        self.load_profile_7x24 = data.get("load_profile_7x24") if isinstance(data.get("load_profile_7x24"), dict) else {}
+        self.pv_learning_profile = data.get("pv_profile") if isinstance(data.get("pv_profile"), dict) else {}
+        self.profile_execution = data.get("profile_execution")[:17520] if isinstance(data.get("profile_execution"), list) else []
+        if migrated:
+            await self.async_save_learning_history()
 
     async def async_save_learning_history(self) -> None:
         if self._learning_store is None:
             return
         await self._learning_store.async_save({
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "history": self.learning_history[:17520],
             "tracking": self.learning_tracking,
+            "load_profile_7x24": self.load_profile_7x24,
+            "pv_profile": self.pv_learning_profile,
+            "profile_execution": self.profile_execution[:17520],
         })
 
     async def async_load_energy_history(self) -> None:
         self._samples_store = Store(self.hass, 1, f"{DOMAIN}_{self.entry_id}_energy_samples")
         raw = await self._samples_store.async_load()
-        data = raw if isinstance(raw, dict) else {}
+        data, migrated = migrate_energy_payload(raw)
         self.energy_samples = data.get("samples", []) if isinstance(data.get("samples"), list) else []
         self.daily_archive = data.get("daily", []) if isinstance(data.get("daily"), list) else []
         self.monthly_archive = data.get("monthly", []) if isinstance(data.get("monthly"), list) else []
+        self.energy_counter_state = data.get("counter_state") if isinstance(data.get("counter_state"), dict) else {}
         last = data.get("last_sample")
         try:
             self._last_energy_sample_at = datetime.fromisoformat(str(last)) if last else None
         except (TypeError, ValueError):
             self._last_energy_sample_at = None
+        if migrated:
+            await self.async_save_energy_history()
 
     async def async_save_energy_history(self) -> None:
         if self._samples_store is None:
             return
         await self._samples_store.async_save({
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "samples": self.energy_samples,
             "daily": self.daily_archive,
             "monthly": self.monthly_archive,
+            "counter_state": self.energy_counter_state,
             "last_sample": self._last_energy_sample_at.isoformat() if self._last_energy_sample_at else None,
         })
 
@@ -1752,13 +2463,20 @@ class DeyeEnergyManagerRuntime:
             for key in ("pv_power", "load_power", "grid_power", "battery_power", "soc", "sell_price", "buy_price"):
                 values = [self.safe_float(item.get(key), 0) for item in samples if item.get(key) is not None]
                 row[f"{key}_avg"] = round(sum(values) / len(values), 3) if values else None
-            sample_hours = 5 / 60
-            row["pv_kwh"] = round(sum(max(0, self.safe_float(item.get("pv_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
-            row["load_kwh"] = round(sum(max(0, self.safe_float(item.get("load_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
-            row["grid_import_kwh"] = round(sum(max(0, self.safe_float(item.get("grid_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
-            row["grid_export_kwh"] = round(sum(max(0, -self.safe_float(item.get("grid_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
-            row["battery_charge_kwh"] = round(sum(max(0, -self.safe_float(item.get("battery_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
-            row["battery_discharge_kwh"] = round(sum(max(0, self.safe_float(item.get("battery_power"), 0)) for item in samples) / 1000 * sample_hours, 3)
+            def integrated(key: str, direction: int = 1) -> float:
+                total = 0.0
+                for item in samples:
+                    hours = max(0.0, min(900.0, self.safe_float(item.get("interval_seconds"), 300))) / 3600
+                    value = self.safe_float(item.get(key), 0) * direction
+                    total += max(0.0, value) / 1000 * hours
+                return round(total, 3)
+
+            row["pv_kwh"] = integrated("pv_power")
+            row["load_kwh"] = integrated("load_power")
+            row["grid_import_kwh"] = integrated("grid_power")
+            row["grid_export_kwh"] = integrated("grid_power", -1)
+            row["battery_charge_kwh"] = integrated("battery_power", -1)
+            row["battery_discharge_kwh"] = integrated("battery_power")
             existing[day] = row
         daily_cutoff = (now - timedelta(days=1825)).date().isoformat()
         expired_daily = [row for day, row in existing.items() if day < daily_cutoff]
@@ -1791,6 +2509,62 @@ class DeyeEnergyManagerRuntime:
             permanent[month] = month_row(month, rows)
         self.monthly_archive = sorted([*retained_months, *permanent.values()], key=lambda row: str(row.get("month")), reverse=True)
 
+    def _energy_counter_measurements(self, now: datetime) -> dict[str, Any]:
+        """Read optional energy counters and persist reset-safe deltas."""
+        definitions = {
+            "daily_pv": self.daily_pv_production_sensor,
+            "daily_load": self.daily_load_consumption_sensor,
+            "daily_grid_import": self.daily_energy_bought_sensor,
+            "daily_grid_export": self.daily_energy_sold_sensor,
+            "daily_battery_charge": self.daily_battery_charge_sensor,
+            "daily_battery_discharge": self.daily_battery_discharge_sensor,
+        }
+        timestamp = now.isoformat(timespec="seconds")
+        day = now.date().isoformat()
+        result: dict[str, Any] = {}
+        for key, entity_id in definitions.items():
+            state = self.hass.states.get(entity_id) if entity_id else None
+            unit = state.attributes.get("unit_of_measurement") if state is not None else None
+            value = energy_kwh(state.state, unit) if state is not None else None
+            state_class = str(state.attributes.get("state_class") or "") if state is not None else ""
+            device_class = str(state.attributes.get("device_class") or "") if state is not None else ""
+            total_increasing = state_class == "total_increasing"
+            if value is None:
+                result[key] = {
+                    "entity_id": entity_id,
+                    "value_kwh": None,
+                    "delta_kwh": None,
+                    "status": "invalid_unit" if state is not None and state.state not in ("unknown", "unavailable", "none", "") else "unavailable",
+                    "unit": unit,
+                    "state_class": state_class or None,
+                    "device_class": device_class or None,
+                    "used_for_history": False,
+                }
+                continue
+            update = update_energy_counter(
+                self.energy_counter_state.get(key),
+                value_kwh=value,
+                day=day,
+                timestamp=timestamp,
+                total_increasing=total_increasing,
+            )
+            self.energy_counter_state[key] = update.state
+            result[key] = {
+                "entity_id": entity_id,
+                "value_kwh": round(value, 6),
+                "delta_kwh": round(update.delta_kwh, 6),
+                "status": "reset" if update.reset_detected else "ok",
+                "reset_detected": update.reset_detected,
+                "first_sample": update.first_sample,
+                "unit": unit,
+                "state_class": state_class or None,
+                "device_class": device_class or None,
+                "used_for_history": True,
+                "preferred_long_term": total_increasing and device_class == "energy",
+            }
+        self.data_quality["energy_counters"] = result
+        return result
+
     async def async_update_energy_sample(self) -> None:
         now = ha_now()
         if self._last_energy_sample_at:
@@ -1799,21 +2573,36 @@ class DeyeEnergyManagerRuntime:
                     return
             except TypeError:
                 self._last_energy_sample_at = None
+        load = self.load_power_reading()
+        battery = self.battery_power_reading()
         fields = {
-            "pv_power": self.state_float_or_none(self.pv_power_sensor),
-            "load_power": self.state_float_or_none(self.load_power_sensor),
+            "pv_power": self._measurement(self.pv_power_sensor).get("value"),
+            "load_power": load.get("value"),
+            "load_l1_power": self._measurement(self.load_l1_power_sensor).get("value"),
+            "load_l2_power": self._measurement(self.load_l2_power_sensor).get("value"),
+            "load_l3_power": self._measurement(self.load_l3_power_sensor).get("value"),
             "grid_power": self.normalized_grid_power() if self.entity_available(self.grid_power_sensor) else None,
-            "battery_power": self.normalized_battery_power() if self.entity_available(self.battery_power_sensor) else None,
+            "battery_power": battery.get("value"),
             "soc": self.state_float_or_none(self.battery_soc_sensor),
             "sell_price": self.state_float_or_none(self.price_sensor),
             "buy_price": self.state_float_or_none(self.buy_price_today_sensor),
             "daily_pv": self.state_float_or_none(self.daily_pv_production_sensor),
         }
+        interval_seconds = 300.0
+        if self._last_energy_sample_at is not None:
+            try:
+                interval_seconds = max(0.0, min(900.0, (now - self._last_energy_sample_at).total_seconds()))
+            except TypeError:
+                interval_seconds = 300.0
         tariff = self.tariff_context(now)
         sample = {
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "timestamp": now.replace(second=0, microsecond=0).isoformat(),
+            "interval_seconds": round(interval_seconds, 1),
             **fields,
             "missing": [key for key, value in fields.items() if value is None],
+            "source_quality": self.source_quality_context(),
+            "energy_counters": self._energy_counter_measurements(now),
             "tariff": {
                 key: tariff.get(key)
                 for key in ("provider", "plan", "zone", "season", "day_type", "distribution_rate", "catalog_version")
@@ -1913,23 +2702,70 @@ class DeyeEnergyManagerRuntime:
 
     def _new_learning_hour(self, hour_key: str, now: datetime) -> dict[str, Any]:
         tariff = self.tariff_context(now)
+        solcast_power = self._measurement(self.solcast_current_power_sensor)
+        hourly_snapshot = (
+            max(0.0, float(solcast_power["value"])) / 1000
+            if solcast_power.get("value") is not None else None
+        )
+        corrected, correction_factor, correction_samples = corrected_pv_forecast(
+            self.pv_learning_profile,
+            moment=now,
+            forecast_kwh=hourly_snapshot,
+        )
+        pv_measurement = self._measurement(self.pv_power_sensor)
+        soc = self.state_float_or_none(self.battery_soc_sensor)
+        flags = pv_quality_flags(
+            battery_soc=soc,
+            work_mode=self.state_text(self.work_mode_select),
+            grid_available=self.entity_available(self.grid_power_sensor),
+            actual_power_w=pv_measurement.get("value"),
+            inverter_limit_w=finite_float(self.ai_settings.get("inverterPowerW")),
+            sensor_stale=pv_measurement.get("status") == "stale",
+            manual_override=self.control_mode != "Schedule",
+        )
         return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "hour": hour_key,
+            "local_date": now.date().isoformat(),
+            "local_hour": now.hour,
             "last_sample": now.isoformat(),
             "samples": 0,
             "pv_kwh": 0.0,
             "load_kwh": 0.0,
+            "load_l1_kwh": 0.0,
+            "load_l2_kwh": 0.0,
+            "load_l3_kwh": 0.0,
             "grid_import_kwh": 0.0,
             "grid_export_kwh": 0.0,
             "battery_charge_kwh": 0.0,
             "battery_discharge_kwh": 0.0,
             "soc_sum": 0.0,
+            "soc_samples": 0,
             "soc_min": None,
             "soc_max": None,
+            "soc_start": soc,
+            "soc_end": None,
             "sell_price_sum": 0.0,
             "buy_price_sum": 0.0,
             "solcast_forecast_kwh": self.solcast_forecast_today_value(),
+            "forecast_initial_kwh": self.safe_float(
+                self.solcast_tracking.get("initial_forecast_kwh", self.solcast_tracking.get("forecast")),
+                0,
+            ),
+            "forecast_latest_kwh": self.safe_float(
+                self.solcast_tracking.get("latest_forecast_kwh", self.solcast_tracking.get("forecast")),
+                0,
+            ),
+            "forecast_hourly_snapshot_kwh": hourly_snapshot,
+            "forecast_corrected_kwh": corrected,
+            "forecast_snapshot_at": now.isoformat(timespec="seconds"),
+            "forecast_correction_factor": correction_factor,
+            "forecast_correction_samples": correction_samples,
             "daily_pv_kwh": max(0, self.state_float(self.daily_pv_production_sensor, 0)),
+            "source_quality": self.source_quality_context(),
+            "quality_flags": flags,
+            "action": self.active_slot.mode if self.active_slot.enabled else MODE_NORMAL_OPERATION,
+            "plan_id": self.future_plan.get("plan_id") if isinstance(self.future_plan, dict) else None,
             "tariff": {
                 key: tariff.get(key)
                 for key in ("provider", "plan", "zone", "season", "day_type", "distribution_rate", "catalog_version")
@@ -1938,24 +2774,71 @@ class DeyeEnergyManagerRuntime:
 
     def _finalize_learning_hour(self, tracking: dict[str, Any]) -> dict[str, Any]:
         samples = max(1, int(tracking.get("samples", 0)))
-        return {
+        soc_samples = int(tracking.get("soc_samples", 0))
+        source_quality = tracking.get("source_quality", {})
+        quality_score = self.safe_float(source_quality.get("score"), 0) if isinstance(source_quality, dict) else 0
+        complete = samples >= 10 and quality_score >= 60
+        result = {
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "hour": tracking.get("hour"),
+            "local_date": tracking.get("local_date"),
+            "local_hour": tracking.get("local_hour"),
             "samples": int(tracking.get("samples", 0)),
             "pv_kwh": round(self.safe_float(tracking.get("pv_kwh"), 0), 4),
             "load_kwh": round(self.safe_float(tracking.get("load_kwh"), 0), 4),
+            "load_l1_kwh": round(self.safe_float(tracking.get("load_l1_kwh"), 0), 4),
+            "load_l2_kwh": round(self.safe_float(tracking.get("load_l2_kwh"), 0), 4),
+            "load_l3_kwh": round(self.safe_float(tracking.get("load_l3_kwh"), 0), 4),
             "grid_import_kwh": round(self.safe_float(tracking.get("grid_import_kwh"), 0), 4),
             "grid_export_kwh": round(self.safe_float(tracking.get("grid_export_kwh"), 0), 4),
             "battery_charge_kwh": round(self.safe_float(tracking.get("battery_charge_kwh"), 0), 4),
             "battery_discharge_kwh": round(self.safe_float(tracking.get("battery_discharge_kwh"), 0), 4),
-            "soc_avg": round(self.safe_float(tracking.get("soc_sum"), 0) / samples, 1),
-            "soc_min": round(self.safe_float(tracking.get("soc_min"), 0), 1),
-            "soc_max": round(self.safe_float(tracking.get("soc_max"), 0), 1),
+            "soc_avg": round(self.safe_float(tracking.get("soc_sum"), 0) / soc_samples, 1) if soc_samples else None,
+            "soc_min": round(self.safe_float(tracking.get("soc_min"), 0), 1) if tracking.get("soc_min") is not None else None,
+            "soc_max": round(self.safe_float(tracking.get("soc_max"), 0), 1) if tracking.get("soc_max") is not None else None,
+            "soc_start": tracking.get("soc_start"),
+            "soc_end": tracking.get("soc_last"),
             "sell_price_avg": round(self.safe_float(tracking.get("sell_price_sum"), 0) / samples, 3),
             "buy_price_avg": round(self.safe_float(tracking.get("buy_price_sum"), 0) / samples, 3),
             "solcast_forecast_kwh": round(self.safe_float(tracking.get("solcast_forecast_kwh"), 0), 3),
+            "forecast_initial_kwh": tracking.get("forecast_initial_kwh"),
+            "forecast_latest_kwh": tracking.get("forecast_latest_kwh"),
+            "forecast_hourly_snapshot_kwh": tracking.get("forecast_hourly_snapshot_kwh"),
+            "forecast_corrected_kwh": tracking.get("forecast_corrected_kwh"),
+            "forecast_snapshot_at": tracking.get("forecast_snapshot_at"),
+            "forecast_correction_factor": tracking.get("forecast_correction_factor"),
             "daily_pv_kwh": round(self.safe_float(tracking.get("daily_pv_kwh"), 0), 3),
+            "complete": complete,
+            "completeness_percent": min(100, round(samples / 60 * 100)),
+            "source_quality": source_quality,
+            "quality_flags": tracking.get("quality_flags", {}),
+            "energy_counters": tracking.get("energy_counters", {}),
+            "action": tracking.get("action"),
+            "plan_id": tracking.get("plan_id"),
             "tariff": tracking.get("tariff", {}),
         }
+        try:
+            moment = datetime.fromisoformat(str(tracking.get("hour")))
+        except (TypeError, ValueError):
+            moment = ha_now().replace(minute=0, second=0, microsecond=0)
+        self.load_profile_7x24 = update_load_profile(
+            self.load_profile_7x24,
+            moment=moment,
+            load_kwh=result["load_kwh"],
+            complete=complete,
+            quality_score=quality_score,
+        )
+        flags = dict(result.get("quality_flags") or {})
+        flags["fallback_used"] = bool(source_quality.get("fallback_in_use")) if isinstance(source_quality, dict) else False
+        self.pv_learning_profile = update_pv_profile(
+            self.pv_learning_profile,
+            moment=moment,
+            forecast_kwh=finite_float(result.get("forecast_hourly_snapshot_kwh")),
+            actual_kwh=result["pv_kwh"],
+            flags=flags,
+            complete=complete,
+        )
+        return result
 
     async def async_update_learning_history(self) -> None:
         now = ha_now()
@@ -1978,26 +2861,54 @@ class DeyeEnergyManagerRuntime:
         hours = elapsed_seconds / 3600.0
 
         pv_power = self.state_float(self.pv_power_sensor, 0)
-        load_power = self.state_float(self.load_power_sensor, 0)
+        load_reading = self.load_power_reading()
+        load_power = max(0.0, self.safe_float(load_reading.get("value"), 0))
+        phase_values = [
+            self._measurement(self.load_l1_power_sensor).get("value"),
+            self._measurement(self.load_l2_power_sensor).get("value"),
+            self._measurement(self.load_l3_power_sensor).get("value"),
+        ]
         grid_power = self.normalized_grid_power()
-        battery_power = self.normalized_battery_power()
-        soc = self.state_float(self.battery_soc_sensor, 0)
+        battery_power = self.safe_float(self.battery_power_reading().get("value"), 0)
+        soc = self.state_float_or_none(self.battery_soc_sensor)
         sell_price = self.state_float(self.price_sensor, 0)
         buy_price = self.state_float(self.buy_price_today_sensor, 0)
 
         tracking["pv_kwh"] = self.safe_float(tracking.get("pv_kwh"), 0) + max(0, pv_power) / 1000 * hours
         tracking["load_kwh"] = self.safe_float(tracking.get("load_kwh"), 0) + max(0, load_power) / 1000 * hours
+        for index, value in enumerate(phase_values, start=1):
+            if value is not None:
+                key = f"load_l{index}_kwh"
+                tracking[key] = self.safe_float(tracking.get(key), 0) + max(0, self.safe_float(value, 0)) / 1000 * hours
         tracking["grid_import_kwh"] = self.safe_float(tracking.get("grid_import_kwh"), 0) + max(0, grid_power) / 1000 * hours
         tracking["grid_export_kwh"] = self.safe_float(tracking.get("grid_export_kwh"), 0) + max(0, -grid_power) / 1000 * hours
         tracking["battery_charge_kwh"] = self.safe_float(tracking.get("battery_charge_kwh"), 0) + max(0, -battery_power) / 1000 * hours
         tracking["battery_discharge_kwh"] = self.safe_float(tracking.get("battery_discharge_kwh"), 0) + max(0, battery_power) / 1000 * hours
         tracking["samples"] = int(tracking.get("samples", 0)) + 1
-        tracking["soc_sum"] = self.safe_float(tracking.get("soc_sum"), 0) + soc
+        if soc is not None:
+            tracking["soc_sum"] = self.safe_float(tracking.get("soc_sum"), 0) + soc
+            tracking["soc_samples"] = int(tracking.get("soc_samples", 0)) + 1
+            tracking["soc_last"] = soc
         tracking["sell_price_sum"] = self.safe_float(tracking.get("sell_price_sum"), 0) + sell_price
         tracking["buy_price_sum"] = self.safe_float(tracking.get("buy_price_sum"), 0) + buy_price
-        tracking["soc_min"] = soc if tracking.get("soc_min") is None else min(self.safe_float(tracking.get("soc_min"), soc), soc)
-        tracking["soc_max"] = soc if tracking.get("soc_max") is None else max(self.safe_float(tracking.get("soc_max"), soc), soc)
+        if soc is not None:
+            tracking["soc_min"] = soc if tracking.get("soc_min") is None else min(self.safe_float(tracking.get("soc_min"), soc), soc)
+            tracking["soc_max"] = soc if tracking.get("soc_max") is None else max(self.safe_float(tracking.get("soc_max"), soc), soc)
         tracking["daily_pv_kwh"] = max(0, self.state_float(self.daily_pv_production_sensor, 0))
+        tracking["source_quality"] = self.source_quality_context()
+        latest_flags = pv_quality_flags(
+            battery_soc=soc,
+            work_mode=self.state_text(self.work_mode_select),
+            grid_available=self.entity_available(self.grid_power_sensor),
+            actual_power_w=self._measurement(self.pv_power_sensor).get("value"),
+            inverter_limit_w=finite_float(self.ai_settings.get("inverterPowerW")),
+            sensor_stale=self._measurement(self.pv_power_sensor).get("status") == "stale",
+            manual_override=self.control_mode != "Schedule",
+        )
+        existing_flags = tracking.setdefault("quality_flags", {})
+        for key, value in latest_flags.items():
+            existing_flags[key] = bool(existing_flags.get(key)) or bool(value)
+        tracking["energy_counters"] = dict(self.data_quality.get("energy_counters") or {})
         tracking["last_sample"] = now.isoformat()
 
         if now.minute % 15 == 0:
@@ -2007,6 +2918,16 @@ class DeyeEnergyManagerRuntime:
     def learning_summary(self) -> dict[str, Any]:
         rows = self.learning_history
         dates = {str(row.get("hour", ""))[:10] for row in rows if row.get("hour")}
+        complete_by_day: dict[str, set[int]] = {}
+        for row in rows:
+            if not row.get("complete"):
+                continue
+            day = str(row.get("hour", ""))[:10]
+            hour_text = str(row.get("hour", ""))[11:13]
+            if day and hour_text.isdigit():
+                complete_by_day.setdefault(day, set()).add(int(hour_text))
+        completed_days = sum(1 for hours in complete_by_day.values() if len(hours) == 24)
+        stage = learning_stage(completed_days)
         per_hour: list[dict[str, Any]] = []
         for hour in range(24):
             matches = [row for row in rows if str(row.get("hour", ""))[11:13] == f"{hour:02d}"]
@@ -2066,13 +2987,33 @@ class DeyeEnergyManagerRuntime:
                 "battery_charge_kwh": round(sum(self.safe_float(row.get("battery_charge_kwh"), 0) for row in matches) / count, 3),
             })
         return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
             "retention_days": 730,
             "retention": {"raw_5_min_days": 90, "hourly_months": 24, "daily_years": 5, "monthly_limit": None},
             "raw_samples": len(self.energy_samples),
             "daily_archive_rows": len(self.daily_archive),
             "monthly_archive_rows": len(self.monthly_archive),
-            "recorded_days": len(dates),
+            "observed_days": len(dates),
+            "recorded_days": completed_days,
+            "completed_full_days": completed_days,
             "recorded_hours": len(rows),
+            "learning_stage": stage,
+            "readiness": stage["readiness"],
+            "load_profile_7x24": self.load_profile_7x24,
+            "load_profile_diagnostics": load_profile_diagnostics(
+                self.load_profile_7x24,
+                completed_days=completed_days,
+            ),
+            "pv_profile": self.pv_learning_profile,
+            "pv_profile_diagnostics": pv_profile_diagnostics(
+                self.pv_learning_profile,
+                completed_days=completed_days,
+            ),
+            "data_coverage": {
+                "prices_today": len(self.price_map(self.price_sensor)),
+                "prices_tomorrow": len(self.price_map(self.sell_price_tomorrow_sensor, False)),
+                "weather": min(48, len(self.weather_forecast)),
+            },
             "solcast_accuracy_avg": round(sum(accuracy_rows) / len(accuracy_rows), 1) if accuracy_rows else None,
             "solcast_correction_factor": round(sum(correction_rows) / len(correction_rows), 3) if correction_rows else None,
             "solcast_accuracy_days": len(accuracy_rows),
@@ -2165,10 +3106,8 @@ class DeyeEnergyManagerRuntime:
         ]
 
     def safe_float(self, value: Any, default: float = 0) -> float:
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return default
+        number = finite_float(value)
+        return default if number is None else number
 
     def solcast_forecast_today_value(self) -> float:
         """Return today's Solcast forecast, tolerating renamed source entities."""
@@ -3801,6 +4740,8 @@ class DeyeEnergyManagerRuntime:
             except Exception as err:
                 await self.async_apply_safe_defaults(f"Nieudana transakcja sterująca: {type(err).__name__}: {err}")
                 raise
+        if self.ai_api_config.get("enabled"):
+            self.schedule_ai_api_analysis()
 
     async def async_start(self) -> None:
         self._tariff_catalog_manager = TariffCatalogManager(
@@ -3825,6 +4766,9 @@ class DeyeEnergyManagerRuntime:
 
     async def async_unload(self) -> None:
         self._clear_pending_control_transaction()
+        if self._ai_api_task is not None and not self._ai_api_task.done():
+            self._ai_api_task.cancel()
+        self._ai_api_task = None
         if self.unsub_input_listener:
             self.unsub_input_listener()
             self.unsub_input_listener = None

@@ -5,7 +5,7 @@ views:
     icon: mdi:solar-power-variant
     cards:
       - type: custom:deye-energy-manager-card
-        # Optional layout configuration (v=23)
+        # Optional layout configuration (v=24)
         # Remove the `layout:` block entirely to use the defaults.
         layout:
           # Layout mode:

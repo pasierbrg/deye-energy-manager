@@ -14,6 +14,7 @@ from .const import (
     CONF_BATTERY_CURRENT_SENSOR,
     CONF_BATTERY_POWER_SENSOR,
     CONF_BATTERY_SOC_SENSOR,
+    CONF_BATTERY_SOH_SENSOR,
     CONF_BATTERY_TEMPERATURE_SENSOR,
     CONF_BUY_PRICE_TODAY_SENSOR,
     CONF_BUY_PRICE_TOMORROW_SENSOR,
@@ -48,6 +49,7 @@ from .const import (
     CONF_PV2_CURRENT_SENSOR,
     CONF_PV2_POWER_SENSOR,
     CONF_PV2_VOLTAGE_SENSOR,
+    CONF_PV3_POWER_SENSOR,
     CONF_PV_POWER_SENSOR,
     CONF_SELL_PRICE_TOMORROW_SENSOR,
     CONF_SOLCAST_CURRENT_POWER_SENSOR,
@@ -67,6 +69,7 @@ from .const import (
     DEFAULT_BATTERY_CURRENT_SENSOR,
     DEFAULT_BATTERY_POWER_SENSOR,
     DEFAULT_BATTERY_SOC,
+    DEFAULT_BATTERY_SOH_SENSOR,
     DEFAULT_BATTERY_TEMPERATURE_SENSOR,
     DEFAULT_BUY_PRICE_TODAY_SENSOR,
     DEFAULT_BUY_PRICE_TOMORROW_SENSOR,
@@ -100,6 +103,7 @@ from .const import (
     DEFAULT_PV2_CURRENT_SENSOR,
     DEFAULT_PV2_POWER_SENSOR,
     DEFAULT_PV2_VOLTAGE_SENSOR,
+    DEFAULT_PV3_POWER_SENSOR,
     DEFAULT_PV_POWER_SENSOR,
     DEFAULT_PRICE_SENSOR,
     DEFAULT_SELL_PRICE_TOMORROW_SENSOR,
@@ -155,9 +159,11 @@ ENTITY_SPECS: dict[str, tuple[str, str, tuple[str, ...]]] = {
     CONF_PV2_POWER_SENSOR: (DEFAULT_PV2_POWER_SENSOR, "sensor", ("pv2 power", "moc pv2")),
     CONF_PV2_VOLTAGE_SENSOR: (DEFAULT_PV2_VOLTAGE_SENSOR, "sensor", ("pv2 voltage", "napięcie pv2")),
     CONF_PV2_CURRENT_SENSOR: (DEFAULT_PV2_CURRENT_SENSOR, "sensor", ("pv2 current", "prąd pv2")),
+    CONF_PV3_POWER_SENSOR: (DEFAULT_PV3_POWER_SENSOR, "sensor", ("pv3 power", "moc pv3")),
     CONF_BATTERY_BMS_VOLTAGE_SENSOR: (DEFAULT_BATTERY_BMS_VOLTAGE_SENSOR, "sensor", ("battery bms voltage", "napięcie baterii bms")),
     CONF_BATTERY_CURRENT_SENSOR: (DEFAULT_BATTERY_CURRENT_SENSOR, "sensor", ("battery current", "prąd baterii")),
     CONF_BATTERY_TEMPERATURE_SENSOR: (DEFAULT_BATTERY_TEMPERATURE_SENSOR, "sensor", ("battery temperature", "temperatura baterii")),
+    CONF_BATTERY_SOH_SENSOR: (DEFAULT_BATTERY_SOH_SENSOR, "sensor", ("battery soh", "stan zdrowia baterii", "state of health")),
     CONF_DAILY_BATTERY_CHARGE_SENSOR: (DEFAULT_DAILY_BATTERY_CHARGE_SENSOR, "sensor", ("daily battery charge", "naładowano dzisiaj")),
     CONF_DAILY_BATTERY_DISCHARGE_SENSOR: (DEFAULT_DAILY_BATTERY_DISCHARGE_SENSOR, "sensor", ("daily battery discharge", "rozładowano dzisiaj")),
     CONF_DAILY_ENERGY_BOUGHT_SENSOR: (DEFAULT_DAILY_ENERGY_BOUGHT_SENSOR, "sensor", ("daily energy bought", "kupiono dzisiaj")),
@@ -187,13 +193,12 @@ PRICE_FIELDS = (CONF_PRICE_SENSOR, CONF_SELL_PRICE_TOMORROW_SENSOR, CONF_BUY_PRI
 ENERGY_DETAIL_FIELDS = (
     CONF_PV1_POWER_SENSOR, CONF_PV1_VOLTAGE_SENSOR, CONF_PV1_CURRENT_SENSOR,
     CONF_PV2_POWER_SENSOR, CONF_PV2_VOLTAGE_SENSOR, CONF_PV2_CURRENT_SENSOR,
+    CONF_PV3_POWER_SENSOR,
     CONF_BATTERY_BMS_VOLTAGE_SENSOR, CONF_BATTERY_CURRENT_SENSOR, CONF_BATTERY_TEMPERATURE_SENSOR,
+    CONF_BATTERY_SOH_SENSOR,
     CONF_DAILY_BATTERY_CHARGE_SENSOR, CONF_DAILY_BATTERY_DISCHARGE_SENSOR,
     CONF_DAILY_ENERGY_BOUGHT_SENSOR, CONF_DAILY_ENERGY_SOLD_SENSOR,
-    CONF_GRID_L1_POWER_SENSOR, CONF_GRID_L1_VOLTAGE_SENSOR,
-    CONF_GRID_L2_POWER_SENSOR, CONF_GRID_L2_VOLTAGE_SENSOR,
-    CONF_GRID_L3_POWER_SENSOR, CONF_GRID_L3_VOLTAGE_SENSOR,
-    CONF_LOAD_FREQUENCY_SENSOR, CONF_DAILY_LOAD_CONSUMPTION_SENSOR,
+    CONF_DAILY_LOAD_CONSUMPTION_SENSOR,
     CONF_LOAD_L1_POWER_SENSOR, CONF_LOAD_L2_POWER_SENSOR, CONF_LOAD_L3_POWER_SENSOR,
     CONF_INVERTER_AC_TEMPERATURE_SENSOR,
 )
@@ -250,6 +255,10 @@ class MappingWizardMixin:
     def _entity_default(self, key: str) -> str:
         default, domain, tokens = ENTITY_SPECS[key]
         current = self._values.get(key)
+        # A valid saved choice always wins. Automatic suggestions are allowed
+        # to fill only fields that are still missing.
+        if current:
+            return str(current)
         if self._values.get(CONF_MAPPING_MODE, DEFAULT_MAPPING_MODE) == "automatic":
             candidate = discover_entity(self.hass.states.async_all(domain), domain, default, tokens)
             if self.hass.states.get(candidate) is not None:
@@ -363,6 +372,13 @@ class DeyeEnergyManagerOptionsFlow(MappingWizardMixin, config_entries.OptionsFlo
     async def async_step_init(self, user_input: dict[str, Any] | None = None):
         self._prepare_values()
         if user_input is not None:
+            if user_input.get(CONF_MAPPING_MODE) == "existing":
+                # This action is deliberately a no-op: no discovery, no wizard,
+                # no history/profile reset and no new optional defaults.
+                return self.async_create_entry(
+                    title="",
+                    data={**self.config_entry.data, **self.config_entry.options},
+                )
             self._values.update(user_input)
             return await self.async_step_inverter()
         return self.async_show_form(

@@ -29,6 +29,32 @@
           "battery_power_sensor": "Znak ładowania/rozładowania ustawisz później w zakładce Taryfa i dystrybucja."
         }
       },
+      "energy_details": {
+        "title": "Szczegóły Deye — encje opcjonalne",
+        "description": "Wszystkie pola są opcjonalne. Fazy LOAD poprawiają historię i zapewniają fallback, a liczniki energii służą do rozliczeń. Brak pola nie blokuje integracji.",
+        "data": {
+          "load_l1_power_sensor": "Moc domu L1 — opcjonalne, zalecane",
+          "load_l2_power_sensor": "Moc domu L2 — opcjonalne, zalecane",
+          "load_l3_power_sensor": "Moc domu L3 — opcjonalne, zalecane",
+          "daily_load_consumption_sensor": "Energia zużyta przez dom — licznik kWh",
+          "daily_energy_bought_sensor": "Dzienna energia pobrana z sieci",
+          "daily_energy_sold_sensor": "Dzienna energia oddana do sieci",
+          "pv1_power_sensor": "Moc PV string 1",
+          "pv2_power_sensor": "Moc PV string 2",
+          "pv3_power_sensor": "Moc PV string 3",
+          "pv1_voltage_sensor": "Napięcie PV string 1",
+          "pv2_voltage_sensor": "Napięcie PV string 2",
+          "pv1_current_sensor": "Prąd PV string 1",
+          "pv2_current_sensor": "Prąd PV string 2",
+          "battery_bms_voltage_sensor": "Napięcie magazynu",
+          "battery_current_sensor": "Prąd magazynu",
+          "battery_temperature_sensor": "Temperatura magazynu",
+          "battery_soh_sensor": "SOH magazynu",
+          "daily_battery_charge_sensor": "Dzienna energia naładowana do magazynu",
+          "daily_battery_discharge_sensor": "Dzienna energia rozładowana z magazynu",
+          "inverter_ac_temperature_sensor": "Temperatura AC falownika"
+        }
+      },
       "prices": {
         "title": "2 z 5 — Encje cen energii",
         "description": "Wskaż wyłącznie encje cen sprzedaży i zakupu. Operatora OSD, taryfę i znaki przepływu ustawisz w karcie, w zakładce Taryfa i dystrybucja.",
@@ -75,6 +101,7 @@
     "step": {
       "init": {"title": "Mapowanie encji", "description": "Wybierz sposób ponownego mapowania. Zmiany zostaną zapisane dopiero po ostatnim potwierdzeniu.", "data": {"mapping_mode": "Sposób wyboru encji"}},
       "inverter": {"title": "1 z 5 — Falownik Deye i przepływy energii", "description": "Sprawdź encje sterujące oraz pomiary.", "data": {"work_mode_select": "Tryb pracy falownika", "max_sell_power_number": "Maksymalna moc sprzedaży", "discharge_current_number": "Maksymalny prąd rozładowania", "charge_current_number": "Maksymalny prąd ładowania baterii", "grid_charge_current_number": "Maksymalny prąd ładowania z sieci", "battery_soc_sensor": "Poziom naładowania baterii (SOC)", "grid_power_sensor": "Moc sieci", "pv_power_sensor": "Moc PV", "load_power_sensor": "Zużycie domu", "battery_power_sensor": "Moc baterii", "daily_pv_production_sensor": "Produkcja PV dzisiaj"}},
+      "energy_details": {"title": "Szczegóły Deye — encje opcjonalne", "description": "Wszystkie pola są opcjonalne. Brak pola nie blokuje integracji.", "data": {"load_l1_power_sensor": "Moc domu L1 — opcjonalne, zalecane", "load_l2_power_sensor": "Moc domu L2 — opcjonalne, zalecane", "load_l3_power_sensor": "Moc domu L3 — opcjonalne, zalecane", "daily_load_consumption_sensor": "Energia zużyta przez dom — licznik kWh", "daily_energy_bought_sensor": "Dzienna energia pobrana z sieci", "daily_energy_sold_sensor": "Dzienna energia oddana do sieci", "pv1_power_sensor": "Moc PV string 1", "pv2_power_sensor": "Moc PV string 2", "pv3_power_sensor": "Moc PV string 3", "pv1_voltage_sensor": "Napięcie PV string 1", "pv2_voltage_sensor": "Napięcie PV string 2", "pv1_current_sensor": "Prąd PV string 1", "pv2_current_sensor": "Prąd PV string 2", "battery_bms_voltage_sensor": "Napięcie magazynu", "battery_current_sensor": "Prąd magazynu", "battery_temperature_sensor": "Temperatura magazynu", "battery_soh_sensor": "SOH magazynu", "daily_battery_charge_sensor": "Dzienna energia naładowana do magazynu", "daily_battery_discharge_sensor": "Dzienna energia rozładowana z magazynu", "inverter_ac_temperature_sensor": "Temperatura AC falownika"}},
       "prices": {"title": "2 z 5 — Encje cen energii", "description": "Sprawdź wyłącznie encje cen. Operatora, taryfę i znaki przepływu ustawisz w zakładce Taryfa i dystrybucja.", "data": {"price_sensor": "Cena sprzedaży dzisiaj", "sell_price_tomorrow_sensor": "Cena sprzedaży jutro", "buy_price_today_sensor": "Cena zakupu dzisiaj", "buy_price_tomorrow_sensor": "Cena zakupu jutro"}},
       "solcast": {"title": "3 z 5 — Prognoza Solcast", "description": "Sprawdź encje prognozy PV.", "data": {"solcast_current_power_sensor": "Aktualna moc", "solcast_forecast_today_sensor": "Prognoza na dziś", "solcast_forecast_tomorrow_sensor": "Prognoza na jutro", "solcast_forecast_day_3_sensor": "Prognoza dzień 3", "solcast_forecast_day_4_sensor": "Prognoza dzień 4", "solcast_forecast_day_5_sensor": "Prognoza dzień 5", "solcast_forecast_day_6_sensor": "Prognoza dzień 6", "solcast_forecast_day_7_sensor": "Prognoza dzień 7", "solcast_remaining_today_sensor": "Pozostała prognoza na dziś", "solcast_peak_power_today_sensor": "Szczytowa moc dzisiaj", "solcast_peak_time_today_sensor": "Czas szczytowej mocy"}},
       "weather": {"title": "4 z 5 — Lokalna pogoda", "description": "Wybierz pomocniczą prognozę godzinową.", "data": {"weather_entity": "Encja weather.*"}},

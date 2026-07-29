@@ -2,14 +2,85 @@
 
 ![Deye Energy Manager](docs/banner.svg)
 
-[![release](https://img.shields.io/badge/release-0.7.6-blue.svg)](#wersja-076)
+[![release](https://img.shields.io/badge/release-0.7.7-blue.svg)](#wersja-077)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](#instalacja)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6%2B-18BCF2.svg)](#wymagania)
 
 Deye Energy Manager jest niestandardową integracją Home Assistant dla falowników Deye. Łączy harmonogram sprzedaży, ochronę magazynu energii, ładowanie z sieci, ceny Pstryk, prognozę Solcast oraz statystyki w jednej karcie Lovelace.
 
-## Wersja 0.7.6
+## Wersja 0.7.7
+
+Wydanie 0.7.7 dodaje deterministyczny, lokalny **Optimizer Core**, uczenie profilu
+instalacji oraz opcjonalnego asystenta AI przez API. Zewnętrzny model wyłącznie
+ocenia gotowy plan i nie ma dostępu do usług sterujących Deye. Integracja działa
+bez klucza API, a każda zmiana harmonogramu nadal wymaga lokalnej walidacji,
+Safety Engine i ręcznego zatwierdzenia.
+
+Najważniejsze nowości:
+
+- profil zużycia domu `7 × 24` z bezpiecznymi fallbackami oraz lokalna korekta
+  prognozy PV zależna od miesiąca i godziny;
+- oddzielne prognozy Solcast `initial`, `latest` i `corrected`, bez uczenia na
+  próbkach z curtailmentem, clippingiem lub niepewnym źródłem;
+- sekwencyjna prognoza SOC 48 h, osobne sprawności ładowania i rozładowania,
+  limity mocy/prądu oraz efektywne minimalne SOC obejmujące rezerwę w kWh;
+- plan bazowy i trzy warianty: bezpieczny, zrównoważony i maksymalny zysk;
+- pełny wynik netto: eksport, import, dystrybucja, straty, koszt cyklu baterii
+  oraz końcowa wartość energii;
+- profile **Poranna sprzedaż**, **Wieczorna sprzedaż** i **Ładowanie** jako
+  wejścia planera, nigdy jako bezpośrednie komendy do falownika;
+- opcjonalni dostawcy API: Gemini, OpenRouter, OpenAI, OpenCode oraz własny,
+  zgodny z OpenAI endpoint HTTPS;
+- rozszerzona jakość danych, diagnostyka źródeł i migracja historii bez utraty
+  dotychczasowych próbek.
+
+### Profile użytkownika i uczenie
+
+Oba profile sprzedaży korzystają ze wspólnego formularza. Użytkownik ustala dni,
+okno czasowe, minimalną cenę, cel energii, minimalny SOC po sprzedaży, limit mocy,
+priorytet, wymaganą pewność oraz sposób rozłożenia celu: najwyższe ceny,
+równomiernie albo możliwie stałą mocą. Cel może oznaczać energię
+`battery_to_grid` lub całkowity eksport.
+
+Profil Ładowanie obsługuje cel SOC albo kWh, deadline, źródło energii, maksymalną
+efektywną cenę wraz z dystrybucją, limit energii z sieci i zachowanie miejsca na
+prognozowaną produkcję PV. Profile są po migracji wyłączone. Uczenie może oceniać
+ich wykonanie, ale nie zmienia jawnych parametrów użytkownika.
+
+Etapy uczenia zależą od liczby kompletnych dni: **Zbieranie danych** (0–2),
+**Plan wstępny** (3–6), **Wstępne uczenie** (7–20), **Profil podstawowy gotowy**
+(21–59) i **Profil rozszerzony** (60+). Pewność planu łączy kompletność danych,
+dojrzałość profili, jakość prognozy i dostępność cen; jest ograniczana na
+wczesnych etapach.
+
+Efektywne minimalne SOC jest wyższą z wartości: twardego minimum oraz minimum
+powiększonego o rezerwę energetyczną przeliczoną względem pojemności magazynu.
+Brak aktualnego SOC blokuje akcje baterii w trybie fail-closed.
+
+### Dane, taryfa i prywatność
+
+Optimizer używa istniejącego profilu godzinowego z modułu **Taryfa i
+dystrybucja**. Wybrany operator OSD, taryfa, sezon, typ dnia i profil ręczny
+pozostają jedynym źródłem prawdy. Gdy cena zakupu zawiera dystrybucję, koszt nie
+jest doliczany ponownie.
+
+Preferowanym źródłem domu jest `Load Power`; fallback to komplet faz L1/L2/L3,
+a dopiero potem oznaczony bilans energii. Dziennie resetowane liczniki Deye są
+normalizowane do kWh, wykrywają reset o północy i nigdy nie tworzą ujemnych delt.
+PV3 Power i Battery SOH są opcjonalne. Pojedynczą encję można podmienić w
+kreatorze bez kasowania historii, taryfy, profili ani harmonogramu.
+
+Do zewnętrznego API trafiają wyłącznie zagregowane dane godzinowe niezbędne do
+oceny planu. Klucz nie jest zapisywany w historii ani ujawniany w encjach i
+diagnostyce. Nie są wysyłane identyfikatory encji, urządzeń, lokalizacja ani
+surowa historia. Preset OpenCode działa tylko z oficjalnym publicznym endpointem
+i kluczem podanym przez użytkownika; integracja nigdy nie odczytuje lokalnych
+poświadczeń ani nie uruchamia lokalnego agenta.
+
+### Zgodność z 0.7.6
+
+Poniższe zabezpieczenia i funkcje wersji 0.7.6 pozostają zachowane:
 
 Wersja 0.7.6 koncentruje się na bezpieczeństwie, jakości danych i wygodniejszej konfiguracji:
 
@@ -141,7 +212,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=23
+/deye_energy_manager/deye-energy-manager-card.js?v=24
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -153,10 +224,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=23
+/local/deye-energy-manager-card.js?v=24
 ```
 
-Po podmianie pliku karty ustaw parametr `v=23`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `23` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=24`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `24` jest aktualną rewizją karty wydania 0.7.7. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 

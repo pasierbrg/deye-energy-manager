@@ -75,6 +75,10 @@ SERVICE_NAMES = (
     "resume_manager",
     "emergency_stop",
     "save_ai_settings",
+    "save_ai_profiles",
+    "save_ai_api_settings",
+    "test_ai_api",
+    "analyze_ai_api",
     "save_ai_analysis",
     "clear_ai_history",
     "rate_ai_analysis",
@@ -167,6 +171,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         data = _parse_json_payload(call.data["data"], dict)
         await runtime.async_set_ai_settings(data)
 
+    async def handle_save_ai_profiles(call: ServiceCall) -> None:
+        data = _parse_json_payload(call.data["data"], dict)
+        await runtime.async_set_user_profiles(data)
+
+    async def handle_save_ai_api_settings(call: ServiceCall) -> None:
+        data = _parse_json_payload(call.data["data"], dict)
+        normalized = runtime.update_ai_api_config(data)
+        hass.config_entries.async_update_entry(
+            entry,
+            options={**entry.options, "ai_api": normalized},
+        )
+
+    async def handle_test_ai_api(call: ServiceCall) -> None:
+        await runtime.async_run_ai_api(connection_test=True, force=True)
+
+    async def handle_analyze_ai_api(call: ServiceCall) -> None:
+        await runtime.async_run_ai_api(force=True)
+
     async def handle_save_ai_analysis(call: ServiceCall) -> None:
         data = _parse_json_payload(call.data["data"], dict)
         await runtime.async_add_ai_analysis(data)
@@ -219,6 +241,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.services.async_register(DOMAIN, "resume_manager", handle_resume_manager)
     hass.services.async_register(DOMAIN, "emergency_stop", handle_emergency_stop)
     hass.services.async_register(DOMAIN, "save_ai_settings", handle_save_ai_settings, schema=AI_DATA_SCHEMA)
+    hass.services.async_register(DOMAIN, "save_ai_profiles", handle_save_ai_profiles, schema=AI_DATA_SCHEMA)
+    hass.services.async_register(DOMAIN, "save_ai_api_settings", handle_save_ai_api_settings, schema=AI_DATA_SCHEMA)
+    hass.services.async_register(DOMAIN, "test_ai_api", handle_test_ai_api)
+    hass.services.async_register(DOMAIN, "analyze_ai_api", handle_analyze_ai_api)
     hass.services.async_register(DOMAIN, "save_ai_analysis", handle_save_ai_analysis, schema=AI_DATA_SCHEMA)
     hass.services.async_register(DOMAIN, "clear_ai_history", handle_clear_ai_history)
     hass.services.async_register(DOMAIN, "rate_ai_analysis", handle_rate_ai_analysis, schema=AI_RATING_SCHEMA)

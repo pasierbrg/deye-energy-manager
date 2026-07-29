@@ -1,6 +1,73 @@
-# Deye Energy Manager 0.7.6 — instalacja
+# Deye Energy Manager 0.7.7 — instalacja
 
 Wymagany Home Assistant: `2026.6` lub nowszy.
+
+## Aktualizacja z 0.7.6 przez HACS
+
+1. W HACS otwórz Deye Energy Manager i wybierz aktualizację do `0.7.7`.
+2. Uruchom ponownie Home Assistant.
+3. Sprawdź w **Ustawienia i diagnostyka → System**, czy integracja i karta
+   pokazują `0.7.7`.
+4. Ustaw rewizję zasobu karty na `v=24`, przeładuj zasoby Lovelace i wykonaj
+   twarde odświeżenie przeglądarki.
+5. W **Historia i dane** sprawdź status migracji, zachowaną liczbę dni oraz
+   `history_schema_version = 2`. Migracja jest automatyczna i nie kasuje danych.
+6. Przejrzyj mapowanie encji. Nowe PV3 Power i Battery SOH są opcjonalne.
+7. Pozostaw nowe profile AI wyłączone, dopóki nie skonfigurujesz ich świadomie.
+
+## Pierwsza konfiguracja planowania 0.7.7
+
+W **Sugestie AI → Ustawienia** skonfiguruj kolejno:
+
+1. Parametry magazynu: pojemność, twarde minimum SOC, rezerwę w kWh, sprawność
+   ładowania i rozładowania oraz limity mocy/prądu.
+2. Profil domu: preferowane `Load Power`; opcjonalnie kompletne L1/L2/L3 jako
+   fallback. Brak pełnego kompletu faz nie jest sumowany częściowo.
+3. Profil PV i Solcast. Korekta lokalna rośnie stopniowo wraz z liczbą poprawnych
+   próbek i pomija okresy ograniczenia produkcji.
+4. **Poranna sprzedaż**: dni, okno, minimalna cena, cel kWh, sposób rozłożenia,
+   minimalny SOC po sprzedaży, limit mocy i minimalna pewność.
+5. **Wieczorna sprzedaż**: analogicznie; planer liczy ją po wcześniejszym
+   zużyciu i wykonaniu porannego profilu.
+6. **Ładowanie**: cel SOC lub energia kWh, deadline, źródło, maksymalna
+   efektywna cena, limit energii z sieci i zachowanie miejsca na PV.
+
+`Cel kWh` jest limitem energii profilu. `Częściowa realizacja` pozwala zaplanować
+mniej, gdy ogranicza to SOC, moc, dostępna liczba godzin lub cena. Profil
+sprzedaży nie schodzi poniżej wskazanego SOC. Profil ładowania z opcją zachowania
+miejsca na PV pozostawia co najmniej podaną wolną pojemność.
+
+## Taryfa i dystrybucja
+
+Nie konfiguruj godzin taniej taryfy w AI. Wybierz istniejący operator OSD,
+taryfę i tryb katalogu w dotychczasowym module. W trybie automatycznym używany
+jest jego profil dziś/jutro; w trybie ręcznym – profil użytkownika. Ustaw
+poprawnie opcję **Cena zakupu zawiera dystrybucję**, aby koszt nie został
+doliczony drugi raz.
+
+## Opcjonalne API AI
+
+Lokalny Optimizer Core działa bez API. Aby włączyć dodatkową ocenę:
+
+1. Otwórz **Sugestie AI → Ustawienia → API**.
+2. Wybierz Gemini, OpenRouter, OpenAI, OpenCode albo własny endpoint zgodny z
+   OpenAI.
+3. Uzyskaj klucz wyłącznie według oficjalnej instrukcji dostawcy i wklej go w
+   pole hasła.
+4. Wybierz model. Dla własnego dostawcy podaj endpoint `https://`.
+5. Ustaw zakres prywatności, zapisz i wybierz **Test połączenia**.
+6. Po poprawnym teście uruchom analizę ręcznie.
+
+OpenCode / OpenCode Go jest dostępny tylko przez oficjalny publiczny endpoint
+usługi i klucz podany przez użytkownika. Integracja nie korzysta z lokalnego
+logowania OpenCode, plików poświadczeń ani poleceń powłoki. Nigdy nie wklejaj
+klucza do YAML, dokumentacji ani zgłoszenia diagnostycznego.
+
+Przez pierwsze 7 dni zalecany jest tryb sugestii bez stosowania planu. Statusy
+„Zbieranie danych” i „Plan wstępny” są normalne; pełniejsza pewność pojawia się
+po 21 i 60 kompletnych dniach. Błąd API nie blokuje planera lokalnego. Status
+„Plan zablokowany” zwykle oznacza brak krytycznego SOC lub cen – sprawdź jakość
+danych i mapowanie, zamiast omijać zabezpieczenie.
 
 ## Instalacja przez HACS
 
@@ -23,13 +90,13 @@ Automatyczne mapowanie niczego nie zapisuje bez końcowego potwierdzenia. Kreato
 Dodaj zasób JavaScript:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=23
+/deye_energy_manager/deye-energy-manager-card.js?v=24
 ```
 
 Przy instalacji ręcznej użyj:
 
 ```text
-/local/deye-energy-manager-card.js?v=23
+/local/deye-energy-manager-card.js?v=24
 ```
 
 Następnie dodaj kartę ręczną:
@@ -132,16 +199,16 @@ layout:
 
 #### Zmiana wersji zasobu i odświeżenie cache
 
-Po każdej aktualizacji karty ustaw w zasobie JavaScript parametr `v=23`:
+Po każdej aktualizacji karty ustaw w zasobie JavaScript parametr `v=24`:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=23
+/deye_energy_manager/deye-energy-manager-card.js?v=24
 ```
 
 jeśli korzystasz z karty dostarczanej przez integrację, albo:
 
 ```text
-/local/deye-energy-manager-card.js?v=23
+/local/deye-energy-manager-card.js?v=24
 ```
 
 jeśli skopiowałeś plik ręcznie do `/config/www/`.
@@ -163,7 +230,7 @@ Błędne wartości w konfiguracji YAML są automatycznie zastępowane bezpieczny
 
 1. Wykonaj kopię konfiguracji w panelu **System i diagnostyka**.
 2. Zaktualizuj integrację i uruchom ponownie Home Assistant.
-3. Zmień parametr cache zasobu na `v=23`.
+3. Zmień parametr cache zasobu na `v=24`.
 4. Odśwież przeglądarkę przez `Ctrl + F5`.
 5. Sprawdź mapowanie encji w opcjach integracji.
 6. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**, wybierz operatora i taryfę, a następnie użyj przycisku **Zapisz ustawienia taryfy**.
@@ -195,7 +262,7 @@ Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_ho
 
 Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
 
-Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=23`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=23`.
+Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=24`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=24`.
 
 Plan na jutro wymaga ręcznego zaznaczenia godzin i potwierdzenia przyciskiem **Zaplanuj wybrane na jutro**. Plan jest zapisany z datą i pozostaje oczekujący po restarcie Home Assistant. W dniu wykonania integracja sprawdza encje sterujące oraz tylko SOC i ceny wymagane przez zatwierdzony slot `Selling First`, po czym stosuje dokładnie zaakceptowane pozycje. Nie tworzy planu zastępczego. W razie błędu plan jest oznaczony jako nieudany, a falownik otrzymuje pełne **Ustawienia domyślne** 1:1.
 
