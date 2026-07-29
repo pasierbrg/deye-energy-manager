@@ -38,6 +38,12 @@ def extract_method(source: str, signature: str) -> str:
     raise AssertionError(f"Nie znaleziono końca metody: {signature}")
 
 
+def extract_between(source: str, start_signature: str, end_signature: str) -> str:
+    start = source.index(start_signature)
+    end = source.index(end_signature, start)
+    return source[start:end]
+
+
 class FrontendDefaultRestoreTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -45,6 +51,10 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_distributed_card_copies_are_identical(self):
         self.assertEqual(CARD_PATHS[0].read_bytes(), CARD_PATHS[1].read_bytes())
+
+    def test_card_sources_declare_current_resource_revision(self):
+        for source in self.sources:
+            self.assertTrue(source.startswith("// Resource revision: v=22\n"))
 
     def test_apply_defaults_uses_one_backend_service_call_only(self):
         method = extract_method(self.sources[0], "async applyDefaultValues()")
@@ -144,13 +154,95 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn("scaler.style.transform", method)
         self.assertIn("wrapper.style.height", method)
 
+    def test_flow_resize_observer_is_local_to_the_flow_wrapper(self):
+        connected = extract_method(self.sources[0], "connectedCallback()")
+        disconnected = extract_method(self.sources[0], "disconnectedCallback()")
+        scale = extract_method(self.sources[0], "scaleFlowPanel() {")
+        self.assertIn('typeof ResizeObserver !== "undefined"', connected)
+        self.assertIn("this._flowResizeObserver = new ResizeObserver", connected)
+        self.assertIn("this.scaleFlowPanel();", connected)
+        self.assertIn("this._flowResizeObserver.observe(wrapper)", scale)
+        self.assertIn("this._flowObservedWrapper !== wrapper", scale)
+        self.assertIn("this._flowResizeObserver?.disconnect()", disconnected)
+        self.assertNotIn("updateFlowLines()", connected)
+
     def test_update_flow_lines_uses_dynamic_geometry(self):
         method = extract_method(self.sources[0], "updateFlowLines() {")
         self.assertIn("const scaler = this.querySelector(\".flow-scaler\");", method)
         self.assertIn("parseFloat(scaler?.dataset.tileWidth) || 230", method)
         self.assertIn("parseFloat(scaler?.dataset.tileGap) || 0", method)
-        self.assertIn("parseFloat(scaler?.dataset.inverterWidth) || 640", method)
+        self.assertIn("parseFloat(scaler?.dataset.inverterColumnWidth) || 640", method)
+        self.assertIn("parseFloat(scaler?.dataset.inverterVisualWidth) || 150", method)
+        self.assertIn("this.flowGeometry({ tileWidth, tileGap, inverterColumnWidth, inverterVisualWidth })", method)
+        self.assertIn('svg.setAttribute("viewBox", `0 0 ${geometry.boardWidth} ${geometry.boardHeight}`)', method)
+        self.assertIn('path[data-flow-line-bg="${key}"]', method)
+        self.assertIn('background?.setAttribute("d", d)', method)
         self.assertIn("path.setAttribute(\"d\", d);", method)
+
+    def test_flow_geometry_uses_tile_edges_and_four_inverter_ports(self):
+        method = extract_between(self.sources[0], "flowGeometry({", "\n  energyFlowPanel()")
+        for required in (
+            "pvTile: { x: tileWidth, y: 110 }",
+            "gridTile: { x: tileWidth, y: 330 }",
+            "batteryTile: { x: boardWidth - tileWidth, y: 110 }",
+            "homeTile: { x: boardWidth - tileWidth, y: 330 }",
+            "pvPort: { x: inverterCenterX - inverterVisualWidth / 2",
+            "gridPort: { x: inverterCenterX - inverterVisualWidth / 2",
+            "batteryPort: { x: inverterCenterX + inverterVisualWidth / 2",
+            "homePort: { x: inverterCenterX + inverterVisualWidth / 2",
+        ):
+            self.assertIn(required, method)
+        self.assertIn("inverterCenterY - inverterPortOffsetY", method)
+        self.assertIn("inverterCenterY + inverterPortOffsetY", method)
+        self.assertNotIn("getBoundingClientRect", method)
+        self.assertNotIn("clientWidth", method)
+        self.assertNotIn("transform", method)
+
+    def test_flow_bezier_controls_are_proportional_and_symmetric(self):
+        method = extract_between(self.sources[0], "flowGeometry({", "\n  energyFlowPanel()")
+        self.assertIn("const controlOffset = (end.x - start.x) * 0.45;", method)
+        self.assertNotIn("+ 120", method)
+        self.assertNotIn("- 120", method)
+        self.assertNotIn("- 25", method)
+        self.assertNotIn("+ 25", method)
+
+        for tile_width, tile_gap, inverter_scale in (
+            (120, 0, 0.5),
+            (180, 28, 0.75),
+            (230, 28, 1.0),
+            (260, 20, 1.1),
+            (360, 100, 2.0),
+        ):
+            column_width = round(640 * inverter_scale)
+            visual_width = round(150 * inverter_scale)
+            board_width = tile_width * 2 + column_width + tile_gap * 2
+            inverter_center = tile_width + tile_gap + column_width / 2
+            points = {
+                "pv_tile": tile_width,
+                "battery_tile": board_width - tile_width,
+                "pv_port": inverter_center - visual_width / 2,
+                "battery_port": inverter_center + visual_width / 2,
+            }
+            self.assertEqual(points["pv_tile"] + points["battery_tile"], board_width)
+            self.assertEqual(points["pv_port"] + points["battery_port"], board_width)
+            self.assertLess(points["pv_tile"], points["pv_port"])
+            self.assertLess(points["battery_port"], points["battery_tile"])
+
+    def test_flow_viewbox_follows_board_width_and_dashboard_scaling_is_independent(self):
+        panel = extract_method(self.sources[0], "energyFlowPanel()")
+        scale = extract_method(self.sources[0], "scaleFlowPanel() {")
+        self.assertIn('viewBox="0 0 ${boardWidth} ${geometry.boardHeight}"', panel)
+        self.assertIn("data-inverter-column-width", panel)
+        self.assertIn("data-inverter-visual-width", panel)
+        self.assertIn("width:${inverterVisualWidth}px", panel)
+        self.assertNotIn('viewBox="0 0 1100 420"', panel)
+        self.assertNotIn("dashboard_width", extract_between(self.sources[0], "flowGeometry({", "\n  energyFlowPanel()"))
+        for dashboard_width in (320, 768, 1300, 1600, 2400):
+            base_width = 1172
+            expected_scale = min(1, max(dashboard_width / base_width, 0.2))
+            self.assertGreaterEqual(expected_scale, 0.2)
+            self.assertLessEqual(expected_scale, 1)
+        self.assertIn("Math.min(1, Math.max(available / baseWidth, 0.2))", scale)
 
     def test_energy_flow_panel_matches_reference_2(self):
         method = extract_method(self.sources[0], "energyFlowPanel()")
@@ -163,10 +255,11 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         # Energy panel uses configurable layout
         self.assertIn("const layout = this.effectiveLayout();", method)
         self.assertIn("const tileWidth = layout.energy_tile_width;", method)
-        self.assertIn("const inverterWidth = Math.round(640 * inverterScale);", method)
-        self.assertIn("const boardWidth = tileWidth * 2 + inverterWidth + tileGap * 2;", method)
+        self.assertIn("const inverterColumnWidth = Math.round(640 * inverterScale);", method)
+        self.assertIn("const inverterVisualWidth = Math.round(150 * inverterScale);", method)
+        self.assertIn("const geometry = this.flowGeometry(", method)
         self.assertIn("animation:flowDash ${flowDuration}s linear infinite", method)
-        self.assertIn("grid-template-columns:${tileWidth}px ${inverterWidth}px ${tileWidth}px", method)
+        self.assertIn("grid-template-columns:${tileWidth}px ${inverterColumnWidth}px ${tileWidth}px", method)
         self.assertIn(".flow-tile{width:${tileWidth}px", method)
         # No power values next to lines
         self.assertNotIn("flow-value-pv", method)
@@ -265,7 +358,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=21", source)
+            self.assertIn("deye-energy-manager-card.js?v=22", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
             self.assertNotIn("deye-energy-manager-card.js?v=08", source)
@@ -722,6 +815,86 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         # Price table scrolls inside its own card
         self.assertIn(".price-scroll{height:auto;flex:0 0 auto;min-height:0;overflow:visible", source)
         self.assertIn(".price-scroll{height:260px;overflow:auto", source)
+
+    def test_ai_mobile_dialog_is_width_contained_without_affecting_settings(self):
+        source = self.sources[0]
+        self.assertIn(
+            ".ai-dialog-v2{width:100%!important;max-width:100%!important;min-width:0!important;"
+            "box-sizing:border-box;overflow:hidden}",
+            source,
+        )
+        self.assertIn(
+            ".ai-dialog-v2 .ai-shell,.ai-dialog-v2 .ai-sidebar,.ai-dialog-v2 .ai-main,"
+            ".ai-dialog-v2 .ai-overview-grid",
+            source,
+        )
+        self.assertIn(
+            ".ai-dialog-v2 .ai-metric-card,.ai-dialog-v2 .ai-chart-card"
+            "{width:100%;max-width:100%;min-width:0;box-sizing:border-box}",
+            source,
+        )
+        self.assertNotIn(".settings-dialog .ai-shell", source)
+        self.assertNotIn(".settings-dialog .ai-main", source)
+
+    def test_ai_mobile_tabs_scroll_locally_with_full_labels(self):
+        source = self.sources[0]
+        self.assertIn(
+            ".ai-dialog-v2 .ai-sidebar nav{display:flex;width:100%;max-width:100%;min-width:0;"
+            "overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x}",
+            source,
+        )
+        self.assertIn(
+            ".ai-dialog-v2 .ai-sidebar nav button{flex:0 0 auto;min-width:max-content;"
+            "max-width:none;white-space:nowrap}",
+            source,
+        )
+        render_ai = extract_method(source, "renderAiDialog(slots)")
+        for label in (
+            "Przegląd",
+            "Proponowane zmiany",
+            "Plan na dziś",
+            "Plan na jutro",
+            "Plan energii 48h",
+            "Jakość danych",
+        ):
+            self.assertIn(label, render_ai)
+
+    def test_ai_mobile_charts_tables_and_weather_keep_only_local_overflow(self):
+        source = self.sources[0]
+        self.assertIn(
+            ".ai-dialog-v2 .ai-plan-table-wrap,.ai-dialog-v2 .ai-chart-scroll,"
+            ".ai-dialog-v2 .ai-weather-strip{width:100%;max-width:100%;min-width:0;"
+            "box-sizing:border-box;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}",
+            source,
+        )
+        self.assertIn(
+            ".ai-dialog-v2 .ai-crisp-chart,.ai-dialog-v2 .ai-crisp-layout,"
+            ".ai-dialog-v2 .ai-crisp-main,.ai-dialog-v2 .ai-crisp-plot"
+            "{width:100%;max-width:100%;min-width:0;box-sizing:border-box}",
+            source,
+        )
+        self.assertIn(".ai-dialog-v2 .ai-crisp-chart{overflow:hidden}", source)
+        self.assertIn(
+            ".ai-dialog-v2 .ai-crisp-svg{width:100%!important;max-width:100%!important;"
+            "min-width:0!important}",
+            source,
+        )
+        self.assertIn(".ai-plan-table{width:100%;min-width:940px", source)
+        self.assertIn(".ai-chart-v2 svg{min-width:860px}", source)
+        self.assertIn(".ai-dialog-v2 .ai-weather-day,.ai-dialog-v2 .ai-weather-hour{flex:0 0 66px}", source)
+        self.assertIn(
+            ".ai-dialog-v2 .ai-weather-source{max-width:100%;white-space:normal;"
+            "overflow-wrap:anywhere}",
+            source,
+        )
+
+    def test_ai_dialog_switching_and_dialog_only_render_remain_available(self):
+        source = self.sources[0]
+        for view in ("overview", "proposals", "today", "tomorrow", "energy", "quality"):
+            self.assertIn(f'["{view}",', source)
+        self.assertIn("renderDialogOnly()", source)
+        self.assertIn("this.renderDialogOnly();", source)
+        self.assertIn('<section class="dialog ai-dialog ai-dialog-v2"', extract_method(source, "renderAiDialog(slots)"))
 
     def test_layout_mode_grid_columns_one_on_mobile(self):
         source = self.sources[0]

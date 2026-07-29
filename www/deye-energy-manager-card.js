@@ -1,3 +1,4 @@
+// Resource revision: v=22
 class DeyeEnergyManagerCard extends HTMLElement {
   setConfig(config) {
     this.config = config || {};
@@ -193,6 +194,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
       window.addEventListener("resize", this._flowResizeHandler);
       window.setTimeout(() => this.scaleFlowPanel(), 100);
     }
+    if (!this._flowResizeObserver && typeof ResizeObserver !== "undefined") {
+      this._flowResizeObserver = new ResizeObserver((entries) => {
+        const width = entries[0]?.contentRect?.width || 0;
+        if (!width || Math.abs(width - (this._flowObservedWidth || 0)) < 0.5) return;
+        this._flowObservedWidth = width;
+        this.scaleFlowPanel();
+      });
+    }
     this.addEventListener("focusin", () => {
       this._interacting = true;
     });
@@ -209,6 +218,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
       window.removeEventListener("resize", this._flowResizeHandler);
       this._flowResizeHandler = null;
     }
+    this._flowResizeObserver?.disconnect();
+    this._flowResizeObserver = null;
+    this._flowObservedWrapper = null;
+    this._flowObservedWidth = 0;
     if (this._dialogEscapeHandler) {
       this.ownerDocument?.removeEventListener("keydown", this._dialogEscapeHandler);
       this._dialogEscapeHandler = null;
@@ -2300,6 +2313,48 @@ class DeyeEnergyManagerCard extends HTMLElement {
     return "Spoczynek 0 W";
   }
 
+  flowGeometry({
+    tileWidth = 230,
+    tileGap = 28,
+    inverterColumnWidth = 640,
+    inverterVisualWidth = 150,
+  } = {}) {
+    const boardHeight = 420;
+    const boardWidth = tileWidth * 2 + inverterColumnWidth + tileGap * 2;
+    const inverterCenterX = tileWidth + tileGap + inverterColumnWidth / 2;
+    const inverterVisualHeight = inverterVisualWidth * (190 / 150);
+    const inverterCenterY = 180;
+    const inverterPortOffsetY = inverterVisualHeight * 0.22;
+    const points = {
+      pvTile: { x: tileWidth, y: 110 },
+      gridTile: { x: tileWidth, y: 330 },
+      batteryTile: { x: boardWidth - tileWidth, y: 110 },
+      homeTile: { x: boardWidth - tileWidth, y: 330 },
+      pvPort: { x: inverterCenterX - inverterVisualWidth / 2, y: inverterCenterY - inverterPortOffsetY },
+      gridPort: { x: inverterCenterX - inverterVisualWidth / 2, y: inverterCenterY + inverterPortOffsetY },
+      batteryPort: { x: inverterCenterX + inverterVisualWidth / 2, y: inverterCenterY - inverterPortOffsetY },
+      homePort: { x: inverterCenterX + inverterVisualWidth / 2, y: inverterCenterY + inverterPortOffsetY },
+    };
+    const coordinate = (value) => Number(value.toFixed(2));
+    const curve = (start, end) => {
+      const controlOffset = (end.x - start.x) * 0.45;
+      return `M${coordinate(start.x)},${coordinate(start.y)} C${coordinate(start.x + controlOffset)},${coordinate(start.y)} ${coordinate(end.x - controlOffset)},${coordinate(end.y)} ${coordinate(end.x)},${coordinate(end.y)}`;
+    };
+    return {
+      boardWidth,
+      boardHeight,
+      points,
+      paths: {
+        pvToInverter: curve(points.pvTile, points.pvPort),
+        batteryToInverter: curve(points.batteryTile, points.batteryPort),
+        inverterToBattery: curve(points.batteryPort, points.batteryTile),
+        gridToInverter: curve(points.gridTile, points.gridPort),
+        inverterToGrid: curve(points.gridPort, points.gridTile),
+        inverterToHome: curve(points.homePort, points.homeTile),
+      },
+    };
+  }
+
   energyFlowPanel() {
     const [modeText, modeClass] = this.readMode(this.state(this.entity("sensor", "manager_status")));
     const decisionReason = this.state(this.entity("sensor", "decision_reason"), "");
@@ -2313,14 +2368,11 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const tileGap = layout.energy_tile_gap;
     const inverterScale = layout.inverter_scale;
     const flowSpeed = layout.flow_animation_speed;
-    const inverterWidth = Math.round(640 * inverterScale);
-    const boardWidth = tileWidth * 2 + inverterWidth + tileGap * 2;
+    const inverterColumnWidth = Math.round(640 * inverterScale);
+    const inverterVisualWidth = Math.round(150 * inverterScale);
+    const geometry = this.flowGeometry({ tileWidth, tileGap, inverterColumnWidth, inverterVisualWidth });
+    const boardWidth = geometry.boardWidth;
     const panelWidth = boardWidth + 16;
-    const inverterLeft = tileWidth + tileGap;
-    const inverterRight = inverterLeft + inverterWidth;
-    const inverterCenterX = inverterLeft + inverterWidth / 2;
-    const leftCenterX = tileWidth / 2;
-    const rightCenterX = inverterRight + tileGap + tileWidth / 2;
     const flowDuration = Math.max(0.5, 18 / flowSpeed).toFixed(2);
     const flowOffset = Math.round(220 * flowDuration / 3);
 
@@ -2385,14 +2437,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
         <div class="flow-phase-volt">${volt}</div>
       </div>`;
 
-    const pvPath = `M${leftCenterX},110 C${leftCenterX + 120},110 ${inverterLeft - 25},160 ${inverterLeft},220`;
+    const pvPath = geometry.paths.pvToInverter;
     const batPath = active.batteryCharge
-      ? `M${inverterRight},220 C${inverterRight + 25},160 ${rightCenterX - 120},110 ${rightCenterX},110`
-      : `M${rightCenterX},110 C${rightCenterX - 120},110 ${inverterRight + 25},160 ${inverterRight},220`;
+      ? geometry.paths.inverterToBattery
+      : geometry.paths.batteryToInverter;
     const gridPath = active.gridExport
-      ? `M${inverterLeft},220 C${inverterLeft - 25},280 ${leftCenterX + 120},330 ${leftCenterX},330`
-      : `M${leftCenterX},330 C${leftCenterX + 120},330 ${inverterLeft - 25},280 ${inverterLeft},220`;
-    const homePath = `M${inverterRight},220 C${inverterRight + 25},280 ${rightCenterX - 120},330 ${rightCenterX},330`;
+      ? geometry.paths.inverterToGrid
+      : geometry.paths.gridToInverter;
+    const homePath = geometry.paths.inverterToHome;
 
     const lineClass = (isActive) => isActive ? "flow-line flow-active" : "flow-line";
 
@@ -2421,7 +2473,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
 .flow-wrapper{max-width:${panelWidth}px;margin:0 auto;overflow:hidden;position:relative}
 .flow-scaler{width:${panelWidth}px;transform-origin:top left;transform:scale(1);line-height:1}
            .energy-flow-panel{width:${panelWidth}px;height:540px;padding:8px;box-sizing:border-box;position:relative}
-           .flow-board{position:relative;display:grid;grid-template-columns:${tileWidth}px ${inverterWidth}px ${tileWidth}px;grid-template-rows:420px;gap:0 ${tileGap}px;align-items:center;justify-items:center;width:${boardWidth}px;height:420px}
+           .flow-board{position:relative;display:grid;grid-template-columns:${tileWidth}px ${inverterColumnWidth}px ${tileWidth}px;grid-template-rows:420px;gap:0 ${tileGap}px;align-items:center;justify-items:center;width:${boardWidth}px;height:420px}
           .flow-tile{width:${tileWidth}px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
@@ -2448,7 +2500,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .flow-tile .positive{color:#4ade80}
           .flow-tile .sold{color:#4ade80}
           .flow-tile .bought{color:#c084fc}
-          .flow-inverter-svg{width:150px;height:auto;display:block;margin:0 auto}
+           .flow-inverter-svg{width:${inverterVisualWidth}px;height:auto;display:block;margin:0 auto}
           .flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;color:#38bdf8;margin-top:3px}
           .flow-inverter-temp svg{width:13px;height:13px}
           .flow-sold-tile{display:grid;grid-template-columns:30px 1fr;gap:8px;align-items:center;padding:5px 10px;margin-top:5px;border:1px solid rgba(107,157,182,.25);border-radius:9px;background:rgba(6,19,29,.88);min-width:170px}
@@ -2479,7 +2531,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
 .flow-footer{text-align:center;width:${boardWidth}px;margin-top:4px;font-size:10px;color:#6b8a9c}
         </style>
         <div class="flow-wrapper">
-          <div class="flow-scaler" data-base-width="${panelWidth}" data-tile-width="${tileWidth}" data-tile-gap="${tileGap}" data-inverter-width="${inverterWidth}">
+          <div class="flow-scaler" data-base-width="${panelWidth}" data-tile-width="${tileWidth}" data-tile-gap="${tileGap}" data-inverter-column-width="${inverterColumnWidth}" data-inverter-visual-width="${inverterVisualWidth}">
             <div class="energy-flow-panel">
               <div class="flow-board">
                 <div class="flow-tile flow-tile-pv">
@@ -2558,14 +2610,14 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     ${phaseRow("L3", `<span style="color:#38bdf8" data-live="load-l3-power">${fmtPower(loadL3Power)}</span>`, "")}
                   </div>
                 </div>
-                <svg class="flow-svg" viewBox="0 0 1100 420" preserveAspectRatio="xMidYMid meet">
-                  <path d="${pvPath}" class="flow-line-bg" />
+                <svg class="flow-svg" viewBox="0 0 ${boardWidth} ${geometry.boardHeight}" preserveAspectRatio="xMidYMid meet">
+                  <path data-flow-line-bg="pv" d="${pvPath}" class="flow-line-bg" />
                   <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="${lineClass(active.pv)}" stroke-width="4" stroke-opacity="${active.pv ? 0.9 : 0.2}" />
-                  <path d="${batPath}" class="flow-line-bg" />
+                  <path data-flow-line-bg="battery" d="${batPath}" class="flow-line-bg" />
                   <path data-flow-line="battery" d="${batPath}" stroke="#4ade80" class="${lineClass(active.batteryDischarge || active.batteryCharge)}" stroke-width="4" stroke-opacity="${active.batteryDischarge || active.batteryCharge ? 0.9 : 0.2}" />
-                  <path d="${gridPath}" class="flow-line-bg" />
+                  <path data-flow-line-bg="grid" d="${gridPath}" class="flow-line-bg" />
                   <path data-flow-line="grid" d="${gridPath}" stroke="#c084fc" class="${lineClass(active.gridImport || active.gridExport)}" stroke-width="4" stroke-opacity="${active.gridImport || active.gridExport ? 0.9 : 0.2}" />
-                  <path d="${homePath}" class="flow-line-bg" />
+                  <path data-flow-line-bg="home" d="${homePath}" class="flow-line-bg" />
                   <path data-flow-line="home" d="${homePath}" stroke="#38bdf8" class="${lineClass(active.load)}" stroke-width="4" stroke-opacity="${active.load ? 0.9 : 0.2}" />
                 </svg>
               </div>
@@ -2611,6 +2663,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const wrapper = this.querySelector(".flow-wrapper");
     const scaler = this.querySelector(".flow-scaler");
     if (!wrapper || !scaler) return;
+    if (this._flowResizeObserver && this._flowObservedWrapper !== wrapper) {
+      this._flowResizeObserver.disconnect();
+      this._flowObservedWrapper = wrapper;
+      this._flowObservedWidth = wrapper.clientWidth || 0;
+      this._flowResizeObserver.observe(wrapper);
+    }
     const baseWidth = parseFloat(scaler.dataset.baseWidth) || 1116;
     const baseHeight = 540;
     const available = wrapper.clientWidth || this.clientWidth || baseWidth;
@@ -2635,22 +2693,23 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const scaler = this.querySelector(".flow-scaler");
     const tileWidth = parseFloat(scaler?.dataset.tileWidth) || 230;
     const tileGap = parseFloat(scaler?.dataset.tileGap) || 0;
-    const inverterWidth = parseFloat(scaler?.dataset.inverterWidth) || 640;
-    const inverterLeft = tileWidth + tileGap;
-    const inverterRight = inverterLeft + inverterWidth;
-    const leftCenterX = tileWidth / 2;
-    const rightCenterX = inverterRight + tileGap + tileWidth / 2;
-    const pvPath = `M${leftCenterX},110 C${leftCenterX + 120},110 ${inverterLeft - 25},160 ${inverterLeft},220`;
-    const batPath = active.batteryDischarge
-      ? `M${inverterRight},220 C${inverterRight + 25},160 ${rightCenterX - 120},110 ${rightCenterX},110`
-      : `M${rightCenterX},110 C${rightCenterX - 120},110 ${inverterRight + 25},160 ${inverterRight},220`;
-    const gridPath = active.gridImport
-      ? `M${leftCenterX},330 C${leftCenterX + 120},330 ${inverterLeft - 25},280 ${inverterLeft},220`
-      : `M${inverterLeft},220 C${inverterLeft - 25},280 ${leftCenterX + 120},330 ${leftCenterX},330`;
-    const homePath = `M${inverterRight},220 C${inverterRight + 25},280 ${rightCenterX - 120},330 ${rightCenterX},330`;
+    const inverterColumnWidth = parseFloat(scaler?.dataset.inverterColumnWidth) || 640;
+    const inverterVisualWidth = parseFloat(scaler?.dataset.inverterVisualWidth) || 150;
+    const geometry = this.flowGeometry({ tileWidth, tileGap, inverterColumnWidth, inverterVisualWidth });
+    const pvPath = geometry.paths.pvToInverter;
+    const batPath = active.batteryCharge
+      ? geometry.paths.inverterToBattery
+      : geometry.paths.batteryToInverter;
+    const gridPath = active.gridExport
+      ? geometry.paths.inverterToGrid
+      : geometry.paths.gridToInverter;
+    const homePath = geometry.paths.inverterToHome;
+    svg.setAttribute("viewBox", `0 0 ${geometry.boardWidth} ${geometry.boardHeight}`);
     const setPath = (key, d, color, isActive) => {
+      const background = svg.querySelector(`path[data-flow-line-bg="${key}"]`);
       const path = svg.querySelector(`path[data-flow-line="${key}"]`);
       if (!path) return;
+      background?.setAttribute("d", d);
       path.setAttribute("d", d);
       path.setAttribute("stroke", color);
       path.setAttribute("stroke-width", "4");
@@ -4544,7 +4603,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
            .ai-energy-48-crisp{grid-column:1/-1;min-width:0}.ai-energy-48-crisp>h3{margin:0 0 10px;color:#7ee22d}.ai-readable-stack{display:grid;gap:12px}.ai-crisp-chart{position:relative;overflow:visible;padding:15px 14px 12px;background:radial-gradient(circle at 50% 0%,rgba(18,86,117,.12),transparent 46%),linear-gradient(180deg,rgba(9,34,49,.92),rgba(5,22,33,.94))}.ai-crisp-chart h3{margin:0 0 9px;color:#7ee22d;font-size:16px}.ai-crisp-legend{display:flex;justify-content:center;flex-wrap:wrap;gap:5px 12px;margin:0 0 12px}.ai-crisp-legend button{display:inline-flex;align-items:center;gap:5px;border:0;border-radius:4px;background:transparent;color:#b8cdd7;font:inherit;font-size:11px;padding:3px 4px;cursor:pointer}.ai-crisp-legend button:hover{background:rgba(69,149,188,.12);color:#fff}.ai-crisp-legend button.disabled{opacity:.32;text-decoration:line-through}.ai-crisp-legend i{display:block;width:13px;height:7px;border-radius:2px;background:#35aee8}.ai-crisp-legend .actual i{background:#ff8a32}.ai-crisp-legend .solcast i,.ai-crisp-legend .corrected i,.ai-crisp-legend .soc i,.ai-crisp-legend .minimum i{height:3px}.ai-crisp-legend .solcast i{background:#67c842}.ai-crisp-legend .corrected i{background:#bd6dff}.ai-crisp-legend .band i{height:9px;background:rgba(151,191,213,.34);border:1px solid rgba(161,205,228,.55)}.ai-crisp-legend .soc i{background:#ffd200}.ai-crisp-legend .minimum i{background:repeating-linear-gradient(90deg,#ff6577 0 5px,transparent 5px 8px)}.ai-crisp-layout{display:grid;grid-template-columns:44px minmax(0,1fr) 38px;gap:7px;align-items:stretch}.ai-crisp-main{min-width:0}.ai-crisp-plot{position:relative;height:268px;border-bottom:1px solid rgba(119,166,188,.3);background:linear-gradient(180deg,rgba(4,18,28,.25),rgba(4,18,28,.52))}.ai-crisp-svg{display:block!important;width:100%!important;min-width:0!important;height:100%!important;max-height:none!important;overflow:visible}.ai-crisp-grid{stroke:rgba(118,164,185,.18);stroke-width:1}.ai-crisp-guide{stroke:rgba(123,170,191,.2);stroke-width:1;stroke-dasharray:5 6}.ai-crisp-baseline{stroke:rgba(157,202,222,.58);stroke-width:1}.ai-crisp-load{fill:#35aee8}.ai-crisp-actual{fill:#ff8a32}.ai-crisp-band{fill:rgba(151,191,213,.18);stroke:rgba(171,210,228,.38);stroke-width:1}.ai-crisp-solcast{fill:none;stroke:#67c842;stroke-width:2.6;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-corrected{fill:none;stroke:#bd6dff;stroke-width:2.7;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-soc{fill:none;stroke:#ffd200;stroke-width:2.8;stroke-linejoin:round;stroke-linecap:round}.ai-crisp-min-soc{stroke:#ff6577;stroke-width:1.5;stroke-dasharray:7 5}.ai-crisp-now{stroke:#ff5d70;stroke-width:1.8;stroke-dasharray:6 4}.ai-crisp-now-tag{position:absolute;top:7px;right:8px;border:1px solid #ff5d70;border-radius:4px;background:#f4f7f8;color:#263943;padding:2px 6px;font-size:10px;font-weight:900}.ai-crisp-hit{stroke:none!important;stroke-width:0!important;fill:transparent!important}.ai-crisp-axis{display:flex;flex-direction:column;justify-content:space-between;min-height:268px;color:#a9c3d0;font-size:11px;font-weight:700}.ai-crisp-axis b{color:#e3f2f7;font-size:12px}.ai-crisp-axis-left{align-items:flex-end;text-align:right}.ai-crisp-axis-right{align-items:flex-start;text-align:left}.ai-crisp-time-grid,.ai-crisp-weather-grid{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));margin-left:0}.ai-crisp-time-grid{min-height:25px;align-items:start;padding-top:6px;color:#c6dbe5;font-size:10px;font-weight:800}.ai-crisp-time-grid span{text-align:center;white-space:nowrap}.ai-crisp-weather-grid{min-height:31px;border-top:1px solid rgba(104,151,174,.12);align-items:center}.ai-crisp-weather-cell{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;height:30px;cursor:default}.ai-crisp-weather-cell b{font-size:18px;line-height:1;font-weight:400}.ai-crisp-weather-cell i{position:absolute;bottom:2px;width:13px;height:2px;border-radius:4px;background:#536d79;opacity:.35}.ai-crisp-weather-cell i.low{background:#65c95a;opacity:.9}.ai-crisp-weather-cell i.medium{background:#ffd166;opacity:.9}.ai-crisp-weather-cell i.high{background:#49aaff;opacity:.9}.ai-crisp-status{display:grid;grid-template-columns:74px minmax(0,1fr);align-items:center;gap:3px 8px;margin-top:4px;padding-top:5px;border-top:1px solid rgba(104,151,174,.18);font-size:10px}.ai-crisp-status>span{font-weight:800;color:#92afbd}.ai-crisp-status>div{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;height:13px}.ai-crisp-status>div span{display:block;border-radius:3px;background:rgba(102,137,153,.12)}.ai-crisp-status>div span.active.sell{background:#69d438;box-shadow:0 0 0 1px rgba(141,233,96,.55) inset}.ai-crisp-status>div span.active.charge{background:#ffd200;box-shadow:0 0 0 1px rgba(255,227,106,.55) inset}.ai-crisp-status>div span.active.tariff{background:#9f863d;box-shadow:0 0 0 1px rgba(199,173,91,.55) inset}.ai-crisp-chart .ai-chart-tooltip{width:min(300px,calc(100% - 18px))}.ai-crisp-chart .ai-chart-help{margin:8px 1px 0}.ai-energy-48-crisp .ai-crisp-chart{margin-top:0}
            @media(max-width:980px){.ai-energy-48>.ai-support-grid{grid-template-columns:1fr}.ai-chart-v2 svg{min-width:860px}.ai-weather-facts{grid-template-columns:1fr 1fr}.ai-weather-facts span:last-child{grid-column:1/-1}.ai-crisp-chart{padding:12px 9px}.ai-crisp-layout{grid-template-columns:36px minmax(0,1fr) 31px;gap:4px}.ai-crisp-plot{height:236px}.ai-crisp-axis{min-height:236px;font-size:10px}.ai-crisp-legend{justify-content:flex-start;gap:4px 7px}.ai-crisp-legend button{font-size:10px}.ai-crisp-status{grid-template-columns:66px minmax(0,1fr);font-size:9px}.ai-crisp-svg{min-width:0!important}}
            @media(max-width:1500px){.info-grid{grid-template-columns:1fr 1fr}.info-grid>.panel:nth-child(3){grid-column:1/-1}.schedule-main.selecting{grid-template-columns:1fr}.bulk-panel{max-width:none}.mode-legend{grid-template-columns:repeat(3,minmax(0,1fr))}}
-           @media(max-width:980px){.dem-v073{padding:10px}.info-grid{grid-template-columns:1fr}.status-grid,.sales-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.info-grid>.panel{height:auto;min-height:340px}.schedule-head{display:grid}.schedule-tools{justify-content:stretch}.tool-btn{flex:1}.mode-legend{grid-template-columns:1fr 1fr}.schedule-table{min-width:1160px}.schedule-table-card{overflow-x:auto}.sales-tables{grid-template-columns:1fr}.sales-chart{overflow-x:auto;grid-template-columns:repeat(24,24px)}.price-scroll{height:260px;overflow:auto;scrollbar-gutter:stable}.solcast-days{grid-template-columns:repeat(2,1fr)}.settings-layout{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.settings-nav{flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--line)}.settings-nav button{width:auto;min-width:max-content;text-align:center}.diagnostic-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-shell{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.ai-sidebar{border-right:0;border-bottom:1px solid var(--line);padding:7px}.ai-sidebar nav{display:flex;overflow-x:auto}.ai-sidebar nav button{min-width:max-content}.ai-learning-status{display:none}.ai-overview-grid{grid-template-columns:1fr}.ai-overview-grid>.ai-chart-card{grid-column:auto}.ai-decision-grid,.ai-quality-full{grid-template-columns:1fr}.ai-support-grid{grid-template-columns:1fr}.ai-day-plan>.ai-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+           @media(max-width:980px){.dem-v073{padding:10px}.info-grid{grid-template-columns:1fr}.status-grid,.sales-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.info-grid>.panel{height:auto;min-height:340px}.schedule-head{display:grid}.schedule-tools{justify-content:stretch}.tool-btn{flex:1}.mode-legend{grid-template-columns:1fr 1fr}.schedule-table{min-width:1160px}.schedule-table-card{overflow-x:auto}.sales-tables{grid-template-columns:1fr}.sales-chart{overflow-x:auto;grid-template-columns:repeat(24,24px)}.price-scroll{height:260px;overflow:auto;scrollbar-gutter:stable}.solcast-days{grid-template-columns:repeat(2,1fr)}.settings-layout{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.settings-nav{flex-direction:row;overflow-x:auto;overflow-y:hidden;border-right:0;border-bottom:1px solid var(--line)}.settings-nav button{width:auto;min-width:max-content;text-align:center}.diagnostic-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-shell{grid-template-columns:1fr;grid-template-rows:auto minmax(0,1fr)}.ai-sidebar{border-right:0;border-bottom:1px solid var(--line);padding:7px}.ai-sidebar nav{display:flex;overflow-x:auto}.ai-sidebar nav button{min-width:max-content}.ai-learning-status{display:none}.ai-overview-grid{grid-template-columns:1fr}.ai-overview-grid>.ai-chart-card{grid-column:auto}.ai-decision-grid,.ai-quality-full{grid-template-columns:1fr}.ai-support-grid{grid-template-columns:1fr}.ai-day-plan>.ai-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.ai-dialog-v2{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;overflow:hidden}.ai-dialog-v2 .ai-shell,.ai-dialog-v2 .ai-sidebar,.ai-dialog-v2 .ai-main,.ai-dialog-v2 .ai-overview-grid,.ai-dialog-v2 .ai-price-columns,.ai-dialog-v2 .ai-kpis,.ai-dialog-v2 .ai-decision-grid,.ai-dialog-v2 .ai-support-grid,.ai-dialog-v2 .ai-quality-full,.ai-dialog-v2 .ai-metric-card,.ai-dialog-v2 .ai-chart-card{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.ai-dialog-v2 .ai-sidebar{overflow:hidden}.ai-dialog-v2 .ai-sidebar nav{display:flex;width:100%;max-width:100%;min-width:0;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain;touch-action:pan-x}.ai-dialog-v2 .ai-sidebar nav button{flex:0 0 auto;min-width:max-content;max-width:none;white-space:nowrap}.ai-dialog-v2 .ai-main{overflow-x:hidden}.ai-dialog-v2 .ai-plan-table-wrap,.ai-dialog-v2 .ai-chart-scroll,.ai-dialog-v2 .ai-weather-strip{width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain}.ai-dialog-v2 .ai-crisp-chart,.ai-dialog-v2 .ai-crisp-layout,.ai-dialog-v2 .ai-crisp-main,.ai-dialog-v2 .ai-crisp-plot{width:100%;max-width:100%;min-width:0;box-sizing:border-box}.ai-dialog-v2 .ai-crisp-chart{overflow:hidden}.ai-dialog-v2 .ai-crisp-svg{width:100%!important;max-width:100%!important;min-width:0!important}.ai-dialog-v2 .ai-weather-head{min-width:0;flex-wrap:wrap}.ai-dialog-v2 .ai-weather-head>div:first-child{min-width:0}.ai-dialog-v2 .ai-weather-day,.ai-dialog-v2 .ai-weather-hour{flex:0 0 66px}.ai-dialog-v2 .ai-weather-source{max-width:100%;white-space:normal;overflow-wrap:anywhere}}
            @media(max-width:620px){
              .dem-v073{padding:4px;gap:8px}.panel,.schedule-shell,.table-wrap{border-radius:7px}.panel-title{padding:10px 12px;font-size:18px}
              .status-grid,.sales-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px!important;padding:7px!important}.status-panel .stat,.sales-summary .stat{min-height:52px;padding:7px 8px;gap:7px}.status-panel .status-mode{grid-column:1/-1}.stat-icon{width:29px;height:29px}.stat-icon svg{width:17px;height:17px}.status-panel .stat span,.sales-summary .stat span{font-size:10px}.status-panel .stat strong,.sales-summary .stat strong{font-size:13px;line-height:1.25;white-space:normal;overflow-wrap:anywhere}
@@ -4552,7 +4611,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
               .solcast-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.solcast-days{display:flex;max-width:100%;gap:6px;overflow-x:auto;overscroll-behavior-x:contain;scroll-snap-type:x proximity;padding-bottom:5px}.solcast-day{min-width:132px;scroll-snap-align:start}.solcast-chart{height:162px;padding-left:5px;padding-right:5px}.solcast-bars{height:138px;min-width:0;width:100%;max-width:100%;grid-template-columns:repeat(24,minmax(0,1fr))}.solcast-performance{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;padding:7px}
              .schedule-shell{padding:7px}.schedule-head{gap:8px}.schedule-title h2{font-size:19px}.schedule-title p{font-size:11px;line-height:1.35}.schedule-tools{display:grid;grid-template-columns:1fr 1fr;gap:6px}.tool-btn{min-height:36px;padding:0 8px;justify-content:center;font-size:12px}.gear-btn{width:100%;min-height:36px}.mode-legend{display:flex;gap:10px;overflow-x:auto;padding:3px 1px 7px;scroll-snap-type:x proximity}.mode-tile{min-width:150px;scroll-snap-align:start}.mode-icon{width:30px;height:30px}.mode-tile strong{font-size:12px}.mode-tile span{font-size:10px}.schedule-table{min-width:880px}.schedule-table th,.schedule-table td{padding:2px 3px}.schedule-table td{font-size:10px}.schedule-foot{padding:7px;align-items:flex-start;flex-direction:column}.foot-actions{width:100%;display:grid;grid-template-columns:1fr 1fr}.foot-actions button{justify-content:center;padding:0 7px;font-size:11px}
              .sales-summary{padding:8px}.sales-chart{min-height:150px}.sales-tables{gap:8px}.sales-table-card h3{font-size:14px;padding:9px}.sales-table-card th,.sales-table-card td{font-size:11px;padding:6px 8px}
-              .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}
+              .overlay{padding:0;align-items:stretch}.dialog,.ai-dialog,.settings-dialog{width:100%!important;height:100dvh!important;max-height:100dvh!important;border-radius:0}.dialog-head{padding-top:max(14px,env(safe-area-inset-top))}.dialog-actions{padding-bottom:max(12px,env(safe-area-inset-bottom))}.apply-row{grid-template-columns:24px 1fr}.apply-row .field,.apply-row select{grid-column:2}.ai-grid{grid-template-columns:1fr}.ai-proposal-scroll,.ai-history-scroll{max-height:none}.history-toolbar{grid-template-columns:1fr 1fr}.history-toolbar button{width:100%}.analysis-detail-grid,.analysis-price-groups{grid-template-columns:1fr}.settings-content{padding:9px}.diagnostic-summary{grid-template-columns:1fr}.diagnostic-actions{display:grid}.diagnostic-actions button{width:100%}.ai-main{padding:10px}.ai-price-columns{grid-template-columns:1fr}.ai-kpis,.ai-day-plan>.ai-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-proposal-toolbar{align-items:stretch;flex-direction:column}.ai-day-tabs,.ai-view-tools{display:grid;grid-template-columns:1fr 1fr}.ai-decision-grid{grid-template-columns:1fr}.ai-chart-card{padding:9px}.ai-chart-card svg{min-width:620px}.ai-chart-card{overflow-x:auto}.ai-crisp-chart svg{min-width:0!important}.ai-crisp-chart{overflow:visible}.ai-dialog-v2 .ai-main{padding:10px}.ai-dialog-v2 .ai-overview-grid,.ai-dialog-v2 .ai-price-columns,.ai-dialog-v2 .ai-decision-grid,.ai-dialog-v2 .ai-support-grid,.ai-dialog-v2 .ai-quality-full{grid-template-columns:minmax(0,1fr)}.ai-dialog-v2 .ai-proposal-toolbar{width:100%;max-width:100%;min-width:0}.ai-dialog-v2 .ai-day-tabs,.ai-dialog-v2 .ai-view-tools{width:100%;max-width:100%;min-width:0}.ai-dialog-v2 .ai-day-tabs button,.ai-dialog-v2 .ai-view-tools button{min-width:0;white-space:normal;overflow-wrap:anywhere}.ai-dialog-v2 .ai-chart-card{max-width:100%}.ai-dialog-v2 .ai-crisp-chart{overflow:hidden}.ai-dialog-v2 .ai-crisp-layout{grid-template-columns:30px minmax(0,1fr) 26px}.ai-dialog-v2 .ai-crisp-status{grid-template-columns:58px minmax(0,1fr)}.ai-dialog-v2 .ai-weather-head{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}.ai-dialog-v2 .ai-weather-temperature{text-align:left}.ai-dialog-v2 .ai-weather-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.ai-dialog-v2 .ai-quality-card li{min-width:0;flex-wrap:wrap}.ai-dialog-v2 .ai-quality-card li span,.ai-dialog-v2 .ai-quality-card li strong{min-width:0;overflow-wrap:anywhere}.ai-dialog-v2 .ai-quality-card li strong{text-align:left}
            }
           </style>
            <div class="dem-v073" style="${demStyle}">

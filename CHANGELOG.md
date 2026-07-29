@@ -151,6 +151,21 @@
 - Rozszerzono testy regresji układu; pełny zestaw `python -m unittest discover -s tests -v` obejmuje 205 testów.
 - Rewizja karty JavaScript: `v=21`.
 
+### Etap 5.3.8 — geometria przepływu i mobilne Sugestie AI (v=22)
+
+- Zastąpiono zduplikowane wzory ścieżek wspólną metodą `flowGeometry()`, używaną zarówno podczas pierwszego renderu, jak i w `updateFlowLines()`.
+- Rozdzielono szerokość środkowej kolumny panelu od rzeczywistej szerokości widocznego SVG falownika.
+- Punkty początkowe linii przeniesiono na wewnętrzne krawędzie kafli, a przy falowniku utworzono osobne górne i dolne porty dla PV, Sieci, Baterii i Domu.
+- Punkty kontrolne Béziera są obliczane proporcjonalnie do odległości pomiędzy początkiem i końcem ścieżki; lewa i prawa strona zachowują lustrzaną geometrię.
+- `viewBox` panelu przepływu jest zgodny z dynamicznym `boardWidth`, a ścieżki tła i aktywne są aktualizowane razem.
+- Lokalny `ResizeObserver` panelu przepływu ponawia istniejące skalowanie po zmianie szerokości kontenera, również w podglądzie edytora karty.
+- Mobilny dialog **Sugestie AI** otrzymał lokalne ograniczenia szerokości, przewijany poziomo pasek pełnych nazw zakładek oraz responsywne kontenery kart i bieżącego wykresu 48 h.
+- Szerokie tabele, starsze wykresy i pasek pogody zachowują lokalne przewijanie bez rozszerzania całego dialogu.
+- `renderAiDialog()`, logika AI, `.dialog-host`, `renderDialogOnly()`, dialog **Ustawienia i diagnostyka**, główny mobilny dashboard i backend pozostały bez zmian.
+- Dodano testy regresji geometrii SVG, symetrii, wariantów parametrów panelu, mobilnego ograniczania szerokości dialogu AI oraz lokalnych kontenerów przewijania.
+- Testy: `214/214` jednostek przechodzi; `node --check` jest poprawne dla obu kopii JS; obie kopie mają identyczny SHA-256.
+- Rewizja karty JavaScript: `v=22`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.
