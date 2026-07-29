@@ -5,7 +5,7 @@ views:
     icon: mdi:solar-power-variant
     cards:
       - type: custom:deye-energy-manager-card
-        # Optional layout configuration (v=22)
+        # Optional layout configuration (v=23)
         # Remove the `layout:` block entirely to use the defaults.
         layout:
           # Layout mode:
@@ -43,7 +43,7 @@ views:
             mobile_breakpoint: 768
 
           # Energy-flow panel sizing
-          energy_tile_width: 230
+          energy_tile_width: 300
           energy_tile_gap: 28
           inverter_scale: 1
           flow_animation_speed: 6

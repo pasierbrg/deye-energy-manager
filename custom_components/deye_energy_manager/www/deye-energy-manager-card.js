@@ -1,4 +1,4 @@
-// Resource revision: v=22
+// Resource revision: v=23
 class DeyeEnergyManagerCard extends HTMLElement {
   setConfig(config) {
     this.config = config || {};
@@ -85,7 +85,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
       prices_ratio: 0.80,
       buy_prices_ratio: 0.80,
       solcast_ratio: 1.40,
-      energy_tile_width: 230,
+      energy_tile_width: 300,
       energy_tile_gap: 28,
       inverter_scale: 1,
       flow_animation_speed: 6,
@@ -426,7 +426,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const batteryValue = this.asNumber(this.state(this.entity("sensor", "battery_power")), 0) || 0;
     const loadValue = this.asNumber(this.state(this.entity("sensor", "load_power")), 0) || 0;
     const batterySocValue = this.asNumber(this.state(this.entity("sensor", "battery_soc")));
-    const currentModeValue = this.state(this.entity("select", "work_mode_select"), "");
+    const currentModeValue = this.deyeWorkModeState();
 
     const formatKw = (w) => {
       if (w === null || w === undefined || Number.isNaN(w)) return "—";
@@ -438,7 +438,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const fmtNum = (v, d = 1) => (v === null || v === undefined || Number.isNaN(v)) ? "—" : v.toFixed(d);
     const detailed = (key, fallback = null) => this.asNumber(this.state(this.entity("sensor", key)), fallback);
     const managerModeClass = this.modeTextClass(modeText);
-    const currentModeMeta = this.modeMeta(currentModeValue, true);
+    const currentModeMeta = currentModeValue ? this.modeMeta(currentModeValue, true) : { cls: "disabled" };
     const safeModeClass = (cls) => cls ? `mode-${cls}` : "";
 
     this.setText("[data-live='pv-main']", formatKw(pvValue));
@@ -486,6 +486,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
     this.setText("[data-live='manager-active-mode']", modeText);
     this.setText("[data-live='decision-reason']", this.state(this.entity("sensor", "decision_reason"), "—"));
     this.setText("[data-live='deye-mode']", currentModeValue || "—");
+    this.setText("[data-live='manager-deye-mode']", currentModeValue || "—");
     this.setClass("[data-live='manager-active-mode']", safeModeClass(managerModeClass), "", false);
     this.setClass("[data-live='manager-mode']", safeModeClass(managerModeClass), "", false);
     this.setClass("[data-live='deye-mode']", safeModeClass(currentModeMeta.cls), "", false);
@@ -1045,6 +1046,24 @@ class DeyeEnergyManagerCard extends HTMLElement {
       if (found) return found;
     }
     return `${domain}.deye_energy_manager_${list[0]}`;
+  }
+
+  deyeWorkModeEntity() {
+    const configured = [
+      this.config?.entities?.system_work_mode,
+      this.config?.entities?.deye_system_work_mode,
+      this.config?.entity_map?.system_work_mode,
+      this.config?.mapping?.system_work_mode,
+      this.config?.system_work_mode,
+      this.config?.deye_work_mode_entity,
+    ].filter((entityId) => typeof entityId === "string" && entityId.trim());
+    const candidates = [...configured, "select.deye_inverter_system_work_mode"];
+    return candidates.find((entityId) => this.exists(entityId)) || "select.deye_inverter_system_work_mode";
+  }
+
+  deyeWorkModeState() {
+    const value = String(this.state(this.deyeWorkModeEntity(), "") || "").trim();
+    return ["unknown", "unavailable", "none", "null", "enabled", "disabled"].includes(value.toLowerCase()) ? "" : value;
   }
 
   findEntity(domain, wanted, excluded = [], fallbackSuffixes = []) {
@@ -2314,22 +2333,24 @@ class DeyeEnergyManagerCard extends HTMLElement {
   }
 
   flowGeometry({
-    tileWidth = 230,
+    tileWidth = 300,
     tileGap = 28,
     inverterColumnWidth = 640,
-    inverterVisualWidth = 150,
+    inverterVisualWidth = 190,
   } = {}) {
-    const boardHeight = 420;
+    const boardHeight = 600;
     const boardWidth = tileWidth * 2 + inverterColumnWidth + tileGap * 2;
     const inverterCenterX = tileWidth + tileGap + inverterColumnWidth / 2;
-    const inverterVisualHeight = inverterVisualWidth * (190 / 150);
-    const inverterCenterY = 180;
+    const inverterVisualHeight = inverterVisualWidth * (250 / 190);
+    const inverterCenterY = boardHeight / 2;
     const inverterPortOffsetY = inverterVisualHeight * 0.22;
+    const tileTopY = 145;
+    const tileBottomY = boardHeight - tileTopY;
     const points = {
-      pvTile: { x: tileWidth, y: 110 },
-      gridTile: { x: tileWidth, y: 330 },
-      batteryTile: { x: boardWidth - tileWidth, y: 110 },
-      homeTile: { x: boardWidth - tileWidth, y: 330 },
+      pvTile: { x: tileWidth, y: tileTopY },
+      gridTile: { x: tileWidth, y: tileBottomY },
+      batteryTile: { x: boardWidth - tileWidth, y: tileTopY },
+      homeTile: { x: boardWidth - tileWidth, y: tileBottomY },
       pvPort: { x: inverterCenterX - inverterVisualWidth / 2, y: inverterCenterY - inverterPortOffsetY },
       gridPort: { x: inverterCenterX - inverterVisualWidth / 2, y: inverterCenterY + inverterPortOffsetY },
       batteryPort: { x: inverterCenterX + inverterVisualWidth / 2, y: inverterCenterY - inverterPortOffsetY },
@@ -2357,11 +2378,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
 
   energyFlowPanel() {
     const [modeText, modeClass] = this.readMode(this.state(this.entity("sensor", "manager_status")));
-    const decisionReason = this.state(this.entity("sensor", "decision_reason"), "");
     const activeSlot = this.state(this.entity("sensor", "active_slot"), "");
     const activeSlotLabel = (this.scheduleSlots().find(([key]) => key === activeSlot)?.[1] || activeSlot).replace(/:00/g, "");
-    const currentMode = this.state(this.entity("select", "work_mode_select"), "");
-    const currentModeMeta = this.modeMeta(currentMode, true);
+    const currentMode = this.deyeWorkModeState();
+    const currentModeMeta = currentMode ? this.modeMeta(currentMode, true) : { cls: "disabled" };
     const managerModeClass = this.modeTextClass(modeText);
     const layout = this.effectiveLayout();
     const tileWidth = layout.energy_tile_width;
@@ -2369,10 +2389,19 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const inverterScale = layout.inverter_scale;
     const flowSpeed = layout.flow_animation_speed;
     const inverterColumnWidth = Math.round(640 * inverterScale);
-    const inverterVisualWidth = Math.round(150 * inverterScale);
+    const inverterVisualWidth = Math.round(190 * inverterScale);
     const geometry = this.flowGeometry({ tileWidth, tileGap, inverterColumnWidth, inverterVisualWidth });
     const boardWidth = geometry.boardWidth;
-    const panelWidth = boardWidth + 16;
+    const panelWidth = boardWidth + 32;
+    const panelHeight = geometry.boardHeight + 168;
+    const tilePadding = tileWidth < 150 ? 8 : tileWidth < 210 ? 12 : 17;
+    const tileIconSize = tileWidth < 150 ? 34 : tileWidth < 210 ? 46 : 60;
+    const tileContentGap = tileWidth < 150 ? 7 : tileWidth < 210 ? 9 : 13;
+    const compactStatus = boardWidth < 900;
+    const statusIconSize = compactStatus ? 36 : 56;
+    const statusGap = compactStatus ? 8 : 15;
+    const statusPadY = compactStatus ? 10 : 15;
+    const statusPadX = compactStatus ? 9 : 19;
     const flowDuration = Math.max(0.5, 18 / flowSpeed).toFixed(2);
     const flowOffset = Math.round(220 * flowDuration / 3);
 
@@ -2447,52 +2476,73 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const homePath = geometry.paths.inverterToHome;
 
     const lineClass = (isActive) => isActive ? "flow-line flow-active" : "flow-line";
+    const flowMarker = (key, isActive) => isActive ? ` marker-end="url(#flow-arrow-${key})"` : "";
 
-    const inverterSvg = `<svg class="flow-inverter-svg" viewBox="0 0 150 190" xmlns="http://www.w3.org/2000/svg">
+    const inverterSvg = `<svg class="flow-inverter-svg" viewBox="0 0 190 250" xmlns="http://www.w3.org/2000/svg" aria-label="Falownik Deye">
       <defs>
-        <linearGradient id="invBody3" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="#f8fafc"/>
-          <stop offset="1" stop-color="#cbd5e1"/>
+        <linearGradient id="invBody23" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stop-color="#f8fbff"/>
+          <stop offset="0.52" stop-color="#e5edf7"/>
+          <stop offset="1" stop-color="#b8c7da"/>
         </linearGradient>
-        <filter id="invShadow3" x="-20%" y="-20%" width="140%" height="140%">
-          <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000" flood-opacity="0.35"/>
+        <linearGradient id="invEdge23" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stop-color="#e9f8ff"/>
+          <stop offset="1" stop-color="#93a9c0"/>
+        </linearGradient>
+        <radialGradient id="invScreen23" cx="50%" cy="25%" r="85%">
+          <stop offset="0" stop-color="#16243b"/>
+          <stop offset="1" stop-color="#07101f"/>
+        </radialGradient>
+        <filter id="invShadow23" x="-35%" y="-25%" width="170%" height="175%">
+          <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#000" flood-opacity="0.5"/>
+          <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#19b9ff" flood-opacity="0.55"/>
         </filter>
       </defs>
-      <rect x="6" y="6" width="138" height="178" rx="16" fill="url(#invBody3)" stroke="#38bdf8" stroke-width="2" filter="url(#invShadow3)"/>
-      <rect x="22" y="24" width="106" height="58" rx="5" fill="#0f172a"/>
-      <circle cx="42" cy="40" r="3.5" fill="#22c55e"/>
-      <circle cx="56" cy="40" r="3.5" fill="#22c55e"/>
-      <circle cx="70" cy="40" r="3.5" fill="#22c55e"/>
-      <rect x="58" y="138" width="34" height="14" rx="3" fill="#38bdf8"/>
+      <rect x="11" y="7" width="168" height="230" rx="23" fill="url(#invBody23)" stroke="#36c4ff" stroke-width="3" filter="url(#invShadow23)"/>
+      <path d="M31 15h128c7 0 12 5 12 12v183c0 9-7 17-16 18H35c-9-1-16-9-16-18V27c0-7 5-12 12-12Z" fill="none" stroke="url(#invEdge23)" stroke-width="2" opacity=".7"/>
+      <rect x="34" y="34" width="122" height="67" rx="7" fill="url(#invScreen23)" stroke="#0b1a2d" stroke-width="2"/>
+      <path d="M43 42h104" stroke="#263a53" stroke-width="1" opacity=".7"/>
+      <circle cx="55" cy="51" r="5" fill="#3cff91" stroke="#d8ffe9" stroke-width="2"/>
+      <circle cx="72" cy="51" r="5" fill="#3cff91" stroke="#d8ffe9" stroke-width="2"/>
+      <circle cx="89" cy="51" r="5" fill="#3cff91" stroke="#d8ffe9" stroke-width="2"/>
+      <circle cx="55" cy="51" r="10" fill="none" stroke="#3cff91" stroke-width="1" opacity=".22"/>
+      <rect x="76" y="184" width="38" height="20" rx="4" fill="#18b8f2" stroke="#e6f8ff" stroke-width="2"/>
+      <path d="M80 187h30" stroke="#62dcff" stroke-width="2" opacity=".85"/>
+      <path d="M59 219h72" stroke="#8da0b5" stroke-width="2" opacity=".55"/>
     </svg>`;
 
     return `
       <section class="panel status-panel">
         <h2 class="panel-title">${this.iconSvg("chart")} Status energii</h2>
         <style>
+.status-panel{background:radial-gradient(circle at 50% 42%,rgba(13,72,113,.13),transparent 34%),radial-gradient(circle at 12% 0%,rgba(20,85,130,.2),transparent 31%),linear-gradient(180deg,#030d17 0%,#061521 100%)!important;border-color:rgba(85,145,177,.48)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 16px 38px rgba(0,0,0,.27)!important}
+.status-panel>.panel-title{padding:18px 22px!important;font-size:27px!important;gap:12px!important;letter-spacing:-.35px}
+.status-panel>.panel-title svg{width:27px!important;height:27px!important;filter:drop-shadow(0 0 7px rgba(21,155,255,.55))}
 .flow-wrapper{max-width:${panelWidth}px;margin:0 auto;overflow:hidden;position:relative}
 .flow-scaler{width:${panelWidth}px;transform-origin:top left;transform:scale(1);line-height:1}
-           .energy-flow-panel{width:${panelWidth}px;height:540px;padding:8px;box-sizing:border-box;position:relative}
-           .flow-board{position:relative;display:grid;grid-template-columns:${tileWidth}px ${inverterColumnWidth}px ${tileWidth}px;grid-template-rows:420px;gap:0 ${tileGap}px;align-items:center;justify-items:center;width:${boardWidth}px;height:420px}
-          .flow-tile{width:${tileWidth}px;border:1px solid rgba(107,157,182,.28);border-radius:12px;background:linear-gradient(180deg,rgba(13,33,48,.95),rgba(7,20,30,.97));padding:9px;box-shadow:0 8px 22px rgba(0,0,0,.25);box-sizing:border-box}
+.energy-flow-panel{width:${panelWidth}px;height:${panelHeight}px;padding:16px;box-sizing:border-box;position:relative}
+.flow-board{position:relative;display:grid;grid-template-columns:${tileWidth}px ${inverterColumnWidth}px ${tileWidth}px;grid-template-rows:${geometry.boardHeight}px;gap:0 ${tileGap}px;align-items:center;justify-items:center;width:${boardWidth}px;height:${geometry.boardHeight}px}
+.flow-tile{position:relative;z-index:3;width:${tileWidth}px;height:290px;border:1.5px solid rgba(86,149,184,.48);border-radius:14px;background:radial-gradient(circle at 22% 0%,rgba(26,100,151,.13),transparent 38%),linear-gradient(180deg,rgba(6,21,34,.985),rgba(4,16,26,.99));padding:16px ${tilePadding}px;box-shadow:inset 0 1px 0 rgba(255,255,255,.035),0 12px 26px rgba(0,0,0,.3),0 0 18px rgba(16,91,138,.06);box-sizing:border-box;overflow:hidden}
           .flow-tile-pv{grid-column:1;grid-row:1;justify-self:start;align-self:start}
           .flow-tile-grid{grid-column:1;grid-row:1;justify-self:start;align-self:end}
           .flow-tile-battery{grid-column:3;grid-row:1;justify-self:end;align-self:start}
           .flow-tile-home{grid-column:3;grid-row:1;justify-self:end;align-self:end}
-          .flow-inverter{grid-column:2;grid-row:1;align-self:center;justify-self:center;text-align:center;position:relative;z-index:1}
-          .flow-tile-head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
-          .flow-tile-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-          .flow-tile-icon svg{width:28px;height:28px}
-          .flow-tile-title{font-size:12px;font-weight:700;color:#e2eef5}
-          .flow-tile-main{font-size:22px;font-weight:800;line-height:1.05;margin:1px 0 2px}
-          .flow-tile-main .unit{font-size:12px;font-weight:600;color:#8eacbd;margin-left:3px}
-          .flow-tile-sub{font-size:10px;color:#a9c1d0;margin-bottom:6px}
-          .flow-tile-divider{border:0;border-top:1px solid rgba(107,157,182,.2);margin:6px 0}
-          .flow-detail-row{display:grid;grid-template-columns:1fr 1fr;gap:6px;text-align:center}
+.flow-inverter{grid-column:2;grid-row:1;align-self:center;justify-self:center;text-align:center;position:relative;z-index:3;min-width:240px}
+.flow-tile-head{display:flex;align-items:flex-start;gap:${tileContentGap}px;margin-bottom:10px}
+.flow-tile-heading{min-width:0;flex:1;padding-top:2px}
+.flow-tile-icon{width:${tileIconSize + 2}px;height:${tileIconSize + 2}px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 8px currentColor)}
+.flow-tile-icon svg{width:${tileIconSize}px;height:${tileIconSize}px;overflow:visible}
+.flow-tile-title{font-size:${tileWidth < 150 ? 12 : 15}px;font-weight:800;color:#f3f8fc;white-space:${tileWidth < 190 ? "normal" : "nowrap"};line-height:1.2;text-shadow:0 1px 4px rgba(0,0,0,.65)}
+.flow-tile-main{font-size:${tileWidth < 150 ? 19 : tileWidth < 210 ? 23 : 27}px;font-weight:900;line-height:1.05;margin:8px 0 5px;letter-spacing:-.45px;text-shadow:0 0 10px currentColor;overflow-wrap:anywhere}
+.flow-tile-main .unit{font-size:15px;font-weight:700;color:#c7d7e1;margin-left:4px;text-shadow:none}
+.flow-tile-sub{font-size:13px;color:#b7c9d5;line-height:1.28}
+.flow-tile-divider{border:0;border-top:1px solid rgba(95,148,177,.38);margin:12px 0}
+.flow-detail-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;text-align:center}
           .flow-detail-row.three-cols{grid-template-columns:repeat(3,1fr)}
-          .flow-phase-label{font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px;margin-bottom:1px}
-          .flow-phase-power{font-size:11px;font-weight:700;color:#e2eef5}
-          .flow-phase-volt{font-size:10px;color:#a9c1d0;margin-top:1px}
+.flow-phase+.flow-phase{border-left:1px solid rgba(93,145,174,.34)}
+.flow-phase-label{font-size:12px;color:#a9c1d0;letter-spacing:.2px;margin-bottom:7px}
+.flow-phase-power{font-size:15px;font-weight:850;color:#f2f8fc;line-height:1.15}
+.flow-phase-volt{font-size:12px;color:#b7c7d2;margin-top:6px;line-height:1.2;white-space:nowrap}
           .flow-tile-pv .flow-tile-main{color:#fbbf24}
           .flow-tile-grid .flow-tile-main{color:#c084fc}
           .flow-tile-battery .flow-tile-main{color:#4ade80}
@@ -2500,59 +2550,75 @@ class DeyeEnergyManagerCard extends HTMLElement {
           .flow-tile .positive{color:#4ade80}
           .flow-tile .sold{color:#4ade80}
           .flow-tile .bought{color:#c084fc}
-           .flow-inverter-svg{width:${inverterVisualWidth}px;height:auto;display:block;margin:0 auto}
-          .flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:4px;font-size:12px;color:#38bdf8;margin-top:3px}
-          .flow-inverter-temp svg{width:13px;height:13px}
-          .flow-sold-tile{display:grid;grid-template-columns:30px 1fr;gap:8px;align-items:center;padding:5px 10px;margin-top:5px;border:1px solid rgba(107,157,182,.25);border-radius:9px;background:rgba(6,19,29,.88);min-width:170px}
-          .flow-sold-icon{width:26px;height:26px;display:flex;align-items:center;justify-content:center}
-          .flow-sold-icon svg{width:22px;height:22px}
+.flow-tile-foot{font-size:12px;color:#b4c6d1;line-height:1.65}
+.flow-inverter-svg{width:${inverterVisualWidth}px;height:auto;display:block;margin:0 auto}
+.flow-inverter-name{font-size:17px;font-weight:850;color:#f2f7fb;margin-top:7px;text-shadow:0 2px 6px rgba(0,0,0,.8)}
+.flow-inverter-temp{display:flex;align-items:center;justify-content:center;gap:5px;font-size:16px;font-weight:800;color:#23b9ff;margin-top:7px;text-shadow:0 0 8px rgba(35,185,255,.48)}
+.flow-inverter-temp svg{width:18px;height:18px}
+.flow-sold-tile{display:grid;grid-template-columns:38px 1fr;gap:10px;align-items:center;padding:8px 14px;margin:14px auto 0;border:1px solid rgba(89,151,181,.4);border-radius:11px;background:linear-gradient(180deg,rgba(7,24,35,.96),rgba(4,15,24,.98));min-width:260px;box-shadow:0 8px 18px rgba(0,0,0,.3),inset 0 1px 0 rgba(255,255,255,.025)}
+.flow-sold-icon{width:34px;height:34px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 6px rgba(126,226,45,.5))}
+.flow-sold-icon svg{width:30px;height:30px}
           .flow-sold-copy{text-align:left;min-width:0}
-          .flow-sold-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px;line-height:1.1}
-          .flow-sold-value{display:block;font-size:13px;font-weight:700;color:#e2eef5;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-          .flow-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:0;overflow:visible;pointer-events:none}
-          .flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none}
-          .flow-line-bg{stroke:rgba(255,255,255,.08);stroke-width:6}
-.flow-active{stroke-dasharray:4 20;animation:flowDash ${flowDuration}s linear infinite}
+.flow-sold-copy span{display:block;font-size:11px;color:#8fb0c3;text-transform:uppercase;letter-spacing:.45px;line-height:1.1}
+.flow-sold-value{display:block;font-size:16px;font-weight:850;color:#f2f8fc;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.flow-svg{position:absolute;top:0;left:0;width:100%;height:100%;z-index:1;overflow:visible;pointer-events:none}
+.flow-line{fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;filter:url(#flowGlow23)}
+.flow-line-bg{fill:none;stroke-linecap:round;stroke-width:5;opacity:.34;filter:url(#flowGlowSoft23)}
+.flow-active{stroke-dasharray:1 22;stroke-width:7!important;animation:flowDash ${flowDuration}s linear infinite}
           @keyframes flowDash{to{stroke-dashoffset:-${flowOffset}}}
-          .flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:${boardWidth}px;margin-top:4px;border:1px solid rgba(107,157,182,.25);border-radius:10px;background:linear-gradient(180deg,rgba(13,33,48,.92),rgba(7,20,30,.94));overflow:hidden}
-          .flow-status-tile{display:flex;align-items:center;gap:9px;padding:8px 12px;min-height:58px;box-sizing:border-box;border-right:1px solid rgba(107,157,182,.2)}
+.flow-daily-summary{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px 10px;font-size:12px;line-height:1.3}
+.flow-daily-summary>span{color:#b4c6d1}
+.flow-daily-summary strong{font-size:14px;font-weight:850;white-space:nowrap}
+.flow-daily-pv strong{color:#fbbf24}
+.flow-daily-home strong{color:#38bdf8}
+.flow-bottom{display:grid;grid-template-columns:repeat(4,1fr);gap:0;width:${boardWidth}px;margin-top:9px;border:1px solid rgba(84,148,181,.46);border-radius:13px;background:linear-gradient(180deg,rgba(6,21,33,.97),rgba(4,15,24,.99));overflow:hidden;box-shadow:0 12px 26px rgba(0,0,0,.28),inset 0 1px 0 rgba(255,255,255,.03)}
+.flow-status-tile{display:flex;align-items:center;gap:${statusGap}px;padding:${statusPadY}px ${statusPadX}px;min-height:116px;box-sizing:border-box;border-right:1px solid rgba(89,146,174,.35)}
           .flow-status-tile:last-child{border-right:0}
-          .flow-status-icon{width:32px;height:32px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-          .flow-status-icon svg{width:24px;height:24px}
+.flow-status-icon{width:${statusIconSize}px;height:${statusIconSize}px;flex:0 0 auto;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 8px currentColor)}
+.flow-status-icon svg{width:${statusIconSize - 5}px;height:${statusIconSize - 5}px;stroke-width:1.8}
           .flow-status-copy{min-width:0;flex:1}
-          .flow-status-copy span{display:block;font-size:9px;color:#8eacbd;text-transform:uppercase;letter-spacing:.3px}
-          .flow-status-copy strong{display:block;font-size:13px;font-weight:700;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-          .flow-status-copy .sub{font-size:10px;color:#9fb6c4;margin-top:1px;text-transform:none}
-          .flow-status-copy .slot-time{color:#fbbf24;font-size:14px}
+.flow-status-copy span{display:block;font-size:${compactStatus ? 10 : 14}px;font-weight:800;color:#f1f7fb;letter-spacing:0}
+.flow-status-copy strong{display:block;font-size:${compactStatus ? 12 : 17}px;font-weight:850;margin-top:${compactStatus ? 5 : 8}px;white-space:normal;overflow-wrap:anywhere;line-height:1.18}
+.flow-status-copy .sub{font-size:${compactStatus ? 9 : 13}px;color:#aebfca;margin-top:${compactStatus ? 4 : 6}px;line-height:1.25;text-transform:none}
+.flow-status-copy .slot-time{color:#fbbf24;font-size:${compactStatus ? 14 : 20}px;text-shadow:0 0 9px rgba(251,191,36,.35)}
           .mode-selling{color:#7ee22d}
-          .mode-normal{color:#4dabf7}
+          .mode-normal{color:#4ade80}
           .mode-charge{color:#f6a619}
           .mode-disabled{color:#b9c9d4}
-.flow-footer{text-align:center;width:${boardWidth}px;margin-top:4px;font-size:10px;color:#6b8a9c}
+.mode-zero,.mode-ct{color:#38bdf8}
+.flow-footer{text-align:center;width:${boardWidth}px;margin-top:12px;font-size:13px;color:#89a6b7}
         </style>
         <div class="flow-wrapper">
-          <div class="flow-scaler" data-base-width="${panelWidth}" data-tile-width="${tileWidth}" data-tile-gap="${tileGap}" data-inverter-column-width="${inverterColumnWidth}" data-inverter-visual-width="${inverterVisualWidth}">
+          <div class="flow-scaler" data-base-width="${panelWidth}" data-base-height="${panelHeight}" data-tile-width="${tileWidth}" data-tile-gap="${tileGap}" data-inverter-column-width="${inverterColumnWidth}" data-inverter-visual-width="${inverterVisualWidth}">
             <div class="energy-flow-panel">
               <div class="flow-board">
                 <div class="flow-tile flow-tile-pv">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#fbbf24">${this.iconSvg("pv2")}</div>
-                    <div class="flow-tile-title">PV (Produkcja)</div>
+                    <div class="flow-tile-heading">
+                      <div class="flow-tile-title">PV (Produkcja)</div>
+                      <div class="flow-tile-main" data-live="pv-main">${fmtPower(pvPower)}</div>
+                    </div>
                   </div>
-                  <div class="flow-tile-main" data-live="pv-main">${fmtPower(pvPower)}</div>
-                  <div class="flow-tile-sub">dzisiaj: <span data-live="pv-daily">${fmtNumber(pvDaily, 2)}</span> kWh</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row">
                     ${phaseRow("PV1", `<span style="color:#fbbf24" data-live="pv1-power">${fmtPower(pv1Power)}</span>`, `<span data-live="pv1-volts">${fmtNumber(pv1V, 1)}</span> V | <span data-live="pv1-amps">${fmtNumber(pv1A, 1)}</span> A`)}
                     ${phaseRow("PV2", `<span style="color:#fbbf24" data-live="pv2-power">${fmtPower(pv2Power)}</span>`, `<span data-live="pv2-volts">${fmtNumber(pv2V, 1)}</span> V | <span data-live="pv2-amps">${fmtNumber(pv2A, 1)}</span> A`)}
                   </div>
+                  <hr class="flow-tile-divider">
+                  <div class="flow-daily-summary flow-daily-pv">
+                    <span>Wyprodukowano dzisiaj:</span>
+                    <strong><span data-live="pv-daily">${fmtNumber(pvDaily, 2)}</span> kWh</strong>
+                  </div>
                 </div>
                 <div class="flow-tile flow-tile-grid">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#c084fc">${this.iconSvg("grid2")}</div>
-                    <div class="flow-tile-title">Sieć</div>
+                    <div class="flow-tile-heading">
+                      <div class="flow-tile-title">Sieć</div>
+                      <div class="flow-tile-main" data-live="grid-main">${gridMain}</div>
+                    </div>
                   </div>
-                  <div class="flow-tile-main" data-live="grid-main">${gridMain}</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
                     ${phaseRow("L1", `<span style="color:#c084fc" data-live="grid-l1-power">${fmtPower(gridL1Power)}</span>`, `<span data-live="grid-l1-volt">${fmtNumber(gridL1V, 1)}</span> V`)}
@@ -2560,7 +2626,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     ${phaseRow("L3", `<span style="color:#c084fc" data-live="grid-l3-power">${fmtPower(gridL3Power)}</span>`, `<span data-live="grid-l3-volt">${fmtNumber(gridL3V, 1)}</span> V`)}
                   </div>
                   <hr class="flow-tile-divider">
-                  <div style="font-size:10px;color:#a9c1d0;line-height:1.5">
+                  <div class="flow-tile-foot">
                     <div>Dzisiaj: <span class="bought">pobrano <span data-live="grid-bought">${fmtNumber(gridBought, 2)}</span> kWh</span></div>
                     <div>Dzisiaj: <span class="sold">oddano <span data-live="grid-sold">${fmtNumber(gridSold, 2)}</span> kWh</span></div>
                     <div>Częstotliwość: <span data-live="grid-frequency">${fmtNumber(frequency, 2)}</span> Hz</div>
@@ -2568,6 +2634,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                 </div>
                 <div class="flow-inverter">
                   ${inverterSvg}
+                  <div class="flow-inverter-name">Falownik Deye</div>
                   <div class="flow-inverter-temp">${this.iconSvg("thermometer")}<span data-live="inverter-temp">${inverterTemp === null ? "—" : `${Math.round(inverterTemp)}`}</span> °C</div>
                   <div class="flow-sold-tile">
                     <div class="flow-sold-icon" style="color:#7ee22d">${this.iconSvg("money")}</div>
@@ -2580,10 +2647,12 @@ class DeyeEnergyManagerCard extends HTMLElement {
                 <div class="flow-tile flow-tile-battery">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#4ade80">${this.iconSvg("battery2")}</div>
-                    <div class="flow-tile-title">Bateria</div>
+                    <div class="flow-tile-heading">
+                      <div class="flow-tile-title">Bateria</div>
+                      <div class="flow-tile-main"><span class="soc-value" data-live="battery-soc-value">${socMain}</span><span class="unit">% SOC</span></div>
+                      <div class="flow-tile-sub" data-live="battery-direction" style="color:#4ade80">${batteryDirection}</div>
+                    </div>
                   </div>
-                  <div class="flow-tile-main"><span class="soc-value" data-live="battery-soc-value">${socMain}</span><span class="unit">% SOC</span></div>
-                  <div class="flow-tile-sub" data-live="battery-direction" style="color:#4ade80">${batteryDirection}</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
                     ${phaseRow("Napięcie", `<span data-live="battery-voltage">${fmtNumber(batteryVoltage, 1)}</span> V`, "")}
@@ -2591,7 +2660,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                     ${phaseRow("Temp.", `<span data-live="battery-temp">${fmtNumber(batteryTemp, 1)}</span> °C`, "")}
                   </div>
                   <hr class="flow-tile-divider">
-                  <div style="font-size:10px;color:#a9c1d0;line-height:1.5">
+                  <div class="flow-tile-foot">
                     <div>Dzisiaj: <span class="positive">ładowanie <span data-live="battery-charge-daily">${fmtNumber(batteryChargeDaily, 2)}</span> kWh</span></div>
                     <div>Dzisiaj: <span class="positive">rozładowanie <span data-live="battery-discharge-daily">${fmtNumber(batteryDischargeDaily, 2)}</span> kWh</span></div>
                   </div>
@@ -2599,26 +2668,46 @@ class DeyeEnergyManagerCard extends HTMLElement {
                 <div class="flow-tile flow-tile-home">
                   <div class="flow-tile-head">
                     <div class="flow-tile-icon" style="color:#38bdf8">${this.iconSvg("home2")}</div>
-                    <div class="flow-tile-title">Dom (Odbiorniki)</div>
+                    <div class="flow-tile-heading">
+                      <div class="flow-tile-title">Dom (Odbiorniki)</div>
+                      <div class="flow-tile-main" data-live="load-main">${fmtPower(loadPower)}</div>
+                    </div>
                   </div>
-                  <div class="flow-tile-main" data-live="load-main">${fmtPower(loadPower)}</div>
-                  <div class="flow-tile-sub">dzisiaj: <span data-live="load-daily">${fmtNumber(loadDaily, 2)}</span> kWh</div>
                   <hr class="flow-tile-divider">
                   <div class="flow-detail-row three-cols">
                     ${phaseRow("L1", `<span style="color:#38bdf8" data-live="load-l1-power">${fmtPower(loadL1Power)}</span>`, "")}
                     ${phaseRow("L2", `<span style="color:#38bdf8" data-live="load-l2-power">${fmtPower(loadL2Power)}</span>`, "")}
                     ${phaseRow("L3", `<span style="color:#38bdf8" data-live="load-l3-power">${fmtPower(loadL3Power)}</span>`, "")}
                   </div>
+                  <hr class="flow-tile-divider">
+                  <div class="flow-daily-summary flow-daily-home">
+                    <span>Zużycie dzisiaj:</span>
+                    <strong><span data-live="load-daily">${fmtNumber(loadDaily, 2)}</span> kWh</strong>
+                  </div>
                 </div>
                 <svg class="flow-svg" viewBox="0 0 ${boardWidth} ${geometry.boardHeight}" preserveAspectRatio="xMidYMid meet">
-                  <path data-flow-line-bg="pv" d="${pvPath}" class="flow-line-bg" />
-                  <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="${lineClass(active.pv)}" stroke-width="4" stroke-opacity="${active.pv ? 0.9 : 0.2}" />
-                  <path data-flow-line-bg="battery" d="${batPath}" class="flow-line-bg" />
-                  <path data-flow-line="battery" d="${batPath}" stroke="#4ade80" class="${lineClass(active.batteryDischarge || active.batteryCharge)}" stroke-width="4" stroke-opacity="${active.batteryDischarge || active.batteryCharge ? 0.9 : 0.2}" />
-                  <path data-flow-line-bg="grid" d="${gridPath}" class="flow-line-bg" />
-                  <path data-flow-line="grid" d="${gridPath}" stroke="#c084fc" class="${lineClass(active.gridImport || active.gridExport)}" stroke-width="4" stroke-opacity="${active.gridImport || active.gridExport ? 0.9 : 0.2}" />
-                  <path data-flow-line-bg="home" d="${homePath}" class="flow-line-bg" />
-                  <path data-flow-line="home" d="${homePath}" stroke="#38bdf8" class="${lineClass(active.load)}" stroke-width="4" stroke-opacity="${active.load ? 0.9 : 0.2}" />
+                  <defs>
+                    <filter id="flowGlow23" x="-35%" y="-35%" width="170%" height="170%">
+                      <feGaussianBlur stdDeviation="2.6" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                    <filter id="flowGlowSoft23" x="-25%" y="-25%" width="150%" height="150%">
+                      <feGaussianBlur stdDeviation="2" result="blur"/>
+                      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+                    </filter>
+                    <marker id="flow-arrow-pv" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse"><path d="M0 0 10 5 0 10 2.7 5Z" fill="#fbbf24" stroke="none"/></marker>
+                    <marker id="flow-arrow-grid" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse"><path d="M0 0 10 5 0 10 2.7 5Z" fill="#c084fc" stroke="none"/></marker>
+                    <marker id="flow-arrow-battery" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse"><path d="M0 0 10 5 0 10 2.7 5Z" fill="#4ade80" stroke="none"/></marker>
+                    <marker id="flow-arrow-home" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="3.4" markerHeight="3.4" orient="auto-start-reverse"><path d="M0 0 10 5 0 10 2.7 5Z" fill="#38bdf8" stroke="none"/></marker>
+                  </defs>
+                  <path data-flow-line-bg="pv" d="${pvPath}" class="flow-line-bg" stroke="#fbbf24" />
+                  <path data-flow-line="pv" d="${pvPath}" stroke="#fbbf24" class="${lineClass(active.pv)}" stroke-width="4" stroke-opacity="${active.pv ? 0.96 : 0.18}"${flowMarker("pv", active.pv)} />
+                  <path data-flow-line-bg="battery" d="${batPath}" class="flow-line-bg" stroke="#4ade80" />
+                  <path data-flow-line="battery" d="${batPath}" stroke="#4ade80" class="${lineClass(active.batteryDischarge || active.batteryCharge)}" stroke-width="4" stroke-opacity="${active.batteryDischarge || active.batteryCharge ? 0.96 : 0.18}"${flowMarker("battery", active.batteryDischarge || active.batteryCharge)} />
+                  <path data-flow-line-bg="grid" d="${gridPath}" class="flow-line-bg" stroke="#c084fc" />
+                  <path data-flow-line="grid" d="${gridPath}" stroke="#c084fc" class="${lineClass(active.gridImport || active.gridExport)}" stroke-width="4" stroke-opacity="${active.gridImport || active.gridExport ? 0.96 : 0.18}"${flowMarker("grid", active.gridImport || active.gridExport)} />
+                  <path data-flow-line-bg="home" d="${homePath}" class="flow-line-bg" stroke="#38bdf8" />
+                  <path data-flow-line="home" d="${homePath}" stroke="#38bdf8" class="${lineClass(active.load)}" stroke-width="4" stroke-opacity="${active.load ? 0.96 : 0.18}"${flowMarker("home", active.load)} />
                 </svg>
               </div>
               <div class="flow-bottom">
@@ -2627,7 +2716,7 @@ class DeyeEnergyManagerCard extends HTMLElement {
                   <div class="flow-status-copy">
                     <span>Decyzja managera</span>
                     <strong class="mode-${managerModeClass}" data-live="manager-active-mode">${modeText}</strong>
-                    <div class="sub" data-live="decision-reason">${decisionReason || "—"}</div>
+                    <div class="sub">Deye: <b data-live="manager-deye-mode">${currentMode || "—"}</b></div>
                   </div>
                 </div>
                 <div class="flow-status-tile">
@@ -2669,8 +2758,8 @@ class DeyeEnergyManagerCard extends HTMLElement {
       this._flowObservedWidth = wrapper.clientWidth || 0;
       this._flowResizeObserver.observe(wrapper);
     }
-    const baseWidth = parseFloat(scaler.dataset.baseWidth) || 1116;
-    const baseHeight = 540;
+    const baseWidth = parseFloat(scaler.dataset.baseWidth) || 1328;
+    const baseHeight = parseFloat(scaler.dataset.baseHeight) || 768;
     const available = wrapper.clientWidth || this.clientWidth || baseWidth;
     const scale = Math.min(1, Math.max(available / baseWidth, 0.2));
     scaler.style.transform = `scale(${scale})`;
@@ -2691,10 +2780,10 @@ class DeyeEnergyManagerCard extends HTMLElement {
     const svg = this.querySelector(".flow-svg");
     if (!svg) return;
     const scaler = this.querySelector(".flow-scaler");
-    const tileWidth = parseFloat(scaler?.dataset.tileWidth) || 230;
+    const tileWidth = parseFloat(scaler?.dataset.tileWidth) || 300;
     const tileGap = parseFloat(scaler?.dataset.tileGap) || 0;
     const inverterColumnWidth = parseFloat(scaler?.dataset.inverterColumnWidth) || 640;
-    const inverterVisualWidth = parseFloat(scaler?.dataset.inverterVisualWidth) || 150;
+    const inverterVisualWidth = parseFloat(scaler?.dataset.inverterVisualWidth) || 190;
     const geometry = this.flowGeometry({ tileWidth, tileGap, inverterColumnWidth, inverterVisualWidth });
     const pvPath = geometry.paths.pvToInverter;
     const batPath = active.batteryCharge
@@ -2710,11 +2799,13 @@ class DeyeEnergyManagerCard extends HTMLElement {
       const path = svg.querySelector(`path[data-flow-line="${key}"]`);
       if (!path) return;
       background?.setAttribute("d", d);
+      background?.setAttribute("stroke", color);
       path.setAttribute("d", d);
       path.setAttribute("stroke", color);
       path.setAttribute("stroke-width", "4");
-      path.setAttribute("stroke-opacity", isActive ? 0.9 : 0.2);
-      path.removeAttribute("marker-end");
+      path.setAttribute("stroke-opacity", isActive ? 0.96 : 0.18);
+      if (isActive) path.setAttribute("marker-end", `url(#flow-arrow-${key})`);
+      else path.removeAttribute("marker-end");
       path.textContent = "";
       path.classList.toggle("flow-active", isActive);
     };
@@ -2871,13 +2962,13 @@ class DeyeEnergyManagerCard extends HTMLElement {
       copy: '<svg viewBox="0 0 24 24"><rect x="8" y="8" width="11" height="11" rx="2"/><path d="M5 16H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
       close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg>',
       pv: '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3"/><path d="M12 2v2M12 12v2M6 8H4m16 0h-2M7.8 3.8 6.4 2.4m9.8 1.4 1.4-1.4"/><path d="M4 17h16l-2 5H6z"/></svg>',
-      pv2: '<svg viewBox="0 0 24 24"><circle cx="8.5" cy="8.5" r="3.2" fill="#fbbf24"/><path d="M8.5 3.5v1.6M8.5 12v1.6M3.6 8.5h1.6M11.8 8.5h1.6M4.8 4.8l1.2 1.2M11 11l1.2 1.2M4.8 12.2l1.2-1.2M11 6l1.2-1.2" stroke="#fbbf24" stroke-width="1.2" stroke-linecap="round" fill="none"/><rect x="2.5" y="14" width="19" height="7.5" rx="1.5" fill="#60a5fa" stroke="#3b82f6" stroke-width="1.2"/><path d="M7 14v7.5M12 14v7.5M17 14v7.5M2.5 17.75h19" stroke="#1e3a8a" stroke-width="1"/></svg>',
+      pv2: '<svg viewBox="0 0 64 64"><circle cx="18" cy="17" r="8.5" fill="#fbbf24" stroke="#fde68a" stroke-width="2"/><path d="M18 3v5M18 26v5M4 17h5M27 17h5M8.2 7.2l3.6 3.6M24.2 23.2l3.6 3.6M8.2 26.8l3.6-3.6M24.2 10.8l3.6-3.6" stroke="#fbbf24" stroke-width="3" stroke-linecap="round" fill="none"/><path d="M17 30h38l-6 22H11z" fill="#60a5fa" stroke="#93c5fd" stroke-width="2" stroke-linejoin="round"/><path d="M24 30l-4 22M36 30l-1 22M48 30l3 22M14 41h38" stroke="#1e3a8a" stroke-width="2" fill="none"/><path d="M31 52v7M23 59h17" stroke="#6b8298" stroke-width="3" fill="none"/></svg>',
       home: '<svg viewBox="0 0 24 24"><path d="m3 11 9-8 9 8"/><path d="M5 10v11h14V10M9 21v-7h6v7"/></svg>',
-      home2: '<svg viewBox="0 0 24 24"><path d="M12 3L3 10.5V21h7v-6h4v6h7V10.5L12 3z" fill="none" stroke="#38bdf8" stroke-width="2" stroke-linejoin="round"/><rect x="10" y="15" width="4" height="6" rx="0.5" fill="#38bdf8"/></svg>',
+      home2: '<svg viewBox="0 0 64 64"><path d="M7 31 32 9l25 22" fill="none" stroke="#18baff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M13 28v29h15V41h9v16h15V28" fill="none" stroke="#18baff" stroke-width="6" stroke-linejoin="round"/><path d="M46 13h8v13" fill="none" stroke="#497b9f" stroke-width="4"/></svg>',
       grid: '<svg viewBox="0 0 24 24"><path d="M12 2 6 22m6-20 6 20M8 8h8M6 14h12M4 22h16"/></svg>',
-      grid2: '<svg viewBox="0 0 24 24"><path d="M12 2v20" stroke="#c084fc" stroke-width="2.5" stroke-linecap="round" fill="none"/><path d="M4 7h16M4 12h16M4 17h16" stroke="#c084fc" stroke-width="1.2" stroke-linecap="round" fill="none"/><circle cx="4" cy="7" r="1.3" fill="#c084fc"/><circle cx="20" cy="7" r="1.3" fill="#c084fc"/><circle cx="4" cy="12" r="1.3" fill="#c084fc"/><circle cx="20" cy="12" r="1.3" fill="#c084fc"/><circle cx="4" cy="17" r="1.3" fill="#c084fc"/><circle cx="20" cy="17" r="1.3" fill="#c084fc"/></svg>',
+      grid2: '<svg viewBox="0 0 64 64"><path d="M32 5 11 19h42zM32 5 19 59M32 5l13 54M16 30h32M13 43h38M7 59h50" fill="none" stroke="#c064f7" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/><path d="m18 19 14 11 14-11M19 30l13 13 13-13M16 43l16 16 16-16" fill="none" stroke="#d08aff" stroke-width="2.5" stroke-linejoin="round"/></svg>',
       battery: '<svg viewBox="0 0 24 24"><rect x="3" y="6" width="17" height="12" rx="2"/><path d="M20 10h2v4h-2M7 12h9M11 8v8"/></svg>',
-      battery2: '<svg viewBox="0 0 24 24"><rect x="4.5" y="6" width="14" height="12" rx="2" fill="#22c55e" stroke="#16a34a" stroke-width="1.5"/><rect x="9.5" y="4" width="4" height="2.5" rx="1" fill="#16a34a"/><path d="M11.5 9.5l-2.5 4.5h3l-1 4.5 5-5.5h-3.5l2-3.5z" fill="#fff"/></svg>',
+      battery2: '<svg viewBox="0 0 64 64"><rect x="18" y="4" width="28" height="6" rx="2" fill="#24c84f" stroke="#69f58d" stroke-width="2"/><rect x="10" y="9" width="44" height="51" rx="6" fill="#20c94e" fill-opacity=".76" stroke="#58ef79" stroke-width="3"/><path d="M15 17h34v10H15zM15 31h34v10H15zM15 45h34v10H15z" fill="#3ee96a" fill-opacity=".42" stroke="none"/><path d="m34 16-12 23h11l-4 19 15-27H33z" fill="#effff3" stroke="#caffd6" stroke-width="1.5" stroke-linejoin="round"/></svg>',
       clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
       thermometer: '<svg viewBox="0 0 24 24"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/><circle cx="11.5" cy="18.5" r="1.5"/></svg>',
       chart: '<svg viewBox="0 0 24 24"><path d="M4 20V10m6 10V4m6 16v-7m4 7H2"/></svg>',

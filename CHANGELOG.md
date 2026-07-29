@@ -166,6 +166,20 @@
 - Testy: `214/214` jednostek przechodzi; `node --check` jest poprawne dla obu kopii JS; obie kopie mają identyczny SHA-256.
 - Rewizja karty JavaScript: `v=22`.
 
+### Etap 5.3.9 — wizualna przebudowa Status energii (v=23)
+
+- Przebudowano wyłącznie frontendową sekcję **Status energii** zgodnie z nowym wzorcem: większe kafle, głębsze tła, wyraźniejsze obramowania, większa typografia i neonowe akcenty.
+- Zastąpiono ikony PV, Sieci, Baterii i Domu bogatszymi rysunkami SVG; powiększono również ikony czterech dolnych kafli.
+- Powiększono i uszczegółowiono SVG falownika, dodano podpis **Falownik Deye**, większą temperaturę oraz przebudowany kafel **Sprzedano dzisiaj**.
+- Zachowano wspólną metodę `flowGeometry()` z `v=22`, cztery osobne porty falownika, dynamiczny `viewBox` i symetrię ścieżek. Bazowa wysokość panelu jest teraz przekazywana do istniejącego lokalnego skalowania.
+- Linie przepływu mają kolorowe neonowe tło, animowane punkty i małe strzałki kierunkowe; zbędne, powielone wartości mocy nad ścieżkami zostały usunięte. Kierunki importu/eksportu i ładowania/rozładowania nadal wynikają z istniejących znaków danych.
+- Dzienną produkcję PV przeniesiono pod odczyty PV1/PV2 jako **Wyprodukowano dzisiaj**, a dzienne zużycie domu pod odczyty L1/L2/L3 jako **Zużycie dzisiaj**; oba podsumowania oddzielono poziomą linią.
+- Dolna belka zawiera większe kafle: **Decyzja managera**, **Aktywny slot**, **Tryb pracy (Manager)** i **Tryb Deye**.
+- **Tryb Deye** jest odczytywany frontendowo z istniejącej encji `select.deye_inverter_system_work_mode` albo jej konfiguracji w mapowaniu karty. Wartości `unknown`, `unavailable` i brak encji są prezentowane jako `—`; nie dodano żadnej encji ani logiki backendowej.
+- Domyślna szerokość bocznych kafli została zwiększona z `230` do `300`, nadal z walidowanym zakresem 120–360 i lokalnym skalowaniem całego panelu.
+- Backend, manager, encje, usługi, harmonogram, Solcast, Sugestie AI, dialogi, `.dialog-host`, `renderDialogOnly()` i główny układ mobilny pozostały bez zmian.
+- Rewizja karty JavaScript: `v=23`.
+
 ### Bezpieczeństwo
 
 - Naprawiono regresję, która przy Stop Sell, zatrzymaniu awaryjnym i części błędów ustawiała `Max Sell Power` oraz prąd rozładowania na `0`.

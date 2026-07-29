@@ -141,7 +141,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=22
+/deye_energy_manager/deye-energy-manager-card.js?v=23
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -153,10 +153,10 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=22
+/local/deye-energy-manager-card.js?v=23
 ```
 
-Po podmianie pliku karty ustaw parametr `v=22`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `22` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=23`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `23` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
@@ -232,7 +232,7 @@ layout:
 | `prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny sprzedaży** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
 | `buy_prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny zakupu** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
 | `solcast_ratio` | number | `1.40` | 0.1–5.0 | Względna szerokość kolumny **Prognoza Solcast** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
-| `energy_tile_width` | number | `230` | 120–360 | Szerokość bocznych kafli PV/sieć/bateria/dom w panelu **Status energii**. |
+| `energy_tile_width` | number | `300` | 120–360 | Szerokość bocznych kafli PV/sieć/bateria/dom w panelu **Status energii**. |
 | `energy_tile_gap` | number | `28` | 0–100 | Odstęp między kaflem a inverterem w panelu **Status energii**. |
 | `inverter_scale` | number | `1` | 0.5–2.0 | Skala centralnego invertera w panelu **Status energii**. |
 | `flow_animation_speed` | number | `6` | 1–20 | Szybkość animacji przepływów (wyższa wartość = szybsza animacja). |
@@ -320,7 +320,9 @@ layout:
 
 #### Dialogi
 
-Od `v=20` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Mechanizm pozostał bez zmian w `v=21` i `v=22`. Dzięki temu:
+W `v=23` sekcja **Status energii** otrzymała większe kafle, nowe ikony SVG, rozbudowany falownik, neonowe linie z kierunkiem przepływu oraz czytelniejszą dolną belkę. Wartości mocy pozostają w odpowiednich kaflach, a dzienna produkcja PV i dzienne zużycie domu są prezentowane pod ich odczytami szczegółowymi. „Tryb Deye” jest odczytywany bezpośrednio z istniejącej encji `select.deye_inverter_system_work_mode` albo jej mapowania podanego w konfiguracji karty. Panel nadal używa lokalnego skalowania i geometrii bazowej wprowadzonej w `v=22`.
+
+Od `v=20` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Mechanizm pozostał bez zmian w `v=21`, `v=22` i `v=23`. Dzięki temu:
 - dialogi nie są skalowane razem z dashboardem;
 - otwarcie dialogu nie powoduje pełnego rerenderu całego dashboardu (`renderDialogOnly()`);
 - dialogi nie migają przy przełączaniu zakładek;
