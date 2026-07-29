@@ -88,13 +88,18 @@ layout:
 ```yaml
 type: custom:deye-energy-manager-card
 layout:
-  layout_mode: grid
-  grid_columns: 1
+  layout_mode: auto
+  allow_horizontal_scroll: false
   mobile:
     mode: grid
+    preserve_desktop_layout: false
     grid_columns: 1
     fit_to_width: true
+    allow_horizontal_scroll: false
+    mobile_breakpoint: 768
 ```
+
+Na telefonie sekcje cen i Solcast zostaną ułożone pionowo. Główny dashboard nie będzie przewijany poziomo. Poziome przewijanie pozostaje dostępne lokalnie wewnątrz tabeli Harmonogramu oraz listy dni Solcast.
 
 #### Pojedynczy panel
 
@@ -144,6 +149,13 @@ jeśli skopiowałeś plik ręcznie do `/config/www/`.
 Następnie w Home Assistant:
 1. przeładuj zasoby Lovelace (trzy kropki w prawym górnym rogu dashboardu → **Odśwież**),
 2. wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5` lub `Cmd + Shift + R`).
+
+Test na telefonie:
+1. Zamknij aplikację Home Assistant albo kartę przeglądarki i otwórz dashboard ponownie.
+2. Sprawdź, czy Ceny sprzedaży, Ceny zakupu i Solcast są ułożone w jednej kolumnie.
+3. Upewnij się, że cała strona nie przewija się poziomo.
+4. Przewiń osobno tabelę Harmonogramu i listę dni Solcast — ich lokalny poziomy scroll powinien pozostać aktywny.
+5. Otwórz i zamknij Ustawienia oraz edycję slotu, aby potwierdzić brak migotania i zmiany pozycji strony.
 
 Błędne wartości w konfiguracji YAML są automatycznie zastępowane bezpiecznymi domyślnymi.
 

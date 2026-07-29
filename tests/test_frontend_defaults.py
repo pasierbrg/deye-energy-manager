@@ -636,9 +636,11 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         source = self.sources[0]
         render = extract_method(source, "renderV073()")
         self.assertIn("const layout = this.effectiveLayout();", render)
-        self.assertIn(r"dashStyle.push(`max-width:${layout.dashboard_width}px`)", render)
+        self.assertIn(r'dashStyle.push(layout.is_mobile ? "max-width:100%" : `max-width:${layout.dashboard_width}px`)', render)
+        self.assertIn('dashStyle.push("min-width:0")', render)
+        self.assertIn('dashStyle.push("box-sizing:border-box")', render)
         self.assertIn('if (layout.center_dashboard) dashStyle.push("margin:0 auto")', render)
-        self.assertIn('if (layout.fit_to_width) dashStyle.push("width:100%")', render)
+        self.assertIn('if (layout.fit_to_width || layout.is_mobile) dashStyle.push("width:100%")', render)
         self.assertIn('if (layout.allow_horizontal_scroll) {', render)
         self.assertIn('dashStyle.push("overflow-x:auto")', render)
         self.assertIn('dashStyle.push("overflow-x:hidden")', render)
@@ -651,7 +653,8 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn("${statusSection}", render)
         self.assertIn("${infoGridSection}", render)
         # Mobile-safe min-width/max-width reset
-        self.assertIn(".dem-v073>*,.info-grid>.panel,.panel,.schedule-shell,.sales-panel{min-width:0;max-width:100%;box-sizing:border-box}", render)
+        self.assertIn(".dem-v073>*,.info-grid>*,.panel,.schedule-shell,.sales-panel{min-width:0;max-width:100%;box-sizing:border-box}", render)
+        self.assertIn(".dem-v073{padding:18px;display:grid;gap:16px;margin:0 auto;max-width:1280px;min-width:0;box-sizing:border-box", render)
         self.assertIn("${scheduleSection}", render)
         self.assertIn("${salesSection}", render)
 
@@ -678,7 +681,17 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_effective_layout_reports_mobile_flag(self):
         source = self.sources[0]
         method = extract_method(source, "effectiveLayout() {")
+        self.assertIn("const isMobile = this.isMobileLayout(layout) && !layout.mobile.preserve_desktop_layout;", method)
         self.assertIn("layout.is_mobile = isMobile;", method)
+        self.assertIn("if (isMobile) {", method)
+
+    def test_mobile_detection_uses_card_width_and_viewport(self):
+        source = self.sources[0]
+        method = extract_method(source, "isMobileLayout(layout) {")
+        self.assertIn("const viewportWidth = window.innerWidth || 0;", method)
+        self.assertIn("const hostWidth = this.clientWidth", method)
+        self.assertIn("Math.min(hostWidth, viewportWidth)", method)
+        self.assertIn("layout.mobile.mobile_breakpoint", method)
 
     def test_desktop_info_grid_uses_yaml_ratios(self):
         source = self.sources[0]
@@ -695,13 +708,17 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_local_scroll_containers_preserved(self):
         source = self.sources[0]
-        # Schedule table scrolls inside its own card (mobile media query turns overflow-x:auto)
-        self.assertIn(".schedule-table-card{border:1px solid rgba(107,157,182,.28);border-radius:8px;overflow:hidden", source)
-        self.assertIn(".schedule-table-card{overflow-x:auto", source)
+        # The schedule shell cannot grow the card; only its table container scrolls.
+        self.assertIn(".schedule-shell{width:100%;max-width:100%;min-width:0;box-sizing:border-box;overflow:hidden", source)
+        self.assertIn(".schedule-table-card{width:100%;max-width:100%;min-width:0;box-sizing:border-box", source)
+        self.assertIn("overflow-x:auto;overflow-y:hidden;overscroll-behavior-x:contain", source)
         self.assertIn(".schedule-table{min-width:", source)
         # Solcast days can scroll horizontally on mobile
         self.assertIn(".solcast-days{display:grid;grid-template-columns:repeat(7,minmax(58px,1fr))", source)
-        self.assertIn(".solcast-days{display:flex;gap:6px;overflow-x:auto", source)
+        self.assertIn(".solcast-days{display:flex;max-width:100%;gap:6px;overflow-x:auto;overscroll-behavior-x:contain", source)
+        self.assertIn(".solcast-panel{width:100%;max-width:100%;min-width:0;overflow:hidden", source)
+        self.assertIn(".solcast-bars{height:138px;min-width:0;width:100%;max-width:100%", source)
+        self.assertNotIn(".solcast-bars{height:138px;min-width:560px}", source)
         # Price table scrolls inside its own card
         self.assertIn(".price-scroll{height:auto;flex:0 0 auto;min-height:0;overflow:visible", source)
         self.assertIn(".price-scroll{height:260px;overflow:auto", source)
@@ -710,6 +727,13 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         source = self.sources[0]
         render = extract_method(source, "renderV073()")
         self.assertIn('grid-template-columns:repeat(${layout.grid_columns},minmax(0,1fr))', render)
+
+    def test_sections_view_uses_verified_full_width_grid_options(self):
+        source = self.sources[0]
+        method = extract_method(source, "getGridOptions() {")
+        self.assertIn('columns: "full"', method)
+        self.assertIn("min_columns: 3", method)
+        self.assertNotIn("rows:", method)
 
     def test_dialog_host_and_dashboard_render_unchanged(self):
         source = self.sources[0]

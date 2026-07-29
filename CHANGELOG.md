@@ -109,7 +109,7 @@
 - Dostosowano wewnętrzne elementy prognozy Solcast, aby wyeliminować poziome przewijanie na komputerze.
 - Rewizja karty JavaScript: `v=19`.
 
-### Etap 5.3.6 — konfigurowalny układ YAML i powrót do stabilnego skalowania (v=21)
+### Etap 5.3.6 — konfigurowalny układ YAML i powrót do stabilnego skalowania (v=20)
 
 - Przywrócono stabilny układ znany z rewizji v=17:
   - brak wspólnego skalowania całego dashboardu;
@@ -136,6 +136,19 @@
 - Zaktualizowano dokumentację: `README.md`, `INSTALL_PL.md`, `dashboard/energy_manager.yaml` i `CHANGELOG.md` z pełnym opisem konfiguracji układu i przykładami.
 - Dodano testy regresji dla layoutu, dialog host, `renderDialogOnly`, dynamicznej geometrii panelu energii oraz synchronizacji kopii karty JS.
 - Testy: `197/197` jednostek przechodzi; `node --check` poprawne dla obu kopii JS; obie kopie są identyczne.
+- Rewizja karty JavaScript: `v=20`.
+
+### Etap 5.3.7 — naprawa układu mobilnego (v=21)
+
+- Usunięto konflikt pomiędzy desktopowym inline `grid-template-columns` a układem mobilnym: ratios `prices_ratio`, `buy_prices_ratio` i `solcast_ratio` są generowane tylko dla desktopu, a aktywny układ mobilny używa jednej kolumny.
+- `effectiveLayout()` jawnie zwraca `is_mobile`, uwzględnia `mobile_breakpoint`, szerokość hosta karty, `preserve_desktop_layout` oraz mobilne nadpisania trybu, dopasowania, przewijania i liczby kolumn.
+- Przy `allow_horizontal_scroll: false` główny kontener dashboardu otrzymuje `overflow-x: hidden`; mobilny `.dem-v073` używa `width: 100%`, `max-width: 100%`, `min-width: 0` i `box-sizing: border-box`.
+- Elementy siatki oraz panele otrzymały bezpieczne ograniczenia `min-width: 0`, `max-width: 100%` i `box-sizing: border-box`.
+- Harmonogram pozostaje w szerokości karty, a poziomy scroll szerokiej tabeli działa wyłącznie w jej lokalnym kontenerze.
+- Panel Solcast nie rozszerza dashboardu; lista dni zachowuje lokalny poziomy scroll, a wykres skaluje się do szerokości panelu.
+- Panel **Status energii**, `flow-scaler`, `.dialog-host`, `renderDialogOnly()` i wygląd desktopowy pozostały bez zmian.
+- Dodano `getGridOptions()` z oficjalnie obsługiwanym `columns: "full"` dla widoku Sections; wysokość pozostaje automatyczna.
+- Rozszerzono testy regresji układu; pełny zestaw `python -m unittest discover -s tests -v` obejmuje 205 testów.
 - Rewizja karty JavaScript: `v=21`.
 
 ### Bezpieczeństwo

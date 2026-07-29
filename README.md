@@ -156,7 +156,7 @@ do `/config/www/` i dodaj zasób:
 /local/deye-energy-manager-card.js?v=21
 ```
 
-Po podmianie pliku karty ustaw parametr `v=21`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `20` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=21`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `21` jest aktualną rewizją karty wydania 0.7.6. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
 
 Konfiguracja karty:
 
@@ -262,13 +262,20 @@ layout:
 ```yaml
 type: custom:deye-energy-manager-card
 layout:
-  layout_mode: grid
-  grid_columns: 1
+  layout_mode: auto
+  allow_horizontal_scroll: false
   mobile:
     mode: grid
+    preserve_desktop_layout: false
     grid_columns: 1
     fit_to_width: true
+    allow_horizontal_scroll: false
+    mobile_breakpoint: 768
 ```
+
+Poniżej `mobile_breakpoint` karta porównuje szerokość viewportu i własnego hosta, a następnie przełącza się na konfigurację `mobile`. Przy `grid_columns: 1` sekcje **Ceny sprzedaży**, **Ceny zakupu** i **Solcast** są układane pionowo. Proporcje `prices_ratio`, `buy_prices_ratio` i `solcast_ratio` nadal sterują trzema kolumnami wyłącznie na desktopie.
+
+Główny dashboard nie przewija się poziomo, gdy `allow_horizontal_scroll: false`. Szersza tabela Harmonogramu ma własny poziomy pasek przewijania, a lista dni Solcast przewija się lokalnie na wąskim ekranie. Wykres Solcast dopasowuje się do szerokości panelu i nie zwiększa szerokości całej karty.
 
 ##### Pojedyncza sekcja
 ```yaml
@@ -313,7 +320,7 @@ layout:
 
 #### Dialogi
 
-W `v=21` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Dzięki temu:
+Od `v=20` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Mechanizm pozostał bez zmian w `v=21`. Dzięki temu:
 - dialogi nie są skalowane razem z dashboardem;
 - otwarcie dialogu nie powoduje pełnego rerenderu całego dashboardu (`renderDialogOnly()`);
 - dialogi nie migają przy przełączaniu zakładek;

@@ -34,7 +34,8 @@ views:
 
           # Mobile overrides
           mobile:
-            mode: auto
+            # One column below mobile_breakpoint; desktop ratios stay unchanged.
+            mode: grid
             preserve_desktop_layout: false
             fit_to_width: true
             allow_horizontal_scroll: false
