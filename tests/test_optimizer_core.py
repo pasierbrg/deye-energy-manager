@@ -163,7 +163,11 @@ class OptimizerCoreTests(unittest.TestCase):
         plan = optimizer.build_energy_plan(values, "balanced")
         profile_rows = [row for row in plan["rows"] if "profile:morning_sale" in row["reason_codes"]]
         self.assertEqual(4, len(profile_rows))
-        self.assertTrue(all(row["dispatch_status"] == "planned" for row in profile_rows))
+        planned_rows = [row for row in profile_rows if row["proposed"]]
+        skipped_rows = [row for row in profile_rows if not row["proposed"]]
+        self.assertTrue(all(row["dispatch_status"] == "planned" for row in planned_rows))
+        self.assertTrue(all(row["planned_energy_kwh"] == 0 for row in skipped_rows))
+        self.assertTrue(all(row["dispatch_status"] == "skipped" for row in skipped_rows))
         self.assertTrue(all(row["dispatch_status"] != "confirmed" for row in profile_rows))
 
     def test_sale_profile_honors_target_minimum_price_and_best_hours(self):
@@ -189,6 +193,67 @@ class OptimizerCoreTests(unittest.TestCase):
         self.assertTrue(all(row["sell_price"] >= 1.0 for row in rows))
         self.assertLessEqual(sum(row["battery_to_grid_kwh"] for row in rows), 4.00001)
         self.assertEqual([7, 8], [row["hour"] for row in rows])
+
+    def test_profile_slot_power_matches_planned_energy_not_profile_ceiling(self):
+        values = inputs()
+        values["user_profiles"]["profiles"]["evening_sale"] = {
+            "enabled": True,
+            "start": "20:00",
+            "end": "21:00",
+            "active_days": [],
+            "priority": "high",
+            "goal_character": "preferred",
+            "target_energy_kwh": 1,
+            "target_basis": "battery_to_grid",
+            "min_price": 0,
+            "preferred_power_w": 5000,
+            "distribution_method": "best_hours",
+            "min_soc_after": 20,
+        }
+        plan = optimizer.build_energy_plan(values, "balanced")
+        row = next(
+            row
+            for row in plan["rows"]
+            if "profile:evening_sale" in row["reason_codes"]
+        )
+        self.assertAlmostEqual(1.0, row["planned_energy_kwh"], places=4)
+        self.assertEqual(5000, row["power_limit_w"])
+        self.assertAlmostEqual(1000, row["planned_power_w"], places=2)
+
+    def test_evening_profile_uses_best_hours_and_reduces_last_slot_power(self):
+        values = inputs()
+        values.update(
+            soc=100,
+            battery_capacity_kwh=100,
+            min_soc=0,
+            effective_min_soc=0,
+            target_soc=100,
+        )
+        values["sell_prices"][0].update({19: 0.9, 20: 1.3, 21: 1.2, 22: 1.1, 23: 1.0})
+        values["sell_prices"][1].update({hour: 0.4 for hour in range(19, 24)})
+        values["user_profiles"]["profiles"]["evening_sale"] = {
+            "enabled": True,
+            "start": "19:00",
+            "end": "00:00",
+            "active_days": [],
+            "priority": "high",
+            "goal_character": "preferred",
+            "target_energy_kwh": 16,
+            "target_basis": "battery_to_grid",
+            "min_price": 0.4,
+            "preferred_power_w": 5000,
+            "distribution_method": "best_hours",
+            "min_soc_after": 0,
+        }
+        plan = optimizer.build_energy_plan(values, "balanced")
+        rows = [
+            row
+            for row in plan["rows"]
+            if "profile:evening_sale" in row["reason_codes"]
+        ]
+        self.assertEqual([20, 21, 22, 23], [row["hour"] for row in rows])
+        self.assertEqual([5, 5, 5, 1], [row["planned_energy_kwh"] for row in rows])
+        self.assertEqual([5000, 5000, 5000, 1000], [row["planned_power_w"] for row in rows])
 
     def test_sale_distribution_even_and_constant_power(self):
         totals = {}
@@ -238,6 +303,50 @@ class OptimizerCoreTests(unittest.TestCase):
         total = optimizer.build_energy_plan(total_values, "balanced")["rows"][12]
         self.assertLess(total["battery_to_grid_kwh"], battery["battery_to_grid_kwh"])
         self.assertEqual(0, total["battery_to_grid_kwh"])
+        self.assertFalse(total["proposed"])
+        self.assertEqual(0, total["planned_power_w"])
+
+    def test_algorithm_version_invalidates_pre_fix_cached_plans(self):
+        self.assertEqual("0.7.9-local-optimizer-3", optimizer.ALGORITHM_VERSION)
+        self.assertEqual(3, optimizer.PLAN_SCHEMA_VERSION)
+
+    def test_confidence_uses_real_profile_coverage_and_rejection_ratio(self):
+        values = inputs()
+        values.update({
+            "load_profile_sample_count": 168,
+            "load_profile_covered_cells": 84,
+            "load_profile_rejected_count": 168,
+            "load_profile_total_cells": 168,
+            "pv_profile_sample_count": 437,
+            "pv_profile_covered_cells": 48,
+            "pv_profile_rejected_count": 2287,
+            "pv_profile_total_cells": 288,
+        })
+        plan = optimizer.build_energy_plan(values, "balanced")
+        components = plan["rows"][0]["confidence_components"]
+        self.assertLess(components["load_profile"], 100)
+        self.assertLess(components["pv_profile"], 100)
+        self.assertEqual(84, plan["data_quality"]["load_profile_covered_cells"])
+        self.assertEqual(48, plan["data_quality"]["pv_profile_covered_cells"])
+        self.assertEqual(168, plan["data_quality"]["load_profile_rejected_samples"])
+        self.assertEqual(2287, plan["data_quality"]["pv_profile_rejected_samples"])
+
+    def test_price_coverage_and_confidence_are_derived_from_same_maps(self):
+        values = inputs()
+        values["sell_prices"] = [{}, {}]
+        values["buy_prices"] = [{}, {}]
+        plan = optimizer.build_energy_plan(values, "balanced")
+        self.assertEqual(0, plan["data_quality"]["today_sell_prices"])
+        self.assertEqual(0, plan["data_quality"]["today_buy_prices"])
+        self.assertEqual(0, plan["rows"][0]["confidence_components"]["prices"])
+
+    def test_osd_quality_reports_partial_coverage(self):
+        values = inputs()
+        values["osd_available_hours"] = 24
+        values["osd_data_complete"] = False
+        plan = optimizer.build_energy_plan(values, "balanced")
+        self.assertEqual(24, plan["data_quality"]["osd_hours"])
+        self.assertEqual(50, plan["rows"][0]["confidence_components"]["tariff_osd"])
 
     def test_charge_energy_target_crosses_midnight_and_respects_grid_cap(self):
         values = inputs()

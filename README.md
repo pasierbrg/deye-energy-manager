@@ -1,24 +1,132 @@
-# Deye Energy Manager
+# Deye Energy Manager dla Home Assistant
 
 ![Deye Energy Manager](docs/banner.svg)
 
-[![release](https://img.shields.io/badge/release-0.7.7-blue.svg)](#wersja-077)
+[![version](https://img.shields.io/badge/version-0.7.9-blue.svg)](#wersja-079)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](#instalacja)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6%2B-18BCF2.svg)](#wymagania)
 
 Deye Energy Manager jest niestandardową integracją Home Assistant dla falowników Deye. Łączy harmonogram sprzedaży, ochronę magazynu energii, ładowanie z sieci, ceny Pstryk, prognozę Solcast oraz statystyki w jednej karcie Lovelace.
 
-## Wersja 0.7.7
+💛 **Darmowe i open-source.** Jeśli Deye Energy Manager pomaga Ci lepiej
+sprzedawać energię, oszczędzać kWh albo wygodniej obsługiwać falownik Deye,
+możesz [postawić kawę](https://buycoffee.to/pasierbrg) ☕. To najlepszy sygnał,
+że warto rozwijać i utrzymywać ten projekt.
 
-Wydanie 0.7.7 dodaje deterministyczny, lokalny **Optimizer Core**, uczenie profilu
-instalacji oraz opcjonalnego asystenta AI przez API. Zewnętrzny model wyłącznie
-ocenia gotowy plan i nie ma dostępu do usług sterujących Deye. Integracja działa
-bez klucza API, a każda zmiana harmonogramu nadal wymaga lokalnej walidacji,
-Safety Engine i ręcznego zatwierdzenia.
+<a href="https://buycoffee.to/pasierbrg" target="_blank">
+  <img src="https://buycoffee.to/static/img/share/share-button-primary.png" width="166" height="43" alt="Postaw kawę dla pasierbrg na buycoffee.to">
+</a>
+
+## Wymagany projekt ESPHome Deye Inverter
+
+Deye Energy Manager został zaprojektowany i przetestowany do współpracy z
+projektem **ESPHome Deye Inverter** autorstwa Lewa-Reka:
+
+[Lewa-Reka/esphome-deye-inverter](https://github.com/Lewa-Reka/esphome-deye-inverter)
+
+Projekt ESPHome zapewnia komunikację z falownikiem Deye oraz wymagane encje,
+tryby pracy i zabezpieczenia używane przez Deye Energy Manager. Jest wymagany
+do prawidłowego odczytu danych i bezpiecznego sterowania falownikiem.
+
+Inne źródła encji lub sposoby komunikacji z falownikiem nie są obecnie objęte
+pełnym wsparciem ani testami zgodności.
+
+## Zobacz Deye Energy Manager
+
+### Status energii i przepływy
+
+Aktualne moce PV, sieci, baterii i domu, stan magazynu, kierunki przepływu oraz
+tryb pracy falownika w jednym widoku.
+
+![Status energii i przepływy](docs/screenshots/status-energy-0.7.9.png)
+
+### Ceny energii i prognoza Solcast
+
+Godzinowe ceny sprzedaży i zakupu, prognoza produkcji oraz bieżąca realizacja
+prognozy PV.
+
+![Ceny energii i prognoza Solcast](docs/screenshots/prices-solcast-0.7.9.png)
+
+### Harmonogram pracy
+
+Pełne 24 godziny z trybem, mocą, prądami, zgodą na ładowanie z sieci, SOC i
+minimalną ceną sprzedaży dla każdego slotu.
+
+![Harmonogram pracy](docs/screenshots/schedule-0.7.9.png)
+
+### Statystyki sprzedaży
+
+Energia i wartość sprzedaży w bieżącej godzinie, dniu, tygodniu oraz miesiącu.
+
+![Statystyki sprzedaży](docs/screenshots/sales-statistics-0.7.9.png)
+
+### Zbiorcza edycja godzin
+
+Wybrane pola można bezpiecznie zastosować tylko do zaznaczonych godzin, bez
+nadpisywania pozostałych parametrów.
+
+![Zbiorcza edycja harmonogramu](docs/screenshots/schedule-bulk-edit-0.7.9.png)
+
+### Propozycje Optimizer Core
+
+Proponowane działania pokazują źródło decyzji, moc, energię, przewidywany SOC,
+wynik netto i pewność dla każdej godziny.
+
+![Proponowane zmiany Optimizer Core](docs/screenshots/ai-proposals-0.7.9.png)
+
+### Plan, prognoza i SOC
+
+Wspólny wykres produkcji, zużycia, prognozy Solcast, skorygowanej prognozy,
+SOC, pogody, taryfy oraz zaplanowanych działań.
+
+![Plan energii i prognoza SOC](docs/screenshots/ai-plan-0.7.9.png)
+
+### Ustawienia trybów i zabezpieczenia
+
+Domyślne ustawienia bezpiecznego powrotu, profile ładowania i normalnej pracy
+oraz kontrolowane zastosowanie parametrów falownika.
+
+![Ustawienia trybów i zabezpieczenia](docs/screenshots/mode-settings-0.7.9.png)
+
+## Wersja 0.7.9
+
+Wersja `0.7.9` porządkuje Optimizer Core, okno **Sugestie AI** oraz dane przygotowywane dla tego
+widoku. Ranking sprzedaży rozdziela profile Poranna sprzedaż i Wieczorna
+sprzedaż, a ranking zakupu wykorzystuje efektywny koszt energii z wybranego
+profilu OSD. Widok osobno pokazuje cel, plan i lokalnie zmierzone wykonanie
+profili, czytelnie porównuje wynik z planem bazowym i nie przedstawia przyszłej
+produkcji jako danych rzeczywistych.
+
+W obrębie Sugestii AI moc przekazywana do godzinnego slotu jest teraz wyliczana
+z planowanej energii i rzeczywistej długości slotu. Deye TOU, kompresja 6/6,
+confirm/retry i fail-closed pozostają bez zmian. Zewnętrzny model nadal wyłącznie
+ocenia gotowy plan i nie ma dostępu do usług sterujących Deye.
 
 Najważniejsze nowości:
 
+- minutowa telemetria z niezależną oceną kompletności PV, domu, sieci,
+  baterii, SOC i cen, bez zamiany brakujących odczytów na zera;
+- odświeżanie trybu i parametrów slotu bez przeładowania strony po
+  potwierdzonej zmianie encji;
+- działająca edycja zbiorcza, która zapisuje wyłącznie zaznaczone godziny i
+  pola, blokuje podwójne kliknięcie oraz zachowuje formularz po błędzie;
+- krótki Przegląd bez zduplikowanych pełnych wykresów i kart pogody;
+- osobne rankingi porannej i wieczornej sprzedaży z ustawień użytkownika;
+- bieżąca minimalna cena profilu ma pierwszeństwo przed starszym wynikiem
+  zapisanym w planie, a ceny są pokazywane chronologicznie z dokładnością do
+  dwóch miejsc;
+- zerowe i nieopłacalne propozycje optymalizatora nie mogą zostać zaznaczone,
+  a moc slotu odpowiada pokazywanej energii i czasowi jego trwania;
+- ranking zakupu według ceny energii plus godzinowego kosztu OSD, bez
+  podwójnego doliczania dystrybucji;
+- rozdzielenie celu, zaplanowanej energii, wykonania i pozostałej energii
+  profili;
+- polskie statusy, daty i liczby, czytelne błędy zewnętrznego API oraz
+  polskie polecenia i odpowiedzi zewnętrznego AI;
+- wykresy z osią energii od 0 kWh, SOC 0–100%, osobnym twardym i efektywnym
+  minimum SOC oraz bez serii rzeczywistej dla przyszłych godzin;
+- dolny pasek działań widoczny wyłącznie w zakładce Proponowane zmiany;
 - profil zużycia domu `7 × 24` z bezpiecznymi fallbackami oraz lokalna korekta
   prognozy PV zależna od miesiąca i godziny;
 - oddzielne prognozy Solcast `initial`, `latest` i `corrected`, bez uczenia na
@@ -95,7 +203,7 @@ Wersja 0.7.6 koncentruje się na bezpieczeństwie, jakości danych i wygodniejsz
 - bieżący dzień pokazuje realizację prognozy, a nie przedwczesną „trafność”;
 - trafność historyczna korzysta wyłącznie z zakończonych dni, pokazuje liczbę próbek oraz ograniczoną korektę historyczną;
 - dodano pomocniczą prognozę `weather.*` (domyślnie `weather.forecast_home_2`), która ocenia ryzyko pogodowe, ale nie zastępuje Solcast;
-- próbki energii są zapisywane co 5 minut; surowe dane są przechowywane 90 dni, dane godzinowe 24 miesiące, dzienne 5 lat, a miesięczne bez automatycznego usuwania;
+- próbki energii są zapisywane co minutę; surowe dane są przechowywane 90 dni, dane godzinowe 24 miesiące, dzienne 5 lat, a miesięczne bez automatycznego usuwania;
 - dodano wersjonowany katalog taryf dystrybucyjnych PGE, Tauron, Enea, Energa i Stoen, obejmujący dostępne profile gospodarstw domowych oraz profil własny;
 - katalog taryf jest sprawdzany przy starcie i co 7 dni; przy błędzie pobierania integracja zachowuje ostatnią poprawną kopię, a tryb ręczny pozwala wpisać własne stawki i godziny;
 - koszt dystrybucji jest doliczany przy wyborze najtańszych godzin ładowania, z uwzględnieniem pory roku, dni roboczych, weekendów i polskich świąt;
@@ -129,11 +237,11 @@ Pełna lista znajduje się w [CHANGELOG.md](CHANGELOG.md).
 
 Sugestie nie są stosowane automatycznie. Użytkownik wybiera godziny i zatwierdza każdą zmianę harmonogramu.
 
-Okno **Sugestie AI** zawiera osobne widoki: **Przegląd**, **Proponowane zmiany**, **Plan na dziś**, **Plan na jutro**, **Plan energii 48h** i **Jakość danych**. W propozycjach przełącznik **Dziś/Jutro** zmienia tabelę, wykres, pogodę, bilans i prognozę SOC. Domyślnie widoczne są tylko godziny proponowane przez model; przycisk **Pełne 24h** pokazuje cały dzień, a jeden dynamiczny przycisk przełącza funkcję **Zaznacz wszystkie/Odznacz wszystkie**. Godziny o pewności poniżej 50% nie są zaznaczane automatycznie.
+Okno **Sugestie AI** zawiera widoki: **Przegląd**, **Proponowane zmiany**, **Plan i wykonanie** oraz **Jakość danych**. Zakładka **Plan i wykonanie** łączy widoki Dziś, Jutro, 48 h i Historia. Pokazuje zamrożony plan Optimizer Core, stan akceptacji i wdrożenia oraz rzeczywiste pomiary godzinowe. Widok jest wyłącznie diagnostyczny — nie zapisuje niczego do harmonogramu ani Deye. W propozycjach przełącznik **Dziś/Jutro** zmienia tabelę, wykres, pogodę, bilans i prognozę SOC. Domyślnie widoczne są tylko godziny proponowane przez model; przycisk **Pełne 24h** pokazuje cały dzień, a jeden dynamiczny przycisk przełącza funkcję **Zaznacz wszystkie/Odznacz wszystkie**. Godziny o pewności poniżej 50% nie są zaznaczane automatycznie.
 
 Plan 48 h nie tworzy brakujących cen ani pogody. Gdy brakuje cen jutra, karta pokazuje brak danych i nie proponuje fikcyjnej transakcji. Solcast jest prognozą podstawową, a `weather.*` wyłącznie korektą pomocniczą. Przy małej historii widoczny jest stan **Wstępne uczenie** i ograniczona pewność.
 
-Wykresy **Plan na dziś**, **Plan na jutro** i **Plan energii 48h** rozdzielają produkcję rzeczywistą, prognozę Solcast, prognozę skorygowaną oraz jej przedział. Energia korzysta z lewej osi kWh, a SOC z prawej osi procentowej. Każda godzina ma własną ikonę pogody i wskaźnik ryzyka opadów, a osobne dolne pasy pokazują sprzedaż, ładowanie i tanią dystrybucję. Legenda pozwala ukrywać serie. Wariant 48 h ma zwiększoną szerokość, poziome przewijanie i wyraźny podział dni. Szczegóły godziny są dostępne po najechaniu kursorem lub dotknięciu wykresu. Brakujące pomiary są opisane jako brak danych, a nie zastępowane zerem.
+Wykresy w **Plan i wykonanie** rozdzielają plan i pomiar produkcji PV, zużycia domu oraz SOC. Tabela godzinowa porównuje dodatkowo import, eksport, ceny, wynik netto i błędy prognozy. Widok 48 h zachowuje prognozę Solcast, prognozę skorygowaną, przedział prognozy, pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brakujące pomiary są opisane jako brak danych, a nie zastępowane zerem.
 
 Karta pogody korzysta z wybranej encji `weather.*` (domyślnie `weather.forecast_home_2`) oraz usługi Home Assistant `weather.get_forecasts`. Pokazuje warunki bieżące, temperaturę, ciśnienie, wilgotność i wiatr oraz przełączane prognozy dzienną i godzinową. Jeżeli dostawca nie udostępnia osobnej prognozy dziennej, integracja tworzy jej podsumowanie wyłącznie z dostępnych danych godzinowych.
 
@@ -212,7 +320,7 @@ Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i us�
 Integracja udostępnia kartę pod adresem:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=24
+/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
 Jeżeli karta jest instalowana ręcznie, skopiuj:
@@ -224,15 +332,45 @@ www/deye-energy-manager-card.js
 do `/config/www/` i dodaj zasób:
 
 ```text
-/local/deye-energy-manager-card.js?v=24
+/local/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
-Po podmianie pliku karty ustaw parametr `v=24`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). `24` jest aktualną rewizją karty wydania 0.7.7. Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`.
+Po podmianie pliku karty ustaw parametr `v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`. Nie konfiguruj obu zasobów równocześnie.
 
-Konfiguracja karty:
+### Zalecana konfiguracja komputera i telefonu
+
+Poniższa konfiguracja zachowuje szeroki, wyśrodkowany dashboard na komputerze,
+a poniżej `768 px` przełącza kartę na pojedynczą kolumnę dopasowaną do ekranu
+telefonu, bez poziomego przewijania:
 
 ```yaml
 type: custom:deye-energy-manager-card
+layout:
+  layout_mode: auto
+  dashboard_width: 1700
+  center_dashboard: true
+  fit_to_width: false
+  allow_horizontal_scroll: false
+  sections:
+    status_energy: true
+    prices: true
+    solcast: true
+    schedule: true
+    sales_stats: true
+  mobile:
+    mode: grid
+    preserve_desktop_layout: false
+    fit_to_width: true
+    allow_horizontal_scroll: false
+    grid_columns: 1
+    mobile_breakpoint: 768
+  prices_ratio: 0.75
+  buy_prices_ratio: 0.75
+  solcast_ratio: 1.5
+  energy_tile_width: 230
+  energy_tile_gap: 28
+  inverter_scale: 1
+  flow_animation_speed: 6
 ```
 
 Przykład kompletnego dashboardu znajduje się w `dashboard/energy_manager.yaml`.
@@ -391,9 +529,16 @@ layout:
 
 #### Dialogi
 
-W `v=23` sekcja **Status energii** otrzymała większe kafle, nowe ikony SVG, rozbudowany falownik, neonowe linie z kierunkiem przepływu oraz czytelniejszą dolną belkę. Wartości mocy pozostają w odpowiednich kaflach, a dzienna produkcja PV i dzienne zużycie domu są prezentowane pod ich odczytami szczegółowymi. „Tryb Deye” jest odczytywany bezpośrednio z istniejącej encji `select.deye_inverter_system_work_mode` albo jej mapowania podanego w konfiguracji karty. Panel nadal używa lokalnego skalowania i geometrii bazowej wprowadzonej w `v=22`.
+Sekcja **Status energii** używa większych kafli, własnych ikon SVG,
+rozbudowanego falownika, animowanych linii z kierunkiem przepływu oraz czytelnej
+dolnej belki. Wartości mocy pozostają w odpowiednich kaflach, a dzienna
+produkcja PV i dzienne zużycie domu są prezentowane pod ich odczytami
+szczegółowymi. „Tryb Deye” jest odczytywany bezpośrednio z istniejącej encji
+`select.deye_inverter_system_work_mode` albo jej mapowania podanego w
+konfiguracji karty.
 
-Od `v=20` dialogi renderują się w osobnym hoście `.dialog-host`, poza skalowanym kontenerem `.dem-v073`. Mechanizm pozostał bez zmian w `v=21`, `v=22` i `v=23`. Dzięki temu:
+Dialogi renderują się w osobnym hoście `.dialog-host`, poza głównym kontenerem
+dashboardu. Dzięki temu:
 - dialogi nie są skalowane razem z dashboardem;
 - otwarcie dialogu nie powoduje pełnego rerenderu całego dashboardu (`renderDialogOnly()`);
 - dialogi nie migają przy przełączaniu zakładek;
@@ -420,14 +565,14 @@ Integracja steruje fizycznym urządzeniem. Pierwszą konfigurację należy obser
 
 ## Testy
 
-Testy logiki bezpieczeństwa nie wymagają instalacji Home Assistant:
+Pełna regresja nie wymaga instalacji Home Assistant:
 
 ```text
-python -m unittest discover -s tests -v
+python -m pytest -q -p no:cacheprovider
 ```
+
+Aktualny wynik lokalny: `375 passed, 18 subtests passed`.
 
 ## Licencja
 
 Projekt jest udostępniany na licencji MIT. Szczegóły: [LICENSE](LICENSE).
-
-Rozwój projektu można wesprzeć przez [buycoffee.to](https://buycoffee.to/pasierbrg).

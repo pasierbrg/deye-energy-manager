@@ -53,8 +53,9 @@ def update_load_profile(
     load_kwh: float | None,
     complete: bool,
     quality_score: float,
+    completeness_percent: float | None = None,
 ) -> dict[str, Any]:
-    """Update one of 168 EWMA cells without learning from incomplete data."""
+    """Update one of 168 EWMA cells, weighting usable partial hours."""
     result = deepcopy(profile) if isinstance(profile, dict) else {}
     result.setdefault("schema_version", LEARNING_PROFILE_VERSION)
     cells = result.setdefault("cells", {})
@@ -62,7 +63,13 @@ def update_load_profile(
     result.setdefault("rejected_samples", 0)
     key = _cell_key(moment)
     value = float(load_kwh) if load_kwh is not None and math.isfinite(float(load_kwh)) else None
-    if not complete or value is None or value < 0 or quality_score < 60:
+    coverage = (
+        max(0.0, min(100.0, float(completeness_percent))) / 100.0
+        if completeness_percent is not None
+        else 1.0 if complete else 0.0
+    )
+    usable_partial = completeness_percent is not None and coverage > 0
+    if (not complete and not usable_partial) or value is None or value < 0 or quality_score <= 40:
         result["rejected_samples"] += 1
         result["last_rejection_reason"] = (
             "niepełna godzina" if not complete else
@@ -71,17 +78,20 @@ def update_load_profile(
         )
         return result
 
+    normalized = value / max(0.1, coverage)
+    weight = max(0.05, coverage * max(0.0, min(1.0, quality_score / 100.0)))
+
     cell = dict(cells.get(key)) if isinstance(cells.get(key), dict) else {}
     samples = int(cell.get("samples", 0))
     previous = cell.get("mean_kwh")
     # Limit one extreme sample before EWMA; the raw value remains in history.
     if isinstance(previous, (int, float)) and previous > 0 and samples >= 3:
-        bounded = max(previous * 0.25, min(previous * 4.0, value))
+        bounded = max(previous * 0.25, min(previous * 4.0, normalized))
     else:
-        bounded = value
-    alpha = max(0.08, min(0.35, 2.0 / (samples + 2.0)))
+        bounded = normalized
+    alpha = max(0.02, min(0.35, 2.0 / (samples + 2.0)) * weight)
     predicted = float(previous) if isinstance(previous, (int, float)) else bounded
-    error = abs(value - predicted)
+    error = abs(normalized - predicted)
     average = bounded if samples == 0 else (1 - alpha) * predicted + alpha * bounded
     mae = float(cell.get("mae_kwh", error))
     mae = error if samples == 0 else (mae * samples + error) / (samples + 1)
@@ -91,7 +101,11 @@ def update_load_profile(
         "mean_kwh": round(max(0.0, average), 5),
         "mae_kwh": round(max(0.0, mae), 5),
         "samples": samples + 1,
+        "weighted_samples": round(float(cell.get("weighted_samples", 0.0)) + weight, 4),
+        "partial_samples": int(cell.get("partial_samples", 0)) + (0 if complete else 1),
         "last_value_kwh": round(value, 5),
+        "last_normalized_kwh": round(normalized, 5),
+        "last_coverage_percent": round(coverage * 100.0, 1),
         "last_updated": moment.isoformat(),
     }
     result["accepted_samples"] += 1
@@ -204,6 +218,8 @@ def update_pv_profile(
     actual_kwh: float | None,
     flags: dict[str, Any],
     complete: bool,
+    quality_score: float = 100.0,
+    completeness_percent: float | None = None,
 ) -> dict[str, Any]:
     """Learn bounded hourly/seasonal Solcast ratios, rejecting curtailment."""
     result = deepcopy(profile) if isinstance(profile, dict) else {}
@@ -223,11 +239,25 @@ def update_pv_profile(
         result["clipping_hours"] += 1
     if actual is not None and forecast is not None and actual < forecast * 0.5 and not any(flags.values()):
         result["unknown_limit_hours"] += 1
-    if not complete or forecast is None or actual is None or forecast < 0.05 or curtailed:
+    coverage = (
+        max(0.0, min(100.0, float(completeness_percent))) / 100.0
+        if completeness_percent is not None
+        else 1.0 if complete else 0.0
+    )
+    usable_partial = completeness_percent is not None and coverage > 0
+    if (
+        (not complete and not usable_partial)
+        or forecast is None
+        or actual is None
+        or forecast < 0.05
+        or curtailed
+        or quality_score <= 40
+    ):
         result["rejected_samples"] += 1
         result["last_rejection_reason"] = (
             "curtailment lub clipping" if curtailed else
             "niepełna godzina" if not complete else
+            "niska jakość źródła PV" if quality_score <= 40 else
             "brak wiarygodnej prognozy godzinowej"
         )
         return result
@@ -235,9 +265,11 @@ def update_pv_profile(
     key = f"{moment.month:02d}-{moment.hour:02d}"
     cell = dict(result["cells"].get(key)) if isinstance(result["cells"].get(key), dict) else {}
     samples = int(cell.get("samples", 0))
-    raw_ratio = actual / forecast
+    normalized_actual = actual / max(0.1, coverage)
+    raw_ratio = normalized_actual / forecast
     ratio = max(PV_RATIO_MIN, min(PV_RATIO_MAX, raw_ratio))
-    alpha = max(0.08, min(0.3, 2.0 / (samples + 2.0)))
+    weight = max(0.05, coverage * max(0.0, min(1.0, quality_score / 100.0)))
+    alpha = max(0.02, min(0.3, 2.0 / (samples + 2.0)) * weight)
     previous = float(cell.get("ratio", 1.0))
     corrected_before = forecast * previous
     cell.update({
@@ -245,8 +277,11 @@ def update_pv_profile(
         "hour": moment.hour,
         "ratio": round(ratio if samples == 0 else previous * (1 - alpha) + ratio * alpha, 5),
         "samples": samples + 1,
-        "solcast_abs_error_kwh": round((float(cell.get("solcast_abs_error_kwh", 0)) * samples + abs(actual - forecast)) / (samples + 1), 5),
-        "corrected_abs_error_kwh": round((float(cell.get("corrected_abs_error_kwh", 0)) * samples + abs(actual - corrected_before)) / (samples + 1), 5),
+        "weighted_samples": round(float(cell.get("weighted_samples", 0.0)) + weight, 4),
+        "partial_samples": int(cell.get("partial_samples", 0)) + (0 if complete else 1),
+        "last_coverage_percent": round(coverage * 100.0, 1),
+        "solcast_abs_error_kwh": round((float(cell.get("solcast_abs_error_kwh", 0)) * samples + abs(normalized_actual - forecast)) / (samples + 1), 5),
+        "corrected_abs_error_kwh": round((float(cell.get("corrected_abs_error_kwh", 0)) * samples + abs(normalized_actual - corrected_before)) / (samples + 1), 5),
         "last_updated": moment.isoformat(),
     })
     result["cells"][key] = cell

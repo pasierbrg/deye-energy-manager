@@ -97,7 +97,12 @@ def ai_state_attrs(runtime):
         "history_count": len(runtime.ai_history),
         "learning_summary": runtime.learning_summary(),
         "learning_recent": runtime.learning_history[:24],
-        "learning_current_hour": runtime._finalize_learning_hour(runtime.learning_tracking) if runtime.learning_tracking else {},
+        "learning_current_hour": runtime._finalize_learning_hour(
+            runtime.learning_tracking,
+            update_models=False,
+        ) if runtime.learning_tracking else {},
+        "current_hour_partial": runtime.current_hour_partial_context(),
+        "live_state": runtime.live_state_context(),
         "daily_summary": runtime.history_daily_summary(),
         "monthly_summary": runtime.history_monthly_summary(),
         "solcast_history": runtime.solcast_history,
@@ -106,6 +111,8 @@ def ai_state_attrs(runtime):
         "tariff": runtime.tariff_context(),
         "planner_48h": runtime.ai_plan_48h(),
         "future_plan": runtime.future_plan,
+        "plan_execution_index": runtime.plan_execution_index(),
+        "plan_execution_today": runtime.plan_execution_day(),
     }
 
 
@@ -246,8 +253,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     "api_assistant",
                     "history",
                     "learning_summary",
-                    "learning_recent",
-                    "learning_current_hour",
+                     "learning_recent",
+                     "learning_current_hour",
+                     "current_hour_partial",
+                     "live_state",
                     "daily_summary",
                     "monthly_summary",
                     "solcast_history",

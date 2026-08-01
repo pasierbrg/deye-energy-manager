@@ -331,3 +331,14 @@ save_future_plan:
 cancel_future_plan:
   name: Anuluj plan AI na jutro
   description: Anuluje oczekujący plan na jutro. Nie zmienia bieżącego harmonogramu.
+
+get_plan_execution:
+  name: Pobierz plan i wykonanie
+  description: Zwraca wyłącznie do odczytu zamrożony plan i pomiary wykonania dla wskazanego dnia.
+  fields:
+    date:
+      name: Data
+      description: Data lokalna w formacie RRRR-MM-DD. Brak wartości oznacza dzisiaj.
+      required: false
+      selector:
+        date:

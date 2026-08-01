@@ -162,7 +162,12 @@ from .const import (
     DEFAULT_WORK_MODE_SELECT,
 )
 from .tariff_catalog import TariffCatalogManager
-from .ai_planner import build_plan_bundle, snapshot_id
+from .ai_planner import (
+    ALGORITHM_VERSION,
+    PLAN_SCHEMA_VERSION,
+    build_plan_bundle,
+    snapshot_id,
+)
 from .ai_assistant import (
     build_private_payload,
     normalize_config as normalize_ai_api_config,
@@ -197,6 +202,13 @@ from .learning import (
     pv_quality_flags,
     update_load_profile,
     update_pv_profile,
+)
+from .telemetry import (
+    channel_summary,
+    energy_balance,
+    new_channel,
+    record_channel,
+    split_directional_power,
 )
 from .tariffs import (
     PROVIDER_LABELS,
@@ -298,6 +310,7 @@ class DeyeEnergyManagerRuntime:
     ai_history: list[dict[str, Any]] = field(default_factory=list)
     optimizer_plan: dict[str, Any] = field(default_factory=dict)
     optimizer_plan_history: list[dict[str, Any]] = field(default_factory=list)
+    plan_execution_archive: list[dict[str, Any]] = field(default_factory=list)
     _optimizer_input_snapshot_id: str = ""
     _optimizer_generation_reason: str = "startup"
     ai_api_config: dict[str, Any] = field(default_factory=dict)
@@ -883,7 +896,7 @@ class DeyeEnergyManagerRuntime:
                 value = float(item[key])
             except (TypeError, ValueError):
                 continue
-            if math.isfinite(value) and value > 0:
+            if math.isfinite(value):
                 return value
         return None
 
@@ -934,7 +947,7 @@ class DeyeEnergyManagerRuntime:
                     value = float(item)
                 except (TypeError, ValueError):
                     value = None
-            if hour is not None and value is not None and math.isfinite(value) and value > 0:
+            if hour is not None and value is not None and math.isfinite(value):
                 result.setdefault(hour, value)
 
         def parse(source: Any) -> None:
@@ -962,7 +975,7 @@ class DeyeEnergyManagerRuntime:
                     parse({key: value})
         if not result:
             value = self.state_float_or_none(entity_id)
-            if value is not None and value > 0:
+            if value is not None and math.isfinite(value):
                 result[ha_now().hour] = value
         return result
 
@@ -1099,6 +1112,52 @@ class DeyeEnergyManagerRuntime:
             })
         return result
 
+    def _learning_profile_stats(self, profile: dict[str, Any]) -> dict[str, int]:
+        """Read counters from current and legacy learned-profile structures."""
+        if not isinstance(profile, dict):
+            return {
+                "accepted_samples": 0,
+                "rejected_samples": 0,
+                "covered_cells": 0,
+            }
+        nested_cells = profile.get("cells")
+        if isinstance(nested_cells, dict):
+            cells = nested_cells
+            accepted = int(max(0.0, self.safe_float(
+                profile.get("accepted_samples"),
+                sum(
+                    self.safe_float(cell.get("samples"), 0)
+                    for cell in cells.values()
+                    if isinstance(cell, dict)
+                ),
+            )))
+            rejected = int(max(0.0, self.safe_float(
+                profile.get("rejected_samples"),
+                0,
+            )))
+        else:
+            cells = {
+                key: cell
+                for key, cell in profile.items()
+                if isinstance(cell, dict) and "samples" in cell
+            }
+            accepted = int(sum(
+                max(0.0, self.safe_float(cell.get("samples"), 0))
+                for cell in cells.values()
+            ))
+            rejected = 0
+        covered = sum(
+            1
+            for cell in cells.values()
+            if isinstance(cell, dict)
+            and self.safe_float(cell.get("samples"), 0) > 0
+        )
+        return {
+            "accepted_samples": accepted,
+            "rejected_samples": rejected,
+            "covered_cells": covered,
+        }
+
     def ai_plan_48h(self) -> dict[str, Any]:
         """Build the read-only AI proposal payload exposed to the Lovelace card."""
         settings = self.ai_settings
@@ -1107,12 +1166,34 @@ class DeyeEnergyManagerRuntime:
         profile = learning.get("hourly_profile") if isinstance(learning.get("hourly_profile"), list) else []
         by_hour = {int(str(row.get("hour", "0"))[:2]): row for row in profile if isinstance(row, dict)}
         tariff = self.tariff_context()
-        distribution = [
-            self.safe_float(row.get("total_distribution_rate", row.get("rate")), 0)
-            for row in tariff.get("hourly_profile", [])[:48]
+        tariff_rows = [
+            row for row in tariff.get("hourly_profile", [])[:48]
             if isinstance(row, dict)
         ]
+        distribution = [
+            self.safe_float(row.get("total_distribution_rate", row.get("rate")), 0)
+            for row in tariff_rows
+        ]
         distribution.extend([0.0] * (48 - len(distribution)))
+        osd_data_complete = bool(tariff.get("configured")) and len(tariff_rows) == 48 and all(
+            row.get("available", True) is not False
+            and row.get("total_distribution_rate", row.get("rate")) is not None
+            for row in tariff_rows
+        )
+        osd_available_hours = (
+            48
+            if self.price_includes_distribution
+            else 0
+            if not bool(tariff.get("configured"))
+            else sum(
+                1
+                for row in tariff_rows
+                if row.get("available", True) is not False
+                and row.get("total_distribution_rate", row.get("rate")) is not None
+            )
+        )
+        load_profile_stats = self._learning_profile_stats(self.load_profile_7x24)
+        pv_profile_stats = self._learning_profile_stats(self.pv_learning_profile)
         today_forecast = self.solcast_forecast_today_value()
         today_actual = max(0, self.state_float(self.daily_pv_production_sensor, 0))
         remaining = max(0, self.state_float(self.solcast_remaining_today_sensor, 0))
@@ -1126,9 +1207,36 @@ class DeyeEnergyManagerRuntime:
             forecast_load(self.load_profile_7x24, current.replace(minute=0, second=0, microsecond=0) + timedelta(hours=index))
             for index in range(48)
         ]
+        live_state = self.live_state_context()
+        current_hour_partial = self.current_hour_partial_context()
+        historical_hours = [
+            {
+                key: row.get(key)
+                for key in (
+                    "hour", "local_date", "local_hour", "pv_kwh", "load_kwh",
+                    "grid_import_kwh", "grid_export_kwh", "battery_charge_kwh",
+                    "battery_discharge_kwh", "soc_start", "soc_end", "soc_min",
+                    "soc_max", "soc_avg", "sell_price_avg", "buy_price_avg",
+                    "action", "control", "channel_quality", "energy_balance",
+                    "solcast_accuracy_percent", "weather_forecast", "weather_actual",
+                )
+            }
+            for row in self.learning_history[:168]
+            if isinstance(row, dict)
+        ]
+        source_quality = self.source_quality_context()
+        source_quality["channel_diagnostics"] = learning.get("channel_diagnostics", {})
+        source_quality["usable_history_hours"] = learning.get("usable_hours", 0)
+        source_quality["history_first_hour"] = learning.get("history_first_hour")
+        source_quality["history_last_hour"] = learning.get("history_last_hour")
         payload = {
             "date": current.date().isoformat(),
             "generated_at": current.isoformat(timespec="seconds"),
+            "timezone": str(
+                getattr(getattr(self.hass, "config", None), "time_zone", None)
+                or current.tzinfo
+                or "UTC"
+            ),
             "current_hour": current.hour,
             "soc": (
                 round(value, 1)
@@ -1155,6 +1263,17 @@ class DeyeEnergyManagerRuntime:
             "buy_prices": [self.price_map(self.buy_price_today_sensor), self.price_map(self.buy_price_tomorrow_sensor, False)],
             "distribution": distribution,
             "price_includes_distribution": self.price_includes_distribution,
+            "osd_data_complete": osd_data_complete,
+            "osd_available_hours": osd_available_hours,
+            "tariff_context": {
+                key: tariff.get(key)
+                for key in (
+                    "provider", "provider_name", "plan", "plan_name", "mode",
+                    "configured", "tariff_error", "price_source",
+                    "price_includes_distribution", "hourly_profile",
+                )
+            },
+            "buy_price_source": self.buy_price_today_sensor,
             "pv_forecast": [remaining, max(0, self.state_float(self.solcast_forecast_tomorrow_sensor, 0))],
             "pv_forecast_full": [today_forecast, max(0, self.state_float(self.solcast_forecast_tomorrow_sensor, 0))],
             "pv_forecast_available": [
@@ -1172,9 +1291,26 @@ class DeyeEnergyManagerRuntime:
             ],
             "weather_factors": self._weather_factors_48h(),
             "recorded_days": learning.get("recorded_days", 0),
+            "load_profile_sample_count": load_profile_stats["accepted_samples"],
+            "load_profile_rejected_count": load_profile_stats["rejected_samples"],
+            "load_profile_covered_cells": load_profile_stats["covered_cells"],
+            "load_profile_total_cells": 168,
+            "pv_profile_sample_count": pv_profile_stats["accepted_samples"],
+            "pv_profile_rejected_count": pv_profile_stats["rejected_samples"],
+            "pv_profile_covered_cells": pv_profile_stats["covered_cells"],
+            "pv_profile_total_cells": 288,
             "learning_stage": learning.get("learning_stage", {}),
             "user_profiles": self.user_profiles,
-            "data_quality": self.source_quality_context(),
+            "profile_execution": self.profile_execution,
+            "data_quality": source_quality,
+            "live_state": live_state,
+            "current_hour_partial": current_hour_partial,
+            "historical_hours": historical_hours,
+            "history_revision": (
+                f"{learning.get('history_last_hour') or 'none'}:"
+                f"{learning.get('recorded_hours', 0)}:"
+                f"{learning.get('usable_hours', 0)}"
+            ),
             "history_schema_version": HISTORY_SCHEMA_VERSION,
             "generation_reason": self._optimizer_generation_reason,
             "previous_plan_id": self.optimizer_plan.get("plan_id"),
@@ -1183,7 +1319,12 @@ class DeyeEnergyManagerRuntime:
             "terminal_energy_value_per_kwh": self.safe_float(settings.get("terminalEnergyValuePerKwh"), 0),
         }
         current_snapshot_id = snapshot_id(payload)
-        if self.optimizer_plan and current_snapshot_id == self._optimizer_input_snapshot_id:
+        if (
+            self.optimizer_plan
+            and current_snapshot_id == self._optimizer_input_snapshot_id
+            and self.optimizer_plan.get("algorithm_version") == ALGORITHM_VERSION
+            and self.optimizer_plan.get("plan_schema_version") == PLAN_SCHEMA_VERSION
+        ):
             result = deepcopy(self.optimizer_plan)
         else:
             result = build_plan_bundle(payload, selected_strategy)
@@ -1192,10 +1333,16 @@ class DeyeEnergyManagerRuntime:
                 previous["superseded_by_plan_id"] = result.get("plan_id")
                 self.optimizer_plan_history = [previous, *self.optimizer_plan_history][:30]
             self.optimizer_plan = deepcopy(result)
+            self._sync_profile_execution_from_plan(result, current)
             self._optimizer_input_snapshot_id = current_snapshot_id
             self._optimizer_generation_reason = "cached_until_input_change"
             if self._ai_store is not None:
                 self.hass.async_create_task(self.async_save_ai_data())
+            if self._learning_store is not None:
+                self.hass.async_create_task(self.async_save_learning_history())
+        archive_changed = self._sync_plan_execution_archive(result, current)
+        if archive_changed and self._ai_store is not None:
+            self.hass.async_create_task(self.async_save_ai_data())
         forecast_hours = [
             {
                 "timestamp": f"{row.get('date')}T{int(row.get('hour', 0)):02d}:00:00{current.strftime('%z')[:3]}:{current.strftime('%z')[3:]}",
@@ -1205,6 +1352,7 @@ class DeyeEnergyManagerRuntime:
             if isinstance(row, dict)
         ]
         result["battery_model"] = battery_model
+        result["profile_execution"] = deepcopy(self.profile_execution)
         result["soc_timeline"] = build_soc_timeline(
             now=current,
             historical_hours=self.learning_history,
@@ -1406,6 +1554,121 @@ class DeyeEnergyManagerRuntime:
             "score": round(sum(quality_values) / len(quality_values)) if quality_values else 0,
             "sources": sources,
             "fallback_in_use": any(item.get("source") not in ("primary", "unavailable") for item in sources.values()),
+        }
+
+    def _telemetry_readings(self) -> dict[str, dict[str, Any]]:
+        """Return independent live channels without replacing missing values by zero."""
+        load = self.load_power_reading()
+        battery = self.battery_power_reading()
+        grid = self._measurement(self.grid_power_sensor)
+        if grid.get("value") is not None:
+            grid = dict(grid)
+            grid["value"] = (
+                float(grid["value"])
+                if bool(self.data.get(CONF_GRID_POSITIVE_IS_IMPORT, DEFAULT_GRID_POSITIVE_IS_IMPORT))
+                else -float(grid["value"])
+            )
+        return {
+            "pv": self._measurement(self.pv_power_sensor),
+            "load": load,
+            "load_l1": self._measurement(self.load_l1_power_sensor),
+            "load_l2": self._measurement(self.load_l2_power_sensor),
+            "load_l3": self._measurement(self.load_l3_power_sensor),
+            "grid": grid,
+            "battery": battery,
+            "soc": self._measurement(self.battery_soc_sensor, kind="raw"),
+            "sell_price": self._measurement(self.price_sensor, kind="raw"),
+            "buy_price": self._measurement(self.buy_price_today_sensor, kind="raw"),
+        }
+
+    def live_state_context(
+        self,
+        readings: dict[str, dict[str, Any]] | None = None,
+        moment: datetime | None = None,
+    ) -> dict[str, Any]:
+        """Build the current measured state consumed by Optimizer Core."""
+        current = moment or ha_now()
+        values = readings or self._telemetry_readings()
+
+        def value(name: str) -> float | None:
+            item = values.get(name, {})
+            raw = item.get("value") if isinstance(item, dict) else None
+            return float(raw) if raw is not None else None
+
+        grid = value("grid")
+        battery = value("battery")
+        slot = self.active_slot
+        return {
+            "timestamp": current.isoformat(timespec="seconds"),
+            "soc_pct": value("soc"),
+            "pv_power_w": value("pv"),
+            "home_power_w": value("load"),
+            "grid_power_w": grid,
+            "grid_direction": (
+                "import" if grid is not None and grid > 0
+                else "export" if grid is not None and grid < 0
+                else "idle" if grid is not None
+                else "unknown"
+            ),
+            "battery_power_w": battery,
+            "battery_direction": (
+                "discharge" if battery is not None and battery > 0
+                else "charge" if battery is not None and battery < 0
+                else "idle" if battery is not None
+                else "unknown"
+            ),
+            "sell_price": value("sell_price"),
+            "buy_price": value("buy_price"),
+            "active_mode": slot.mode if slot.enabled else MODE_NORMAL_OPERATION,
+            "active_power_w": max(0.0, float(slot.sell_power or 0.0)),
+            "slot_key": slot.key,
+            "channels": {
+                name: {
+                    "status": item.get("status"),
+                    "quality": item.get("quality"),
+                    "source": item.get("source"),
+                    "last_updated": item.get("last_updated"),
+                    "usable": item.get("value") is not None,
+                }
+                for name, item in values.items()
+                if isinstance(item, dict)
+            },
+        }
+
+    def current_hour_partial_context(self) -> dict[str, Any]:
+        """Return energy already observed in the open hour plus its quality."""
+        tracking = self.learning_tracking if isinstance(self.learning_tracking, dict) else {}
+        now = ha_now()
+        elapsed_minutes = max(0, min(60, now.minute))
+        channels = tracking.get("channels") if isinstance(tracking.get("channels"), dict) else {}
+        summaries = {
+            name: channel_summary(item, expected_seconds=max(60.0, elapsed_minutes * 60.0))
+            for name, item in channels.items()
+            if isinstance(item, dict)
+        }
+
+        def observed(field: str, channel: str) -> float | None:
+            if int(summaries.get(channel, {}).get("valid_samples", 0)) <= 0:
+                return None
+            return round(self.safe_float(tracking.get(field), 0), 5)
+
+        return {
+            "hour": tracking.get("hour"),
+            "elapsed_minutes": elapsed_minutes,
+            "remaining_minutes": max(0, 60 - elapsed_minutes),
+            "pv_kwh": observed("pv_kwh", "pv"),
+            "load_kwh": observed("load_kwh", "load"),
+            "grid_import_kwh": observed("grid_import_kwh", "grid"),
+            "grid_export_kwh": observed("grid_export_kwh", "grid"),
+            "battery_charge_kwh": observed("battery_charge_kwh", "battery"),
+            "battery_discharge_kwh": observed("battery_discharge_kwh", "battery"),
+            "soc_start_pct": tracking.get("soc_start"),
+            "soc_current_pct": (
+                tracking.get("soc_last", tracking.get("soc_start"))
+                if int(summaries.get("soc", {}).get("valid_samples", 0)) > 0
+                else None
+            ),
+            "channels": summaries,
         }
 
     def entity_available(self, entity_id: str | None) -> bool:
@@ -1672,7 +1935,7 @@ class DeyeEnergyManagerRuntime:
         quality_context = self.source_quality_context()
         tou = self.tou_mapping_diagnostics()
         mapping_status = "ERROR" if self.mapping_error else ("TOU ERROR" if not tou["ok"] else "OK")
-        return {"integration_version": "0.7.7", "connected": self.data_available, "required_entities_complete": self.required_entities_complete, "entities": entities,
+        return {"integration_version": "0.7.9", "connected": self.data_available, "required_entities_complete": self.required_entities_complete, "entities": entities,
                 "last_saved_at": self.last_saved_at or "never", "last_applied_at": self.last_applied_at or "never",
                 "last_error": self.last_error or "none", "last_schedule_attempt": self.last_schedule_attempt,
                 "manager_status": self.manager_status, "mapping_status": mapping_status,
@@ -1769,6 +2032,12 @@ class DeyeEnergyManagerRuntime:
         optimizer_history = data.get("optimizer_plan_history")
         self.optimizer_plan = optimizer_plan if isinstance(optimizer_plan, dict) else {}
         self.optimizer_plan_history = optimizer_history[:30] if isinstance(optimizer_history, list) else []
+        plan_execution_archive = data.get("plan_execution_archive")
+        self.plan_execution_archive = (
+            plan_execution_archive[:2160]
+            if isinstance(plan_execution_archive, list)
+            else []
+        )
         self._optimizer_input_snapshot_id = str(data.get("optimizer_input_snapshot_id") or "")
         self._optimizer_generation_reason = "startup_or_restored_state"
         future_plan = data.get("future_plan")
@@ -1849,6 +2118,7 @@ class DeyeEnergyManagerRuntime:
             "user_profiles": self.user_profiles,
             "optimizer_plan": self.optimizer_plan,
             "optimizer_plan_history": self.optimizer_plan_history[:30],
+            "plan_execution_archive": self.plan_execution_archive[:2160],
             "optimizer_input_snapshot_id": self._optimizer_input_snapshot_id,
             "future_plan": self.future_plan,
             "last_saved_at": self.last_saved_at,
@@ -1916,6 +2186,7 @@ class DeyeEnergyManagerRuntime:
                 raise ValueError(f"Profil {profile_id} ma pusty przedział czasu")
             target["enabled"] = bool(target.get("enabled"))
             target["allow_partial"] = bool(target.get("allow_partial", True))
+            target["goal_character"] = str(target.get("goal_character") or "preferred")
             days = target.get("active_days")
             if not isinstance(days, list):
                 raise ValueError(f"Aktywne dni profilu {profile_id} muszą być listą")
@@ -1950,6 +2221,9 @@ class DeyeEnergyManagerRuntime:
                 if power is not None and not 0 < power <= 13000:
                     raise ValueError(f"Moc profilu {profile_id} musi być w zakresie 1–13000 W")
                 target["preferred_power_w"] = power
+                target["allow_earlier_grid_charge"] = bool(
+                    target.get("allow_earlier_grid_charge", False)
+                )
                 if target.get("target_basis") not in ("battery_to_grid", "total_export"):
                     raise ValueError(f"Nieprawidłowy sposób liczenia celu profilu {profile_id}")
                 if target.get("distribution_method") not in ("best_hours", "even", "constant_power"):
@@ -1959,6 +2233,16 @@ class DeyeEnergyManagerRuntime:
                     raise ValueError("Nieprawidłowe źródło profilu ładowania")
                 if target.get("target_type") not in ("soc", "energy"):
                     raise ValueError("Nieprawidłowy typ celu profilu ładowania")
+                deadline = str(target.get("deadline") or "")
+                try:
+                    deadline_hour_text, deadline_minute_text = deadline.split(":", 1)
+                    deadline_hour = int(deadline_hour_text)
+                    deadline_minute = int(deadline_minute_text)
+                except (ValueError, TypeError) as err:
+                    raise ValueError("Nieprawidłowy termin profilu ładowania") from err
+                if not 0 <= deadline_hour <= 23 or not 0 <= deadline_minute <= 59:
+                    raise ValueError("Termin profilu ładowania jest poza zakresem")
+                target["deadline"] = f"{deadline_hour:02d}:{deadline_minute:02d}"
                 target_value = finite_float(target.get("target_value"))
                 maximum = 100.0 if target.get("target_type") == "soc" else 200.0
                 if target_value is None or not 0 < target_value <= maximum:
@@ -1972,10 +2256,36 @@ class DeyeEnergyManagerRuntime:
                 if max_grid is not None and not 0 <= max_grid <= 200:
                     raise ValueError("Nieprawidłowy limit energii z sieci")
                 target["max_grid_energy_kwh"] = max_grid
+                power = finite_float(target.get("preferred_power_w"))
+                if power is not None and not 0 < power <= 13000:
+                    raise ValueError("Moc profilu ładowania musi być w zakresie 1–13000 W")
+                target["preferred_power_w"] = power
+                purpose_aliases = {
+                    "general": "mixed",
+                    "home_reserve": "reserve",
+                    "morning_sale": "sale",
+                    "evening_sale": "sale",
+                    "both_sales": "sale",
+                    "cheap_home": "home",
+                }
+                purpose = purpose_aliases.get(
+                    str(target.get("purpose") or "mixed"),
+                    str(target.get("purpose") or "mixed"),
+                )
+                if purpose not in ("sale", "home", "reserve", "mixed"):
+                    raise ValueError("Nieprawidłowe przeznaczenie profilu ładowania")
+                target["purpose"] = purpose
                 free_room = finite_float(target.get("minimum_free_room_kwh"))
                 if free_room is None or not 0 <= free_room <= 200:
                     raise ValueError("Nieprawidłowa rezerwa miejsca na PV")
                 target["minimum_free_room_kwh"] = free_room
+                for key, default in (
+                    ("charge_missing_only", True),
+                    ("use_corrected_pv", True),
+                    ("preserve_pv_room", True),
+                    ("profitable_only", True),
+                ):
+                    target[key] = bool(target.get(key, default))
         return normalized
 
     async def async_set_user_profiles(self, profiles: dict[str, Any]) -> None:
@@ -1998,6 +2308,7 @@ class DeyeEnergyManagerRuntime:
             },
             "last_analysis": self.ai_api_cache.get("analysis"),
             "last_analysis_at": self.ai_api_cache.get("at"),
+            "last_analysis_locale": self.ai_api_cache.get("locale"),
             "last_plan_id": self.ai_api_cache.get("plan_id"),
         }
 
@@ -2042,18 +2353,21 @@ class DeyeEnergyManagerRuntime:
             "last_error": None,
         }
         self.notify_update()
-        local_plan = self.ai_plan_48h()
-        battery = self.battery_model_context()
-        payload = build_private_payload(
-            local_plan,
-            {
-                "current_soc_pct": self.state_float_or_none(self.battery_soc_sensor),
-                "capacity_kwh": battery.get("capacity_kwh"),
-                "effective_min_soc_pct": battery.get("minimum", {}).get("effective_min_soc_pct"),
-                "power_limit_w": battery.get("power_limit", {}).get("effective_limit_w"),
-            },
-        )
         try:
+            local_plan = self.ai_plan_48h()
+            battery = self.battery_model_context()
+            payload = build_private_payload(
+                local_plan,
+                {
+                    "current_soc_pct": self.state_float_or_none(self.battery_soc_sensor),
+                    "capacity_kwh": battery.get("capacity_kwh"),
+                    "effective_min_soc_pct": battery.get("minimum", {}).get("effective_min_soc_pct"),
+                    "power_limit_w": battery.get("power_limit", {}).get("effective_limit_w"),
+                },
+                config=self.ai_api_config,
+                user_profiles=self.user_profiles,
+                tariff=self.tariff_context(now),
+            )
             from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
             response = await request_ai_analysis(
@@ -2088,6 +2402,7 @@ class DeyeEnergyManagerRuntime:
             self.ai_api_cache = {
                 "at": now.isoformat(timespec="seconds"),
                 "plan_id": local_plan.get("plan_id"),
+                "locale": "pl-PL",
                 "analysis": response.get("analysis"),
             }
         self.notify_update()
@@ -2179,6 +2494,383 @@ class DeyeEnergyManagerRuntime:
             normalized.append(item)
         return normalized
 
+    @staticmethod
+    def _plan_execution_key(date_key: str, hour: int) -> str:
+        return f"{date_key}:{hour:02d}"
+
+    def _compact_plan_execution_row(
+        self,
+        row: dict[str, Any],
+        plan: dict[str, Any],
+        current: datetime,
+    ) -> dict[str, Any]:
+        """Freeze one optimizer row without exposing the full optimizer payload."""
+        date_key = str(row.get("date") or "")
+        hour = max(0, min(23, int(self.safe_float(row.get("hour"), 0))))
+        current_key = self._plan_execution_key(current.date().isoformat(), current.hour)
+        row_key = self._plan_execution_key(date_key, hour)
+        dispatch_status = str(row.get("dispatch_status") or "")
+        proposal_status = (
+            "blocked"
+            if dispatch_status == "blocked"
+            else "proposed"
+            if bool(row.get("proposed"))
+            else "skipped"
+        )
+        return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "date": date_key,
+            "hour": hour,
+            "label": str(row.get("label") or f"{hour:02d}:00–{(hour + 1) % 24:02d}:00"),
+            "plan_id": str(plan.get("plan_id") or ""),
+            "generated_at": str(plan.get("generated_at") or ""),
+            "strategy": str(plan.get("strategy") or ""),
+            "proposal_status": proposal_status,
+            "action": str(row.get("action") or "none"),
+            "mode": str(row.get("mode") or ""),
+            "profile_id": str(row.get("profile_id") or ""),
+            "decision_source": str(row.get("decision_source") or ""),
+            "planned_power_w": round(self.safe_float(row.get("planned_power_w"), 0), 2),
+            "planned_energy_kwh": round(self.safe_float(row.get("planned_energy_kwh"), 0), 5),
+            "soc_start_pct": row.get("soc_start_pct"),
+            "soc_end_pct": row.get("soc_end_pct", row.get("soc_after")),
+            "hard_min_soc_pct": row.get("hard_min_soc_pct"),
+            "effective_min_soc_pct": row.get("effective_min_soc_pct"),
+            "solcast_kwh": row.get("solcast_kwh"),
+            "corrected_pv_kwh": row.get("corrected_pv_kwh"),
+            "forecast_low_kwh": row.get("forecast_low_kwh"),
+            "forecast_high_kwh": row.get("forecast_high_kwh"),
+            "load_kwh": row.get("load_kwh", row.get("home_load_kwh")),
+            "expected_import_kwh": row.get("expected_import_kwh"),
+            "expected_export_kwh": row.get("expected_export_kwh"),
+            "buy_price": row.get("buy_price"),
+            "effective_buy_price": row.get("effective_buy_price"),
+            "sell_price": row.get("sell_price"),
+            "distribution": row.get("distribution"),
+            "net_result_pln": row.get("net_result", row.get("balance_pln")),
+            "confidence": row.get("confidence"),
+            "confidence_components": deepcopy(row.get("confidence_components") or {}),
+            "reason_codes": [str(value) for value in row.get("reason_codes", [])][:12],
+            "limit_reason": row.get("limit_reason"),
+            "data_quality": deepcopy(row.get("data_quality") or {}),
+            "approval_status": "not_selected",
+            "deployment_status": "not_deployed",
+            "actual_status": "waiting",
+            "frozen_at": (
+                current.isoformat(timespec="seconds")
+                if row_key <= current_key
+                else None
+            ),
+        }
+
+    def _sync_plan_execution_archive(
+        self,
+        plan: dict[str, Any],
+        current: datetime | None = None,
+    ) -> bool:
+        """Keep the latest future proposal, while never rewriting frozen hours."""
+        if not isinstance(plan, dict):
+            return False
+        current = current or ha_now()
+        rows = [row for row in plan.get("rows", []) if isinstance(row, dict)]
+        if not rows:
+            return False
+        existing = {
+            self._plan_execution_key(
+                str(row.get("date") or ""),
+                max(0, min(23, int(self.safe_float(row.get("hour"), 0)))),
+            ): dict(row)
+            for row in self.plan_execution_archive
+            if isinstance(row, dict) and row.get("date")
+        }
+        current_key = self._plan_execution_key(current.date().isoformat(), current.hour)
+        changed = False
+        for source in rows:
+            compact = self._compact_plan_execution_row(source, plan, current)
+            key = self._plan_execution_key(compact["date"], compact["hour"])
+            previous = existing.get(key)
+            preserve = bool(
+                previous
+                and (
+                    previous.get("frozen_at")
+                    or previous.get("approval_status") in {"approved", "cancelled"}
+                    or previous.get("deployment_status") in {"deployed", "blocked"}
+                    or previous.get("actual")
+                    or key < current_key
+                )
+            )
+            if preserve:
+                continue
+            if previous:
+                for lifecycle_key in (
+                    "approval_status",
+                    "approved_at",
+                    "deployment_status",
+                    "deployed_at",
+                    "deployment_reason",
+                    "actual_status",
+                    "actual",
+                ):
+                    if lifecycle_key in previous:
+                        compact[lifecycle_key] = deepcopy(previous[lifecycle_key])
+            if previous != compact:
+                existing[key] = compact
+                changed = True
+        normalized = sorted(
+            existing.values(),
+            key=lambda item: (
+                str(item.get("date") or ""),
+                int(self.safe_float(item.get("hour"), 0)),
+            ),
+            reverse=True,
+        )[:2160]
+        if normalized != self.plan_execution_archive:
+            self.plan_execution_archive = normalized
+            changed = True
+        return changed
+
+    def _set_plan_execution_lifecycle(
+        self,
+        date_key: str,
+        slot_key: str,
+        **changes: Any,
+    ) -> None:
+        try:
+            hour = int(str(slot_key).split("_", 1)[0])
+        except (TypeError, ValueError):
+            return
+        key = self._plan_execution_key(date_key, hour)
+        for row in self.plan_execution_archive:
+            if not isinstance(row, dict):
+                continue
+            if self._plan_execution_key(
+                str(row.get("date") or ""),
+                int(self.safe_float(row.get("hour"), 0)),
+            ) != key:
+                continue
+            row.update({name: deepcopy(value) for name, value in changes.items()})
+            row.setdefault("frozen_at", ha_now().isoformat(timespec="seconds"))
+            return
+        source = next(
+            (
+                row for row in self.optimizer_plan.get("rows", [])
+                if isinstance(row, dict)
+                and str(row.get("date") or "") == date_key
+                and int(self.safe_float(row.get("hour"), 0)) == hour
+            ),
+            None,
+        )
+        if source is not None:
+            row = self._compact_plan_execution_row(
+                source,
+                self.optimizer_plan,
+                ha_now(),
+            )
+        else:
+            row = {
+                "schema_version": HISTORY_SCHEMA_VERSION,
+                "date": date_key,
+                "hour": hour,
+                "label": f"{hour:02d}:00–{(hour + 1) % 24:02d}:00",
+                "proposal_status": "missing",
+                "approval_status": "not_selected",
+                "deployment_status": "not_deployed",
+                "actual_status": "waiting",
+                "frozen_at": ha_now().isoformat(timespec="seconds"),
+            }
+        row.update({name: deepcopy(value) for name, value in changes.items()})
+        self.plan_execution_archive = sorted(
+            [row, *self.plan_execution_archive],
+            key=lambda item: (
+                str(item.get("date") or ""),
+                int(self.safe_float(item.get("hour"), 0)),
+            ),
+            reverse=True,
+        )[:2160]
+
+    def _attach_plan_execution_actual(self, completed: dict[str, Any]) -> None:
+        """Attach finalized measurements and transparent forecast errors."""
+        date_key = str(completed.get("local_date") or "")
+        hour = int(self.safe_float(completed.get("local_hour"), 0))
+        key = self._plan_execution_key(date_key, hour)
+        target = next(
+            (
+                row for row in self.plan_execution_archive
+                if isinstance(row, dict)
+                and self._plan_execution_key(
+                    str(row.get("date") or ""),
+                    int(self.safe_float(row.get("hour"), 0)),
+                ) == key
+            ),
+            None,
+        )
+        if target is None:
+            target = {
+                "schema_version": HISTORY_SCHEMA_VERSION,
+                "date": date_key,
+                "hour": hour,
+                "label": f"{hour:02d}:00–{(hour + 1) % 24:02d}:00",
+                "proposal_status": "missing",
+                "approval_status": "not_selected",
+                "deployment_status": "not_deployed",
+            }
+            self.plan_execution_archive.append(target)
+        actual_pv = finite_float(completed.get("pv_kwh"))
+        actual_load = finite_float(completed.get("load_kwh"))
+        actual_import = finite_float(completed.get("grid_import_kwh"))
+        actual_export = finite_float(completed.get("grid_export_kwh"))
+        actual_soc = finite_float(completed.get("soc_end"))
+        planned_pv = finite_float(target.get("corrected_pv_kwh"))
+        planned_load = finite_float(target.get("load_kwh"))
+        planned_soc = finite_float(target.get("soc_end_pct"))
+        sell_price = finite_float(completed.get("sell_price_avg"))
+        buy_price = finite_float(completed.get("buy_price_avg"))
+        tariff = completed.get("tariff") if isinstance(completed.get("tariff"), dict) else {}
+        distribution = (
+            0.0
+            if self.price_includes_distribution
+            else self.safe_float(tariff.get("distribution_rate"), 0)
+        )
+        net_result = (
+            actual_export * sell_price
+            - actual_import * (buy_price + distribution)
+            if actual_export is not None
+            and actual_import is not None
+            and sell_price is not None
+            and buy_price is not None
+            else None
+        )
+        target["actual"] = {
+            "pv_kwh": round(actual_pv, 5) if actual_pv is not None else None,
+            "load_kwh": round(actual_load, 5) if actual_load is not None else None,
+            "grid_import_kwh": round(actual_import, 5) if actual_import is not None else None,
+            "grid_export_kwh": round(actual_export, 5) if actual_export is not None else None,
+            "battery_charge_kwh": (
+                round(value, 5)
+                if (value := finite_float(completed.get("battery_charge_kwh"))) is not None
+                else None
+            ),
+            "battery_discharge_kwh": (
+                round(value, 5)
+                if (value := finite_float(completed.get("battery_discharge_kwh"))) is not None
+                else None
+            ),
+            "soc_end_pct": actual_soc,
+            "sell_price_pln_kwh": round(sell_price, 5) if sell_price is not None else None,
+            "buy_price_pln_kwh": round(buy_price, 5) if buy_price is not None else None,
+            "net_result_pln": round(net_result, 5) if net_result is not None else None,
+            "complete": bool(completed.get("complete")),
+            "completeness_percent": completed.get("completeness_percent"),
+            "source_quality": deepcopy(completed.get("source_quality") or {}),
+        }
+        target["errors"] = {
+            "pv_kwh": (
+                None
+                if planned_pv is None or actual_pv is None
+                else round(actual_pv - planned_pv, 5)
+            ),
+            "load_kwh": (
+                None
+                if planned_load is None or actual_load is None
+                else round(actual_load - planned_load, 5)
+            ),
+            "soc_pct": (
+                None
+                if planned_soc is None or actual_soc is None
+                else round(actual_soc - planned_soc, 3)
+            ),
+            "pv_percent": (
+                None
+                if planned_pv is None or actual_pv is None or abs(planned_pv) < 0.05
+                else round((actual_pv - planned_pv) / abs(planned_pv) * 100, 1)
+            ),
+            "load_percent": (
+                None
+                if planned_load is None or actual_load is None or abs(planned_load) < 0.05
+                else round((actual_load - planned_load) / abs(planned_load) * 100, 1)
+            ),
+        }
+        target["actual_status"] = (
+            "completed" if completed.get("complete") else "partial"
+        )
+        target["frozen_at"] = target.get("frozen_at") or ha_now().isoformat(timespec="seconds")
+        self.plan_execution_archive = sorted(
+            self.plan_execution_archive,
+            key=lambda item: (
+                str(item.get("date") or ""),
+                int(self.safe_float(item.get("hour"), 0)),
+            ),
+            reverse=True,
+        )[:2160]
+
+    def plan_execution_day(self, date_key: str | None = None) -> dict[str, Any]:
+        """Return a read-only, compact plan-versus-execution view for one day."""
+        selected_date = str(date_key or ha_now().date().isoformat())
+        try:
+            selected_date = datetime.fromisoformat(selected_date).date().isoformat()
+        except (TypeError, ValueError) as err:
+            raise ValueError("Data musi mieć format RRRR-MM-DD") from err
+        rows = sorted(
+            [
+                deepcopy(row)
+                for row in self.plan_execution_archive
+                if isinstance(row, dict) and row.get("date") == selected_date
+            ],
+            key=lambda row: int(self.safe_float(row.get("hour"), 0)),
+        )
+        actual_rows = [row for row in rows if isinstance(row.get("actual"), dict)]
+        sum_field = lambda source, name: round(
+            sum(self.safe_float(item.get(name), 0) for item in source),
+            4,
+        )
+        actual_values = [row["actual"] for row in actual_rows]
+        error_values = [
+            abs(value)
+            for row in rows
+            if isinstance(row.get("errors"), dict)
+            and (value := finite_float(row["errors"].get("pv_percent"))) is not None
+        ]
+        return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "date": selected_date,
+            "rows": rows,
+            "summary": {
+                "hours_planned": len(rows),
+                "hours_measured": len(actual_rows),
+                "planned_pv_kwh": sum_field(rows, "corrected_pv_kwh") if rows else None,
+                "actual_pv_kwh": sum_field(actual_values, "pv_kwh") if actual_rows else None,
+                "planned_load_kwh": sum_field(rows, "load_kwh") if rows else None,
+                "actual_load_kwh": sum_field(actual_values, "load_kwh") if actual_rows else None,
+                "planned_import_kwh": sum_field(rows, "expected_import_kwh") if rows else None,
+                "actual_import_kwh": sum_field(actual_values, "grid_import_kwh") if actual_rows else None,
+                "planned_export_kwh": sum_field(rows, "expected_export_kwh") if rows else None,
+                "actual_export_kwh": sum_field(actual_values, "grid_export_kwh") if actual_rows else None,
+                "planned_result_pln": sum_field(rows, "net_result_pln") if rows else None,
+                "actual_result_pln": sum_field(actual_values, "net_result_pln") if actual_rows else None,
+                "pv_mean_absolute_percent_error": (
+                    round(sum(error_values) / len(error_values), 1)
+                    if error_values
+                    else None
+                ),
+            },
+        }
+
+    def plan_execution_index(self) -> dict[str, Any]:
+        dates = sorted(
+            {
+                str(row.get("date"))
+                for row in self.plan_execution_archive
+                if isinstance(row, dict) and row.get("date")
+            },
+            reverse=True,
+        )
+        return {
+            "schema_version": HISTORY_SCHEMA_VERSION,
+            "available_dates": dates[:90],
+            "retention_days": 90,
+            "stored_hours": len(self.plan_execution_archive),
+        }
+
     async def async_save_future_plan(self, payload: dict[str, Any]) -> None:
         """Persist an explicitly accepted plan for the next calendar day."""
         if not isinstance(payload, dict):
@@ -2189,14 +2881,46 @@ class DeyeEnergyManagerRuntime:
             raise ValueError(f"Plan można zapisać wyłącznie na jutro ({expected_date})")
         updates = self._validate_future_plan_updates(payload.get("updates"))
         self.future_plan = {
+            "plan_id": str(payload.get("plan_id") or ""),
             "date": plan_date,
             "status": "scheduled",
             "created_at": ha_now().isoformat(timespec="seconds"),
             "updated_at": ha_now().isoformat(timespec="seconds"),
             "strategy": str(payload.get("strategy") or "balanced"),
             "updates": updates,
+            "slot_validations": (
+                deepcopy(payload.get("slot_validations"))
+                if isinstance(payload.get("slot_validations"), dict)
+                else {}
+            ),
+            "slot_results": {},
             "labels": [str(value) for value in payload.get("labels", []) if value is not None][:24],
         }
+        approved_at = self.future_plan["created_at"]
+        selected_keys = {
+            str(update.get("slot_key") or "")
+            for update in updates
+            if isinstance(update, dict)
+        }
+        for slot_key in selected_keys:
+            self._set_plan_execution_lifecycle(
+                plan_date,
+                slot_key,
+                approval_status="approved",
+                approved_at=approved_at,
+                approved_plan_id=self.future_plan["plan_id"],
+            )
+        for validation in self.future_plan["slot_validations"].values():
+            if not isinstance(validation, dict):
+                continue
+            profile_id = str(validation.get("profile_id") or "")
+            if profile_id:
+                self._set_profile_execution_status(
+                    profile_id,
+                    plan_date,
+                    "waiting",
+                    plan_id=self.future_plan["plan_id"],
+                )
         await self.async_add_ai_analysis({
             "timestamp": int(ha_now().timestamp() * 1000),
             "event": "future_plan_scheduled",
@@ -2204,11 +2928,36 @@ class DeyeEnergyManagerRuntime:
             "selected_hours": self.future_plan["labels"],
         })
         await self.async_save_ai_data()
+        await self.async_save_learning_history()
         self.notify_update()
 
     async def async_cancel_future_plan(self, reason: str = "Anulowano przez użytkownika") -> None:
         if not self.future_plan:
             return
+        plan_date = str(self.future_plan.get("date") or ha_now().date().isoformat())
+        for update in self.future_plan.get("updates", []):
+            if isinstance(update, dict):
+                self._set_plan_execution_lifecycle(
+                    plan_date,
+                    str(update.get("slot_key") or ""),
+                    approval_status="cancelled",
+                    deployment_status="cancelled",
+                    deployment_reason=reason,
+                )
+        validations = self.future_plan.get("slot_validations")
+        if isinstance(validations, dict):
+            for validation in validations.values():
+                if not isinstance(validation, dict):
+                    continue
+                profile_id = str(validation.get("profile_id") or "")
+                if profile_id:
+                    self._set_profile_execution_status(
+                        profile_id,
+                        plan_date,
+                        "cancelled",
+                        failure_reason=reason,
+                        plan_id=str(self.future_plan.get("plan_id") or ""),
+                    )
         self.future_plan = {
             **self.future_plan,
             "status": "cancelled",
@@ -2216,12 +2965,13 @@ class DeyeEnergyManagerRuntime:
             "reason": reason,
         }
         await self.async_save_ai_data()
+        await self.async_save_learning_history()
         self.notify_update()
 
     async def async_process_future_plan(self) -> None:
-        """Apply the accepted dated plan once, after validating live safety inputs."""
+        """Revalidate and apply only the accepted slot that is starting now."""
         plan = self.future_plan
-        if not plan or plan.get("status") != "scheduled":
+        if not plan or plan.get("status") not in {"scheduled", "partial"}:
             return
         today = ha_now().date().isoformat()
         plan_date = str(plan.get("date") or "")
@@ -2232,43 +2982,253 @@ class DeyeEnergyManagerRuntime:
             async with self._operation_lock:
                 await self.async_apply_safe_defaults("Plan na jutro wygasł przed zastosowaniem")
             return
+        current_time = ha_now()
+        current_slot_key = f"{current_time.hour:02d}_{(current_time.hour + 1) % 24:02d}"
+        profile_id = ""
+        execution_stage = "validation"
         try:
             updates = self._validate_future_plan_updates(plan.get("updates"))
-            selling_needing_soc = any(
-                item.get("mode") == MODE_SELLING_FIRST and self.safe_float(item.get("minimum_sell_soc"), 0) > 0
-                for item in updates
+            slot_results = dict(plan.get("slot_results") or {})
+            current_update = next(
+                (item for item in updates if item.get("slot_key") == current_slot_key),
+                None,
             )
-            selling_needing_price = any(
-                item.get("mode") == MODE_SELLING_FIRST and self.safe_float(item.get("min_sell_price"), 0) > 0
-                for item in updates
+            if current_update is None or current_slot_key in slot_results:
+                return
+            validation = (
+                plan.get("slot_validations", {}).get(current_slot_key, {})
+                if isinstance(plan.get("slot_validations"), dict)
+                else {}
+            )
+            validation = validation if isinstance(validation, dict) else {}
+            profile_id = str(validation.get("profile_id") or "")
+            selling = current_update.get("mode") == MODE_SELLING_FIRST
+            charging = current_update.get("mode") == "Charge"
+            minimum_soc = self.safe_float(
+                validation.get("minimum_soc", current_update.get("minimum_sell_soc")),
+                0,
+            )
+            minimum_price = self.safe_float(
+                validation.get("minimum_price", current_update.get("min_sell_price")),
+                0,
+            )
+            selling_needing_soc = selling and minimum_soc > 0
+            selling_needing_price = selling and (
+                "minimum_price" in validation or "min_sell_price" in current_update
             )
             if selling_needing_soc and self.state_float_or_none(self.battery_soc_sensor) is None:
                 raise RuntimeError("brak poprawnego odczytu SOC dla sprzedaży")
             if selling_needing_price and self.state_float_or_none(self.price_sensor) is None:
                 raise RuntimeError("brak ceny sprzedaży")
-            await self.async_apply_schedule_patch(updates)
+            current_soc = self.state_float_or_none(self.battery_soc_sensor)
+            current_price = self.state_float_or_none(self.price_sensor)
+            if (
+                selling_needing_soc
+                and current_soc is not None
+                and current_soc <= minimum_soc
+            ):
+                raise RuntimeError("aktualny SOC nie pozwala bezpiecznie rozpocząć slotu")
+            if (
+                selling_needing_price
+                and current_price is not None
+                and current_price + 1e-9 < minimum_price
+            ):
+                raise RuntimeError("aktualna cena jest niższa od minimalnej ceny profilu")
+            if not self.data_available:
+                raise RuntimeError("falownik lub wymagana encja sterująca jest niedostępna")
+            if (
+                charging
+                and validation.get("charge_source") in ("grid", "pv_and_grid")
+                and not self.entity_available(self.grid_power_sensor)
+            ):
+                raise RuntimeError("brak wiarygodnego odczytu stanu sieci dla ładowania")
+            planned_power = self.safe_float(
+                current_update.get("sell_power", validation.get("power_limit_w")),
+                0,
+            )
+            allowed_power = self.safe_float(validation.get("power_limit_w"), 0)
+            if allowed_power > 0 and planned_power > allowed_power + 1e-6:
+                raise RuntimeError("moc slotu przekracza aktualny limit profilu lub falownika")
+            effective_buy_price = None
+            if charging:
+                effective_buy_price = self.price_map(
+                    self.buy_price_today_sensor
+                ).get(current_time.hour)
+                if effective_buy_price is None:
+                    effective_buy_price = self.state_float_or_none(
+                        self.buy_price_today_sensor
+                    )
+                maximum_effective_price = self.safe_float(
+                    validation.get("maximum_effective_price"),
+                    0,
+                )
+                if maximum_effective_price > 0:
+                    if effective_buy_price is None:
+                        raise RuntimeError("brak aktualnej ceny zakupu dla slotu ładowania")
+                    tariff = self.tariff_context(current_time)
+                    if not self.price_includes_distribution:
+                        effective_buy_price += self.safe_float(
+                            tariff.get("total_distribution_rate"),
+                            0,
+                        )
+                    if effective_buy_price > maximum_effective_price + 1e-9:
+                        raise RuntimeError(
+                            "efektywny koszt zakupu z OSD przekracza limit profilu"
+                        )
+            if validation.get("deadline"):
+                deadline_hour = int(str(validation["deadline"]).split(":", 1)[0])
+                if current_time.hour >= deadline_hour and not bool(validation.get("deadline_next_day")):
+                    raise RuntimeError("minął termin realizacji profilu")
+            execution = next(
+                (
+                    item
+                    for item in reversed(self.profile_execution)
+                    if isinstance(item, dict)
+                    and str(item.get("profile_id") or "") == profile_id
+                    and str(item.get("date") or "") == plan_date
+                ),
+                None,
+            )
+            executed_energy = self.safe_float(
+                execution.get("executed_kwh", execution.get("actual_energy_kwh"))
+                if execution else 0,
+                0,
+            )
+            remaining_target = self.safe_float(
+                execution.get("remaining_kwh")
+                if execution else validation.get("remaining_target_kwh"),
+                0,
+            )
+            target_energy = self.safe_float(validation.get("target_energy_kwh"), 0)
+            if profile_id and target_energy > 0 and remaining_target <= 1e-6:
+                raise RuntimeError("cel profilu został już wykonany")
+            possible_remaining = max(
+                0.0,
+                self.safe_float(validation.get("possible_energy_kwh"), 0)
+                - executed_energy,
+            )
+            if (
+                not bool(validation.get("allow_partial", True))
+                and possible_remaining + 1e-6 < remaining_target
+            ):
+                raise RuntimeError("pełny pozostały cel profilu nie jest już możliwy")
+            planned_energy = max(
+                0.0,
+                self.safe_float(validation.get("planned_energy_kwh"), 0),
+            )
+            planned_price = self.safe_float(validation.get("planned_price"), 0)
+            revalidated_result = self.safe_float(
+                validation.get("profile_net_result_pln"),
+                0,
+            )
+            if selling and current_price is not None:
+                revalidated_result += (current_price - planned_price) * planned_energy
+            elif charging and effective_buy_price is not None:
+                revalidated_result -= (effective_buy_price - planned_price) * planned_energy
+            if revalidated_result + 1e-6 < self.safe_float(validation.get("min_net_result"), 0):
+                raise RuntimeError("wynik netto profilu spadł poniżej wymaganego minimum")
+            if (
+                selling
+                and bool(validation.get("allow_partial", True))
+                and remaining_target > 1e-6
+                and planned_energy > remaining_target
+            ):
+                duration = max(
+                    1.0,
+                    self.safe_float(validation.get("duration_minutes"), 60),
+                )
+                current_update = {
+                    **current_update,
+                    "sell_power": min(
+                        self.safe_float(current_update.get("sell_power"), 0),
+                        round(remaining_target * 1000 * 60 / duration),
+                    ),
+                }
+            if (
+                current_update.get("mode") == "Charge"
+                and current_soc is not None
+                and validation.get("max_soc_before_pv_pct") is not None
+                and current_soc >= self.safe_float(validation.get("max_soc_before_pv_pct"), 100)
+            ):
+                raise RuntimeError("brak wymaganego miejsca na prognozowaną produkcję PV")
+            if profile_id:
+                self._set_profile_execution_status(
+                    profile_id,
+                    plan_date,
+                    "running",
+                    plan_id=str(plan.get("plan_id") or ""),
+                )
+            execution_stage = "write"
+            await self.async_apply_schedule_patch([current_update])
+            self._set_plan_execution_lifecycle(
+                plan_date,
+                current_slot_key,
+                deployment_status="deployed",
+                deployed_at=current_time.isoformat(timespec="seconds"),
+                deployment_reason=None,
+            )
+            slot_results[current_slot_key] = {
+                "status": "completed",
+                "validated_at": current_time.isoformat(timespec="seconds"),
+            }
+            pending = [
+                item
+                for item in updates
+                if item.get("slot_key") not in slot_results
+                and int(str(item.get("slot_key")).split("_", 1)[0]) > current_time.hour
+            ]
             self.future_plan = {
                 **plan,
-                "status": "applied",
-                "applied_at": ha_now().isoformat(timespec="seconds"),
+                "status": (
+                    "partial"
+                    if any(item.get("status") == "blocked" for item in slot_results.values())
+                    else "scheduled"
+                    if pending
+                    else "completed"
+                ),
+                "slot_results": slot_results,
+                "updated_at": current_time.isoformat(timespec="seconds"),
             }
             await self.async_add_ai_analysis({
                 "timestamp": int(ha_now().timestamp() * 1000),
-                "event": "future_plan_applied",
+                "event": "future_plan_slot_applied",
                 "date": plan_date,
-                "selected_hours": plan.get("labels", []),
+                "slot_key": current_slot_key,
             })
             await self.async_save_ai_data()
+            await self.async_save_learning_history()
         except Exception as err:
+            self._set_plan_execution_lifecycle(
+                plan_date,
+                current_slot_key,
+                deployment_status="blocked",
+                deployed_at=None,
+                deployment_reason=str(err),
+            )
+            if profile_id:
+                self._set_profile_execution_status(
+                    profile_id,
+                    plan_date,
+                    "failed" if execution_stage == "write" else "blocked",
+                    failure_reason=str(err),
+                    plan_id=str(plan.get("plan_id") or ""),
+                )
             self.future_plan = {
                 **plan,
-                "status": "failed",
+                "status": "partial",
+                "slot_results": {
+                    **dict(plan.get("slot_results") or {}),
+                    current_slot_key: {
+                        "status": "blocked",
+                        "reason": str(err),
+                        "validated_at": ha_now().isoformat(timespec="seconds"),
+                    },
+                },
                 "failed_at": ha_now().isoformat(timespec="seconds"),
                 "reason": str(err),
             }
             await self.async_save_ai_data()
-            async with self._operation_lock:
-                await self.async_apply_safe_defaults(f"Plan na dziś anulowany: {err}")
+            await self.async_save_learning_history()
         self.notify_update()
 
     async def async_clear_all_history(self) -> None:
@@ -2284,6 +3244,7 @@ class DeyeEnergyManagerRuntime:
         self.load_profile_7x24 = {}
         self.pv_learning_profile = {}
         self.profile_execution = []
+        self.plan_execution_archive = []
         await self.async_save_ai_data()
         await self.async_save_solcast_history()
         await self.async_save_learning_history()
@@ -2398,7 +3359,43 @@ class DeyeEnergyManagerRuntime:
         self.pv_learning_profile = data.get("pv_profile") if isinstance(data.get("pv_profile"), dict) else {}
         self.profile_execution = data.get("profile_execution")[:17520] if isinstance(data.get("profile_execution"), list) else []
         if migrated:
+            self._rebuild_learning_profiles_from_history()
             await self.async_save_learning_history()
+
+    def _rebuild_learning_profiles_from_history(self) -> None:
+        """Relearn canonical profiles once after migration to per-channel quality."""
+        load_profile: dict[str, Any] = {}
+        pv_profile: dict[str, Any] = {}
+        for row in reversed(self.learning_history):
+            if not isinstance(row, dict):
+                continue
+            try:
+                moment = datetime.fromisoformat(str(row.get("hour")))
+            except (TypeError, ValueError):
+                continue
+            channels = row.get("channel_quality") if isinstance(row.get("channel_quality"), dict) else {}
+            load_quality = channels.get("load") if isinstance(channels.get("load"), dict) else {}
+            pv_quality = channels.get("pv") if isinstance(channels.get("pv"), dict) else {}
+            load_profile = update_load_profile(
+                load_profile,
+                moment=moment,
+                load_kwh=finite_float(row.get("load_kwh")),
+                complete=load_quality.get("level") == "full",
+                quality_score=self.safe_float(load_quality.get("quality_score"), 0),
+                completeness_percent=self.safe_float(load_quality.get("coverage_percent"), 0),
+            )
+            pv_profile = update_pv_profile(
+                pv_profile,
+                moment=moment,
+                forecast_kwh=finite_float(row.get("forecast_hourly_snapshot_kwh")),
+                actual_kwh=finite_float(row.get("pv_kwh")),
+                flags=dict(row.get("quality_flags") or {}),
+                complete=pv_quality.get("level") == "full",
+                quality_score=self.safe_float(pv_quality.get("quality_score"), 0),
+                completeness_percent=self.safe_float(pv_quality.get("coverage_percent"), 0),
+            )
+        self.load_profile_7x24 = load_profile
+        self.pv_learning_profile = pv_profile
 
     async def async_save_learning_history(self) -> None:
         if self._learning_store is None:
@@ -2463,13 +3460,18 @@ class DeyeEnergyManagerRuntime:
             for key in ("pv_power", "load_power", "grid_power", "battery_power", "soc", "sell_price", "buy_price"):
                 values = [self.safe_float(item.get(key), 0) for item in samples if item.get(key) is not None]
                 row[f"{key}_avg"] = round(sum(values) / len(values), 3) if values else None
-            def integrated(key: str, direction: int = 1) -> float:
+            def integrated(key: str, direction: int = 1) -> float | None:
                 total = 0.0
+                valid = 0
                 for item in samples:
+                    measurement = finite_float(item.get(key))
+                    if measurement is None:
+                        continue
                     hours = max(0.0, min(900.0, self.safe_float(item.get("interval_seconds"), 300))) / 3600
-                    value = self.safe_float(item.get(key), 0) * direction
+                    value = measurement * direction
                     total += max(0.0, value) / 1000 * hours
-                return round(total, 3)
+                    valid += 1
+                return round(total, 3) if valid else None
 
             row["pv_kwh"] = integrated("pv_power")
             row["load_kwh"] = integrated("load_power")
@@ -2490,11 +3492,19 @@ class DeyeEnergyManagerRuntime:
             months.setdefault(str(row.get("date"))[:7], []).append(row)
         energy_keys = ("pv_kwh", "load_kwh", "grid_import_kwh", "grid_export_kwh", "battery_charge_kwh", "battery_discharge_kwh")
         def month_row(month: str, rows: list[dict[str, Any]]) -> dict[str, Any]:
+            totals = {}
+            for key in energy_keys:
+                values = [
+                    value
+                    for row in rows
+                    if (value := finite_float(row.get(key))) is not None
+                ]
+                totals[key] = round(sum(values), 3) if values else None
             return {
                 "month": month,
                 "days": len(rows),
                 "samples": sum(int(row.get("samples", 0)) for row in rows),
-                **{key: round(sum(self.safe_float(row.get(key), 0) for row in rows), 3) for key in energy_keys},
+                **totals,
             }
         retained_months = [month_row(month, rows) for month, rows in sorted(months.items(), reverse=True)]
         permanent = {
@@ -2569,39 +3579,77 @@ class DeyeEnergyManagerRuntime:
         now = ha_now()
         if self._last_energy_sample_at:
             try:
-                if (now - self._last_energy_sample_at).total_seconds() < 285:
+                if (now - self._last_energy_sample_at).total_seconds() < 55:
                     return
             except TypeError:
                 self._last_energy_sample_at = None
-        load = self.load_power_reading()
-        battery = self.battery_power_reading()
+        readings = self._telemetry_readings()
+        load = readings["load"]
+        battery = readings["battery"]
         fields = {
-            "pv_power": self._measurement(self.pv_power_sensor).get("value"),
+            "pv_power": readings["pv"].get("value"),
             "load_power": load.get("value"),
-            "load_l1_power": self._measurement(self.load_l1_power_sensor).get("value"),
-            "load_l2_power": self._measurement(self.load_l2_power_sensor).get("value"),
-            "load_l3_power": self._measurement(self.load_l3_power_sensor).get("value"),
-            "grid_power": self.normalized_grid_power() if self.entity_available(self.grid_power_sensor) else None,
+            "load_l1_power": readings["load_l1"].get("value"),
+            "load_l2_power": readings["load_l2"].get("value"),
+            "load_l3_power": readings["load_l3"].get("value"),
+            "grid_power": readings["grid"].get("value"),
             "battery_power": battery.get("value"),
-            "soc": self.state_float_or_none(self.battery_soc_sensor),
-            "sell_price": self.state_float_or_none(self.price_sensor),
-            "buy_price": self.state_float_or_none(self.buy_price_today_sensor),
+            "soc": readings["soc"].get("value"),
+            "sell_price": readings["sell_price"].get("value"),
+            "buy_price": readings["buy_price"].get("value"),
             "daily_pv": self.state_float_or_none(self.daily_pv_production_sensor),
         }
-        interval_seconds = 300.0
+        fields.update(split_directional_power(
+            grid_power_w=fields["grid_power"],
+            battery_power_w=fields["battery_power"],
+        ))
+        interval_seconds = 60.0
         if self._last_energy_sample_at is not None:
             try:
-                interval_seconds = max(0.0, min(900.0, (now - self._last_energy_sample_at).total_seconds()))
+                interval_seconds = max(0.0, min(120.0, (now - self._last_energy_sample_at).total_seconds()))
             except TypeError:
-                interval_seconds = 300.0
+                interval_seconds = 60.0
         tariff = self.tariff_context(now)
+        weather = self.weather_context()
+        live_state = self.live_state_context(readings, now)
         sample = {
             "schema_version": HISTORY_SCHEMA_VERSION,
-            "timestamp": now.replace(second=0, microsecond=0).isoformat(),
+            "timestamp": now.replace(microsecond=0).isoformat(),
             "interval_seconds": round(interval_seconds, 1),
             **fields,
             "missing": [key for key, value in fields.items() if value is None],
+            "readings": {
+                name: {
+                    "value": item.get("value"),
+                    "status": item.get("status"),
+                    "quality": item.get("quality"),
+                    "source": item.get("source"),
+                    "last_updated": item.get("last_updated"),
+                    "usable_for_learning": item.get("value") is not None
+                    and item.get("quality") != "unavailable",
+                }
+                for name, item in readings.items()
+            },
             "source_quality": self.source_quality_context(),
+            "live_state": live_state,
+            "control": {
+                "mode": live_state.get("active_mode"),
+                "power_w": live_state.get("active_power_w"),
+                "slot_key": live_state.get("slot_key"),
+            },
+            "solcast": {
+                "current_power_w": self._measurement(self.solcast_current_power_sensor).get("value"),
+                "forecast_today_kwh": self.solcast_forecast_today_value(),
+                "forecast_remaining_kwh": self.state_float_or_none(self.solcast_remaining_today_sensor),
+            },
+            "weather": {
+                key: weather.get(key)
+                for key in (
+                    "available", "condition", "temperature", "humidity",
+                    "cloud_coverage", "precipitation_probability",
+                    "risk_factor", "last_updated",
+                )
+            },
             "energy_counters": self._energy_counter_measurements(now),
             "tariff": {
                 key: tariff.get(key)
@@ -2702,6 +3750,7 @@ class DeyeEnergyManagerRuntime:
 
     def _new_learning_hour(self, hour_key: str, now: datetime) -> dict[str, Any]:
         tariff = self.tariff_context(now)
+        weather = self.weather_context()
         solcast_power = self._measurement(self.solcast_current_power_sensor)
         hourly_snapshot = (
             max(0.0, float(solcast_power["value"])) / 1000
@@ -2730,6 +3779,13 @@ class DeyeEnergyManagerRuntime:
             "local_hour": now.hour,
             "last_sample": now.isoformat(),
             "samples": 0,
+            "channels": {
+                name: new_channel()
+                for name in (
+                    "pv", "load", "load_l1", "load_l2", "load_l3",
+                    "grid", "battery", "soc", "sell_price", "buy_price",
+                )
+            },
             "pv_kwh": 0.0,
             "load_kwh": 0.0,
             "load_l1_kwh": 0.0,
@@ -2765,6 +3821,22 @@ class DeyeEnergyManagerRuntime:
             "source_quality": self.source_quality_context(),
             "quality_flags": flags,
             "action": self.active_slot.mode if self.active_slot.enabled else MODE_NORMAL_OPERATION,
+            "control": {
+                "slot_key": self.active_slot.key,
+                "mode": self.active_slot.mode if self.active_slot.enabled else MODE_NORMAL_OPERATION,
+                "sell_power_w": max(0.0, float(self.active_slot.sell_power or 0.0)),
+                "discharge_current_a": max(0.0, float(self.active_slot.discharge_current or 0.0)),
+                "charge_current_a": max(0.0, float(self.active_slot.charge_current or 0.0)),
+                "grid_charge_current_a": max(0.0, float(self.active_slot.grid_charge_current or 0.0)),
+            },
+            "weather_forecast": {
+                key: weather.get(key)
+                for key in (
+                    "available", "condition", "temperature", "humidity",
+                    "cloud_coverage", "precipitation_probability",
+                    "risk_factor", "last_updated",
+                )
+            },
             "plan_id": self.future_plan.get("plan_id") if isinstance(self.future_plan, dict) else None,
             "tariff": {
                 key: tariff.get(key)
@@ -2772,34 +3844,102 @@ class DeyeEnergyManagerRuntime:
             },
         }
 
-    def _finalize_learning_hour(self, tracking: dict[str, Any]) -> dict[str, Any]:
+    def _finalize_learning_hour(
+        self,
+        tracking: dict[str, Any],
+        *,
+        update_models: bool = True,
+    ) -> dict[str, Any]:
         samples = max(1, int(tracking.get("samples", 0)))
         soc_samples = int(tracking.get("soc_samples", 0))
         source_quality = tracking.get("source_quality", {})
         quality_score = self.safe_float(source_quality.get("score"), 0) if isinstance(source_quality, dict) else 0
-        complete = samples >= 10 and quality_score >= 60
+        channels = tracking.get("channels") if isinstance(tracking.get("channels"), dict) else {}
+        channel_quality = {
+            name: channel_summary(item)
+            for name, item in channels.items()
+            if isinstance(item, dict)
+        }
+
+        def available(name: str) -> bool:
+            return int(channel_quality.get(name, {}).get("valid_samples", 0)) > 0
+
+        def energy_value(field: str, channel: str) -> float | None:
+            return (
+                round(self.safe_float(tracking.get(field), 0), 4)
+                if available(channel)
+                else None
+            )
+
+        essential = ("pv", "load", "grid", "battery", "soc")
+        complete = all(
+            channel_quality.get(name, {}).get("level") == "full"
+            for name in essential
+        )
+        load_kwh = energy_value("load_kwh", "load")
+        pv_kwh = energy_value("pv_kwh", "pv")
+        grid_import_kwh = energy_value("grid_import_kwh", "grid")
+        grid_export_kwh = energy_value("grid_export_kwh", "grid")
+        battery_charge_kwh = energy_value("battery_charge_kwh", "battery")
+        battery_discharge_kwh = energy_value("battery_discharge_kwh", "battery")
+        hourly_balance = energy_balance(
+            pv_kwh=pv_kwh,
+            load_kwh=load_kwh,
+            grid_import_kwh=grid_import_kwh,
+            grid_export_kwh=grid_export_kwh,
+            battery_charge_kwh=battery_charge_kwh,
+            battery_discharge_kwh=battery_discharge_kwh,
+        )
+        solcast_hourly = finite_float(tracking.get("forecast_hourly_snapshot_kwh"))
+        solcast_error = (
+            pv_kwh - solcast_hourly
+            if pv_kwh is not None and solcast_hourly is not None
+            else None
+        )
+        solcast_accuracy = (
+            max(0.0, 100.0 - abs(solcast_error) / solcast_hourly * 100.0)
+            if solcast_error is not None and solcast_hourly and solcast_hourly > 0
+            else None
+        )
+        weather_actual = self.weather_context()
         result = {
             "schema_version": HISTORY_SCHEMA_VERSION,
             "hour": tracking.get("hour"),
             "local_date": tracking.get("local_date"),
             "local_hour": tracking.get("local_hour"),
             "samples": int(tracking.get("samples", 0)),
-            "pv_kwh": round(self.safe_float(tracking.get("pv_kwh"), 0), 4),
-            "load_kwh": round(self.safe_float(tracking.get("load_kwh"), 0), 4),
-            "load_l1_kwh": round(self.safe_float(tracking.get("load_l1_kwh"), 0), 4),
-            "load_l2_kwh": round(self.safe_float(tracking.get("load_l2_kwh"), 0), 4),
-            "load_l3_kwh": round(self.safe_float(tracking.get("load_l3_kwh"), 0), 4),
-            "grid_import_kwh": round(self.safe_float(tracking.get("grid_import_kwh"), 0), 4),
-            "grid_export_kwh": round(self.safe_float(tracking.get("grid_export_kwh"), 0), 4),
-            "battery_charge_kwh": round(self.safe_float(tracking.get("battery_charge_kwh"), 0), 4),
-            "battery_discharge_kwh": round(self.safe_float(tracking.get("battery_discharge_kwh"), 0), 4),
+            "pv_kwh": pv_kwh,
+            "load_kwh": load_kwh,
+            "load_l1_kwh": energy_value("load_l1_kwh", "load_l1"),
+            "load_l2_kwh": energy_value("load_l2_kwh", "load_l2"),
+            "load_l3_kwh": energy_value("load_l3_kwh", "load_l3"),
+            "grid_import_kwh": grid_import_kwh,
+            "grid_export_kwh": grid_export_kwh,
+            "battery_charge_kwh": battery_charge_kwh,
+            "battery_discharge_kwh": battery_discharge_kwh,
             "soc_avg": round(self.safe_float(tracking.get("soc_sum"), 0) / soc_samples, 1) if soc_samples else None,
             "soc_min": round(self.safe_float(tracking.get("soc_min"), 0), 1) if tracking.get("soc_min") is not None else None,
             "soc_max": round(self.safe_float(tracking.get("soc_max"), 0), 1) if tracking.get("soc_max") is not None else None,
             "soc_start": tracking.get("soc_start"),
             "soc_end": tracking.get("soc_last"),
-            "sell_price_avg": round(self.safe_float(tracking.get("sell_price_sum"), 0) / samples, 3),
-            "buy_price_avg": round(self.safe_float(tracking.get("buy_price_sum"), 0) / samples, 3),
+            "sell_price_avg": (
+                round(
+                    self.safe_float(tracking.get("sell_price_sum"), 0)
+                    / max(1, int(channel_quality.get("sell_price", {}).get("valid_samples", 0))),
+                    3,
+                )
+                if available("sell_price")
+                else None
+            ),
+            "buy_price_avg": (
+                round(
+                    self.safe_float(tracking.get("buy_price_sum"), 0)
+                    / max(1, int(channel_quality.get("buy_price", {}).get("valid_samples", 0))),
+                    3,
+                )
+                if available("buy_price")
+                else None
+            ),
             "solcast_forecast_kwh": round(self.safe_float(tracking.get("solcast_forecast_kwh"), 0), 3),
             "forecast_initial_kwh": tracking.get("forecast_initial_kwh"),
             "forecast_latest_kwh": tracking.get("forecast_latest_kwh"),
@@ -2809,48 +3949,574 @@ class DeyeEnergyManagerRuntime:
             "forecast_correction_factor": tracking.get("forecast_correction_factor"),
             "daily_pv_kwh": round(self.safe_float(tracking.get("daily_pv_kwh"), 0), 3),
             "complete": complete,
-            "completeness_percent": min(100, round(samples / 60 * 100)),
+            "completeness_percent": round(
+                sum(item.get("coverage_percent", 0) for item in channel_quality.values())
+                / max(1, len(channel_quality)),
+                1,
+            ),
+            "channel_quality": channel_quality,
+            "energy_balance": hourly_balance,
             "source_quality": source_quality,
             "quality_flags": tracking.get("quality_flags", {}),
             "energy_counters": tracking.get("energy_counters", {}),
             "action": tracking.get("action"),
+            "control": tracking.get("control", {}),
             "plan_id": tracking.get("plan_id"),
             "tariff": tracking.get("tariff", {}),
+            "weather_forecast": tracking.get("weather_forecast", {}),
+            "weather_actual": {
+                key: weather_actual.get(key)
+                for key in (
+                    "available", "condition", "temperature", "humidity",
+                    "cloud_coverage", "precipitation_probability",
+                    "risk_factor", "last_updated",
+                )
+            },
+            "solcast_error_kwh": round(solcast_error, 4) if solcast_error is not None else None,
+            "solcast_accuracy_percent": round(solcast_accuracy, 1) if solcast_accuracy is not None else None,
         }
         try:
             moment = datetime.fromisoformat(str(tracking.get("hour")))
         except (TypeError, ValueError):
             moment = ha_now().replace(minute=0, second=0, microsecond=0)
-        self.load_profile_7x24 = update_load_profile(
-            self.load_profile_7x24,
-            moment=moment,
-            load_kwh=result["load_kwh"],
-            complete=complete,
-            quality_score=quality_score,
-        )
-        flags = dict(result.get("quality_flags") or {})
-        flags["fallback_used"] = bool(source_quality.get("fallback_in_use")) if isinstance(source_quality, dict) else False
-        self.pv_learning_profile = update_pv_profile(
-            self.pv_learning_profile,
-            moment=moment,
-            forecast_kwh=finite_float(result.get("forecast_hourly_snapshot_kwh")),
-            actual_kwh=result["pv_kwh"],
-            flags=flags,
-            complete=complete,
-        )
+        if update_models:
+            self.load_profile_7x24 = update_load_profile(
+                self.load_profile_7x24,
+                moment=moment,
+                load_kwh=result["load_kwh"],
+                complete=channel_quality.get("load", {}).get("level") == "full",
+                quality_score=self.safe_float(channel_quality.get("load", {}).get("quality_score"), 0),
+                completeness_percent=self.safe_float(channel_quality.get("load", {}).get("coverage_percent"), 0),
+            )
+            flags = dict(result.get("quality_flags") or {})
+            flags["fallback_used"] = bool(source_quality.get("fallback_in_use")) if isinstance(source_quality, dict) else False
+            self.pv_learning_profile = update_pv_profile(
+                self.pv_learning_profile,
+                moment=moment,
+                forecast_kwh=finite_float(result.get("forecast_hourly_snapshot_kwh")),
+                actual_kwh=result["pv_kwh"],
+                flags=flags,
+                complete=channel_quality.get("pv", {}).get("level") == "full",
+                quality_score=self.safe_float(channel_quality.get("pv", {}).get("quality_score"), 0),
+                completeness_percent=self.safe_float(channel_quality.get("pv", {}).get("coverage_percent"), 0),
+            )
         return result
+
+    def _set_profile_execution_status(
+        self,
+        profile_id: str,
+        date_key: str,
+        status: str,
+        *,
+        failure_reason: str | None = None,
+        plan_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create or transition one complete, local profile execution record."""
+        allowed_statuses = {
+            "waiting",
+            "running",
+            "completed",
+            "partial",
+            "blocked",
+            "failed",
+            "skipped",
+            "cancelled",
+            "manual_override",
+        }
+        if status not in allowed_statuses:
+            raise ValueError(f"Nieobsługiwany status wykonania profilu: {status}")
+        profiles = (
+            self.user_profiles.get("profiles", {})
+            if isinstance(self.user_profiles, dict)
+            else {}
+        )
+        profile = profiles.get(profile_id, {}) if isinstance(profiles, dict) else {}
+        if not isinstance(profile, dict):
+            profile = {}
+        plan = self.optimizer_plan if isinstance(self.optimizer_plan, dict) else {}
+        planned_rows = sorted(
+            (
+                row
+                for row in plan.get("rows", [])
+                if isinstance(row, dict)
+                and str(row.get("profile_id") or "") == profile_id
+                and str(row.get("date") or "") == date_key
+            ),
+            key=lambda row: int(self.safe_float(row.get("hour"), 0)),
+        )
+        previous = next(
+            (
+                row
+                for row in self.profile_execution
+                if isinstance(row, dict)
+                and str(row.get("profile_id") or "") == profile_id
+                and str(row.get("date") or "") == date_key
+            ),
+            {},
+        )
+        action = str(
+            next(
+                (
+                    row.get("action")
+                    for row in planned_rows
+                    if row.get("action") in {"sell", "charge"}
+                ),
+                "charge" if profile_id == "charging" or profile.get("type") == "charging" else "sell",
+            )
+        )
+        profile_type = "charging" if action == "charge" else "sale"
+        target = max(
+            0.0,
+            self.safe_float(
+                profile.get("target_value")
+                if profile_type == "charging" and profile.get("target_type") == "energy"
+                else profile.get("target_energy_kwh"),
+                previous.get("target_kwh", 0),
+            ),
+        )
+        planned = sum(
+            max(0.0, self.safe_float(row.get("planned_energy_kwh"), 0))
+            for row in planned_rows
+        )
+        if planned <= 0:
+            planned = max(0.0, self.safe_float(previous.get("planned_kwh"), 0))
+        executed = max(
+            0.0,
+            self.safe_float(
+                previous.get("executed_kwh", previous.get("actual_energy_kwh")),
+                0,
+            ),
+        )
+        price_values = [
+            self.safe_float(
+                row.get("effective_buy_price") if profile_type == "charging" else row.get("sell_price"),
+                0,
+            )
+            for row in planned_rows
+            if (
+                row.get("effective_buy_price")
+                if profile_type == "charging"
+                else row.get("sell_price")
+            )
+            is not None
+        ]
+        planned_import = sum(
+            max(
+                0.0,
+                self.safe_float(
+                    row.get("expected_import_kwh", row.get("grid_to_battery_kwh")),
+                    0,
+                ),
+            )
+            for row in planned_rows
+        )
+        planned_export = sum(
+            max(
+                0.0,
+                self.safe_float(
+                    row.get("expected_export_kwh", row.get("battery_to_grid_kwh")),
+                    0,
+                ),
+            )
+            for row in planned_rows
+        )
+        now_text = ha_now().isoformat(timespec="seconds")
+        entry = {
+            "plan_id": plan_id or plan.get("plan_id") or previous.get("plan_id"),
+            "profile_id": profile_id,
+            "profile_type": profile_type,
+            "date": date_key,
+            "window_start": profile.get("start", previous.get("window_start")),
+            "window_end": profile.get("end", previous.get("window_end")),
+            "target_kwh": round(target, 5),
+            "planned_kwh": round(planned, 5),
+            "executed_kwh": round(executed, 5),
+            "remaining_kwh": round(max(0.0, target - executed), 5),
+            "planned_soc_start": (
+                planned_rows[0].get("soc_start_pct")
+                if planned_rows
+                else previous.get("planned_soc_start")
+            ),
+            "planned_soc_end": (
+                planned_rows[-1].get("soc_end_pct")
+                if planned_rows
+                else previous.get("planned_soc_end")
+            ),
+            "actual_soc_start": previous.get("actual_soc_start"),
+            "actual_soc_end": previous.get("actual_soc_end"),
+            "planned_price": (
+                round(sum(price_values) / len(price_values), 5)
+                if price_values
+                else previous.get("planned_price")
+            ),
+            "actual_average_price": self.safe_float(
+                previous.get("actual_average_price"),
+                0,
+            ),
+            "planned_import_kwh": round(
+                planned_import
+                if planned_rows
+                else self.safe_float(previous.get("planned_import_kwh"), 0),
+                5,
+            ),
+            "actual_import_kwh": round(
+                max(0.0, self.safe_float(previous.get("actual_import_kwh"), 0)),
+                5,
+            ),
+            "planned_export_kwh": round(
+                planned_export
+                if planned_rows
+                else self.safe_float(previous.get("planned_export_kwh"), 0),
+                5,
+            ),
+            "actual_export_kwh": round(
+                max(0.0, self.safe_float(previous.get("actual_export_kwh"), 0)),
+                5,
+            ),
+            "planned_result_pln": round(
+                sum(self.safe_float(row.get("net_result"), 0) for row in planned_rows)
+                if planned_rows
+                else self.safe_float(previous.get("planned_result_pln"), 0),
+                5,
+            ),
+            "actual_result_pln": round(
+                self.safe_float(previous.get("actual_result_pln"), 0),
+                5,
+            ),
+            "status": status,
+            "failure_reason": failure_reason,
+            "data_quality": previous.get("data_quality", {}),
+            "created_at": previous.get("created_at") or now_text,
+            "updated_at": now_text,
+            # Backward-compatible aliases consumed by existing history/UI.
+            "planned_energy_kwh": round(planned, 5),
+            "actual_energy_kwh": round(executed, 5),
+            "source": previous.get("source", "local_profile_lifecycle"),
+        }
+        self.profile_execution = [
+            entry,
+            *[
+                row
+                for row in self.profile_execution
+                if not (
+                    isinstance(row, dict)
+                    and str(row.get("profile_id") or "") == profile_id
+                    and str(row.get("date") or "") == date_key
+                )
+            ],
+        ][:17520]
+        return entry
+
+    def _sync_profile_execution_from_plan(
+        self,
+        plan: dict[str, Any],
+        current: datetime,
+    ) -> None:
+        """Seed lifecycle records from the authoritative backend plan."""
+        impacts = plan.get("profile_impacts")
+        rows = plan.get("rows")
+        if not isinstance(impacts, list) or not isinstance(rows, list):
+            return
+        current_date = current.date().isoformat()
+        for impact in impacts:
+            if not isinstance(impact, dict) or not bool(impact.get("enabled")):
+                continue
+            profile_id = str(impact.get("profile_id") or "")
+            if not profile_id:
+                continue
+            profile_rows = [
+                row
+                for row in rows
+                if isinstance(row, dict)
+                and str(row.get("profile_id") or "") == profile_id
+            ]
+            dates = sorted(
+                {
+                    str(row.get("date") or "")
+                    for row in profile_rows
+                    if row.get("date")
+                }
+            ) or [current_date]
+            impact_status = str(impact.get("status") or "")
+            for date_key in dates:
+                existing = next(
+                    (
+                        row
+                        for row in self.profile_execution
+                        if isinstance(row, dict)
+                        and str(row.get("profile_id") or "") == profile_id
+                        and str(row.get("date") or "") == date_key
+                    ),
+                    {},
+                )
+                if (
+                    existing.get("plan_id") == plan.get("plan_id")
+                    and existing.get("status")
+                    in {"completed", "cancelled", "failed", "manual_override"}
+                ):
+                    continue
+                failure_reason = None
+                if impact_status.startswith("blocked_"):
+                    status = "blocked"
+                    failure_reason = str(
+                        impact.get("block_reason")
+                        or impact_status.removeprefix("blocked_")
+                    )
+                elif impact_status == "no_qualified_hours":
+                    status = "skipped"
+                    failure_reason = str(
+                        impact.get("skip_reason") or "no_qualified_hours"
+                    )
+                elif impact_status == "completed":
+                    status = "completed"
+                elif impact_status == "partially_executed":
+                    status = "partial"
+                else:
+                    dated_rows = [
+                        row
+                        for row in profile_rows
+                        if str(row.get("date") or "") == date_key
+                    ]
+                    hours = [
+                        int(self.safe_float(row.get("hour"), 0))
+                        for row in dated_rows
+                    ]
+                    if date_key > current_date or (
+                        date_key == current_date
+                        and hours
+                        and current.hour < min(hours)
+                    ):
+                        status = "waiting"
+                    elif date_key < current_date or (
+                        date_key == current_date
+                        and hours
+                        and current.hour > max(hours)
+                    ):
+                        status = (
+                            "partial"
+                            if self.safe_float(
+                                existing.get(
+                                    "executed_kwh",
+                                    existing.get("actual_energy_kwh"),
+                                ),
+                                0,
+                            )
+                            > 0
+                            else "skipped"
+                        )
+                    else:
+                        status = "running"
+                self._set_profile_execution_status(
+                    profile_id,
+                    date_key,
+                    status,
+                    failure_reason=failure_reason,
+                    plan_id=str(plan.get("plan_id") or ""),
+                )
+
+    def _record_profile_execution(self, completed: dict[str, Any]) -> None:
+        """Record measured profile progress locally; never write a Deye setting."""
+        try:
+            moment = datetime.fromisoformat(str(completed.get("hour")))
+        except (TypeError, ValueError):
+            return
+        planned_row = next(
+            (
+                row for row in self.optimizer_plan.get("rows", [])
+                if isinstance(row, dict)
+                and str(row.get("date") or "") == moment.date().isoformat()
+                and str(row.get("hour", "")) == str(moment.hour)
+                and row.get("profile_id")
+            ),
+            None,
+        )
+        if not planned_row:
+            return
+        profile_id = str(planned_row.get("profile_id"))
+        action = str(planned_row.get("action") or "none")
+        if action == "sell":
+            actual = min(
+                max(0.0, self.safe_float(completed.get("grid_export_kwh"), 0)),
+                max(0.0, self.safe_float(completed.get("battery_discharge_kwh"), 0)),
+            )
+        elif action == "charge":
+            actual = min(
+                max(0.0, self.safe_float(completed.get("grid_import_kwh"), 0)),
+                max(0.0, self.safe_float(completed.get("battery_charge_kwh"), 0)),
+            )
+        else:
+            return
+        profile = (
+            self.user_profiles.get("profiles", {}).get(profile_id, {})
+            if isinstance(self.user_profiles, dict)
+            else {}
+        )
+        if not isinstance(profile, dict):
+            profile = {}
+        date_key = moment.date().isoformat()
+        planned_rows = [
+            row
+            for row in self.optimizer_plan.get("rows", [])
+            if isinstance(row, dict)
+            and str(row.get("profile_id") or "") == profile_id
+            and str(row.get("date") or "") == date_key
+        ]
+        previous = next(
+            (
+                row for row in self.profile_execution
+                if isinstance(row, dict)
+                and row.get("profile_id") == profile_id
+                and row.get("date") == date_key
+            ),
+            {},
+        )
+        previous_actual = max(
+            0.0,
+            self.safe_float(
+                previous.get("executed_kwh", previous.get("actual_energy_kwh")),
+                0,
+            ),
+        )
+        executed = previous_actual + actual
+        target = max(
+            0.0,
+            self.safe_float(
+                profile.get("target_value")
+                if profile.get("type") == "charging" and profile.get("target_type") == "energy"
+                else profile.get("target_energy_kwh"),
+                0,
+            ),
+        )
+        planned = sum(
+            max(0.0, self.safe_float(row.get("planned_energy_kwh"), 0))
+            for row in planned_rows
+        )
+        actual_import = max(0.0, self.safe_float(previous.get("actual_import_kwh"), 0)) + max(
+            0.0, self.safe_float(completed.get("grid_import_kwh"), 0)
+        )
+        actual_export = max(0.0, self.safe_float(previous.get("actual_export_kwh"), 0)) + max(
+            0.0, self.safe_float(completed.get("grid_export_kwh"), 0)
+        )
+        actual_price = self.safe_float(
+            completed.get("sell_price_avg") if action == "sell" else completed.get("buy_price_avg"),
+            0,
+        )
+        previous_price = self.safe_float(previous.get("actual_average_price"), 0)
+        actual_average_price = (
+            (previous_price * previous_actual + actual_price * actual) / executed
+            if executed > 1e-9
+            else 0.0
+        )
+        end_hour = int(str(profile.get("end") or "00:00").split(":", 1)[0])
+        window_finished = moment.hour == (end_hour - 1) % 24
+        quality_flags = completed.get("quality_flags")
+        manual_override = (
+            self.control_mode != "Schedule"
+            or (
+                isinstance(quality_flags, dict)
+                and bool(quality_flags.get("manual_override"))
+            )
+        )
+        previous_status = str(previous.get("status") or "")
+        if manual_override:
+            status = "manual_override"
+        elif previous_status in {"blocked", "failed", "cancelled", "manual_override"}:
+            status = previous_status
+        else:
+            status = (
+                "completed"
+                if target > 0 and executed + 1e-6 >= target
+                else "partial"
+                if window_finished and executed > 0
+                else "skipped"
+                if window_finished
+                else "running"
+            )
+        created_at = previous.get("created_at") or moment.isoformat(timespec="seconds")
+        entry = {
+            "profile_id": profile_id,
+            "profile_type": "charging" if action == "charge" else "sale",
+            "plan_id": self.optimizer_plan.get("plan_id"),
+            "date": date_key,
+            "hour": moment.hour,
+            "action": action,
+            "window_start": profile.get("start"),
+            "window_end": profile.get("end"),
+            "target_kwh": round(target, 5),
+            "planned_kwh": round(planned, 5),
+            "executed_kwh": round(executed, 5),
+            "remaining_kwh": round(max(0.0, target - executed), 5),
+            "planned_soc_start": planned_rows[0].get("soc_start_pct") if planned_rows else None,
+            "planned_soc_end": planned_rows[-1].get("soc_end_pct") if planned_rows else None,
+            "actual_soc_start": previous.get("actual_soc_start", completed.get("soc_start")),
+            "actual_soc_end": completed.get("soc_end"),
+            "planned_price": round(
+                sum(
+                    self.safe_float(
+                        row.get("sell_price") if action == "sell" else row.get("effective_buy_price"),
+                        0,
+                    )
+                    for row in planned_rows
+                ) / len(planned_rows),
+                5,
+            ) if planned_rows else None,
+            "actual_average_price": round(actual_average_price, 5),
+            "planned_import_kwh": round(sum(self.safe_float(row.get("expected_import_kwh"), 0) for row in planned_rows), 5),
+            "actual_import_kwh": round(actual_import, 5),
+            "planned_export_kwh": round(sum(self.safe_float(row.get("expected_export_kwh"), 0) for row in planned_rows), 5),
+            "actual_export_kwh": round(actual_export, 5),
+            "planned_result_pln": round(sum(self.safe_float(row.get("net_result"), 0) for row in planned_rows), 5),
+            "actual_result_pln": round(actual_export * actual_average_price - actual_import * actual_average_price, 5),
+            "status": status,
+            "failure_reason": (
+                "Ręczna zmiana trybu podczas realizacji profilu"
+                if manual_override
+                else previous.get("failure_reason")
+                if status in {"blocked", "failed", "cancelled"}
+                else None
+            ),
+            "data_quality": completed.get("source_quality", {}),
+            "created_at": created_at,
+            "updated_at": moment.isoformat(timespec="seconds"),
+            # Backward-compatible aliases consumed by existing history/UI.
+            "planned_energy_kwh": round(planned, 5),
+            "actual_energy_kwh": round(executed, 5),
+            "source": "local_measurement",
+        }
+        self.profile_execution = [
+            entry,
+            *[
+                row for row in self.profile_execution
+                if not (
+                    isinstance(row, dict)
+                    and row.get("profile_id") == profile_id
+                    and row.get("date") == entry["date"]
+                )
+            ],
+        ][:17520]
 
     async def async_update_learning_history(self) -> None:
         now = ha_now()
         hour_key = now.strftime("%Y-%m-%dT%H:00:00%z")
+        archive_changed = False
         if self.learning_tracking.get("hour") != hour_key:
             if self.learning_tracking.get("hour"):
                 completed = self._finalize_learning_hour(self.learning_tracking)
+                self._attach_plan_execution_actual(completed)
+                archive_changed = True
                 self.learning_history = [
                     completed,
                     *[row for row in self.learning_history if row.get("hour") != completed["hour"]],
                 ][:17520]
+                self._record_profile_execution(completed)
             self.learning_tracking = self._new_learning_hour(hour_key, now)
+            if self.optimizer_plan:
+                archive_changed = (
+                    self._sync_plan_execution_archive(self.optimizer_plan, now)
+                    or archive_changed
+                )
+        if archive_changed:
+            await self.async_save_ai_data()
 
         tracking = self.learning_tracking
         try:
@@ -2860,42 +4526,60 @@ class DeyeEnergyManagerRuntime:
             elapsed_seconds = 0.0
         hours = elapsed_seconds / 3600.0
 
-        pv_power = self.state_float(self.pv_power_sensor, 0)
-        load_reading = self.load_power_reading()
-        load_power = max(0.0, self.safe_float(load_reading.get("value"), 0))
+        readings = self._telemetry_readings()
+        pv_power = readings["pv"].get("value")
+        load_power = readings["load"].get("value")
         phase_values = [
-            self._measurement(self.load_l1_power_sensor).get("value"),
-            self._measurement(self.load_l2_power_sensor).get("value"),
-            self._measurement(self.load_l3_power_sensor).get("value"),
+            readings["load_l1"].get("value"),
+            readings["load_l2"].get("value"),
+            readings["load_l3"].get("value"),
         ]
-        grid_power = self.normalized_grid_power()
-        battery_power = self.safe_float(self.battery_power_reading().get("value"), 0)
-        soc = self.state_float_or_none(self.battery_soc_sensor)
-        sell_price = self.state_float(self.price_sensor, 0)
-        buy_price = self.state_float(self.buy_price_today_sensor, 0)
+        grid_power = readings["grid"].get("value")
+        battery_power = readings["battery"].get("value")
+        soc = readings["soc"].get("value")
+        sell_price = readings["sell_price"].get("value")
+        buy_price = readings["buy_price"].get("value")
 
-        tracking["pv_kwh"] = self.safe_float(tracking.get("pv_kwh"), 0) + max(0, pv_power) / 1000 * hours
-        tracking["load_kwh"] = self.safe_float(tracking.get("load_kwh"), 0) + max(0, load_power) / 1000 * hours
+        channel_state = tracking.setdefault("channels", {})
+        for name, reading in readings.items():
+            channel_state[name] = record_channel(
+                channel_state.get(name),
+                value=reading.get("value"),
+                elapsed_seconds=elapsed_seconds,
+                quality=str(reading.get("quality") or "unavailable"),
+                status=str(reading.get("status") or "unavailable"),
+                source=str(reading.get("source") or "unavailable"),
+            )
+
+        if pv_power is not None:
+            tracking["pv_kwh"] = self.safe_float(tracking.get("pv_kwh"), 0) + max(0, float(pv_power)) / 1000 * hours
+        if load_power is not None:
+            tracking["load_kwh"] = self.safe_float(tracking.get("load_kwh"), 0) + max(0, float(load_power)) / 1000 * hours
         for index, value in enumerate(phase_values, start=1):
             if value is not None:
                 key = f"load_l{index}_kwh"
-                tracking[key] = self.safe_float(tracking.get(key), 0) + max(0, self.safe_float(value, 0)) / 1000 * hours
-        tracking["grid_import_kwh"] = self.safe_float(tracking.get("grid_import_kwh"), 0) + max(0, grid_power) / 1000 * hours
-        tracking["grid_export_kwh"] = self.safe_float(tracking.get("grid_export_kwh"), 0) + max(0, -grid_power) / 1000 * hours
-        tracking["battery_charge_kwh"] = self.safe_float(tracking.get("battery_charge_kwh"), 0) + max(0, -battery_power) / 1000 * hours
-        tracking["battery_discharge_kwh"] = self.safe_float(tracking.get("battery_discharge_kwh"), 0) + max(0, battery_power) / 1000 * hours
+                tracking[key] = self.safe_float(tracking.get(key), 0) + max(0, float(value)) / 1000 * hours
+        if grid_power is not None:
+            tracking["grid_import_kwh"] = self.safe_float(tracking.get("grid_import_kwh"), 0) + max(0, float(grid_power)) / 1000 * hours
+            tracking["grid_export_kwh"] = self.safe_float(tracking.get("grid_export_kwh"), 0) + max(0, -float(grid_power)) / 1000 * hours
+        if battery_power is not None:
+            tracking["battery_charge_kwh"] = self.safe_float(tracking.get("battery_charge_kwh"), 0) + max(0, -float(battery_power)) / 1000 * hours
+            tracking["battery_discharge_kwh"] = self.safe_float(tracking.get("battery_discharge_kwh"), 0) + max(0, float(battery_power)) / 1000 * hours
         tracking["samples"] = int(tracking.get("samples", 0)) + 1
         if soc is not None:
             tracking["soc_sum"] = self.safe_float(tracking.get("soc_sum"), 0) + soc
             tracking["soc_samples"] = int(tracking.get("soc_samples", 0)) + 1
             tracking["soc_last"] = soc
-        tracking["sell_price_sum"] = self.safe_float(tracking.get("sell_price_sum"), 0) + sell_price
-        tracking["buy_price_sum"] = self.safe_float(tracking.get("buy_price_sum"), 0) + buy_price
+        if sell_price is not None:
+            tracking["sell_price_sum"] = self.safe_float(tracking.get("sell_price_sum"), 0) + float(sell_price)
+        if buy_price is not None:
+            tracking["buy_price_sum"] = self.safe_float(tracking.get("buy_price_sum"), 0) + float(buy_price)
         if soc is not None:
             tracking["soc_min"] = soc if tracking.get("soc_min") is None else min(self.safe_float(tracking.get("soc_min"), soc), soc)
             tracking["soc_max"] = soc if tracking.get("soc_max") is None else max(self.safe_float(tracking.get("soc_max"), soc), soc)
         tracking["daily_pv_kwh"] = max(0, self.state_float(self.daily_pv_production_sensor, 0))
         tracking["source_quality"] = self.source_quality_context()
+        tracking["live_state"] = self.live_state_context(readings, now)
         latest_flags = pv_quality_flags(
             battery_soc=soc,
             work_mode=self.state_text(self.work_mode_select),
@@ -2918,6 +4602,36 @@ class DeyeEnergyManagerRuntime:
     def learning_summary(self) -> dict[str, Any]:
         rows = self.learning_history
         dates = {str(row.get("hour", ""))[:10] for row in rows if row.get("hour")}
+        channel_names = (
+            "pv", "load", "load_l1", "load_l2", "load_l3",
+            "grid", "battery", "soc", "sell_price", "buy_price",
+        )
+        channel_diagnostics: dict[str, dict[str, Any]] = {}
+        for name in channel_names:
+            summaries = [
+                row.get("channel_quality", {}).get(name)
+                for row in rows
+                if isinstance(row.get("channel_quality"), dict)
+                and isinstance(row.get("channel_quality", {}).get(name), dict)
+            ]
+            channel_diagnostics[name] = {
+                "hours": len(summaries),
+                "usable_hours": sum(1 for item in summaries if item.get("usable_for_learning")),
+                "full_hours": sum(1 for item in summaries if item.get("level") == "full"),
+                "partial_hours": sum(1 for item in summaries if item.get("level") == "partial"),
+                "very_low_hours": sum(1 for item in summaries if item.get("level") == "very_low"),
+                "missing_hours": sum(1 for item in summaries if item.get("level") == "missing"),
+                "average_coverage_percent": round(
+                    sum(self.safe_float(item.get("coverage_percent"), 0) for item in summaries)
+                    / max(1, len(summaries)),
+                    1,
+                ) if summaries else None,
+                "average_quality_score": round(
+                    sum(self.safe_float(item.get("quality_score"), 0) for item in summaries)
+                    / max(1, len(summaries)),
+                    1,
+                ) if summaries else None,
+            }
         complete_by_day: dict[str, set[int]] = {}
         for row in rows:
             if not row.get("complete"):
@@ -2928,23 +4642,31 @@ class DeyeEnergyManagerRuntime:
                 complete_by_day.setdefault(day, set()).add(int(hour_text))
         completed_days = sum(1 for hours in complete_by_day.values() if len(hours) == 24)
         stage = learning_stage(completed_days)
+
+        def valid_average(matches: list[dict[str, Any]], key: str, digits: int) -> float | None:
+            values = [
+                value
+                for row in matches
+                if (value := finite_float(row.get(key))) is not None
+            ]
+            return round(sum(values) / len(values), digits) if values else None
+
         per_hour: list[dict[str, Any]] = []
         for hour in range(24):
             matches = [row for row in rows if str(row.get("hour", ""))[11:13] == f"{hour:02d}"]
             if not matches:
                 continue
-            count = len(matches)
             per_hour.append({
                 "hour": f"{hour:02d}:00",
-                "samples": count,
-                "pv_kwh": round(sum(self.safe_float(row.get("pv_kwh"), 0) for row in matches) / count, 3),
-                "load_kwh": round(sum(self.safe_float(row.get("load_kwh"), 0) for row in matches) / count, 3),
-                "grid_export_kwh": round(sum(self.safe_float(row.get("grid_export_kwh"), 0) for row in matches) / count, 3),
-                "battery_charge_kwh": round(sum(self.safe_float(row.get("battery_charge_kwh"), 0) for row in matches) / count, 3),
-                "battery_discharge_kwh": round(sum(self.safe_float(row.get("battery_discharge_kwh"), 0) for row in matches) / count, 3),
-                "soc_avg": round(sum(self.safe_float(row.get("soc_avg"), 0) for row in matches) / count, 1),
-                "sell_price_avg": round(sum(self.safe_float(row.get("sell_price_avg"), 0) for row in matches) / count, 3),
-                "buy_price_avg": round(sum(self.safe_float(row.get("buy_price_avg"), 0) for row in matches) / count, 3),
+                "samples": len(matches),
+                "pv_kwh": valid_average(matches, "pv_kwh", 3),
+                "load_kwh": valid_average(matches, "load_kwh", 3),
+                "grid_export_kwh": valid_average(matches, "grid_export_kwh", 3),
+                "battery_charge_kwh": valid_average(matches, "battery_charge_kwh", 3),
+                "battery_discharge_kwh": valid_average(matches, "battery_discharge_kwh", 3),
+                "soc_avg": valid_average(matches, "soc_avg", 1),
+                "sell_price_avg": valid_average(matches, "sell_price_avg", 3),
+                "buy_price_avg": valid_average(matches, "buy_price_avg", 3),
             })
         completed_rows = [
             row for row in self.solcast_history
@@ -2989,7 +4711,7 @@ class DeyeEnergyManagerRuntime:
         return {
             "schema_version": HISTORY_SCHEMA_VERSION,
             "retention_days": 730,
-            "retention": {"raw_5_min_days": 90, "hourly_months": 24, "daily_years": 5, "monthly_limit": None},
+            "retention": {"raw_1_min_days": 90, "hourly_months": 24, "daily_years": 5, "monthly_limit": None},
             "raw_samples": len(self.energy_samples),
             "daily_archive_rows": len(self.daily_archive),
             "monthly_archive_rows": len(self.monthly_archive),
@@ -2997,6 +4719,24 @@ class DeyeEnergyManagerRuntime:
             "recorded_days": completed_days,
             "completed_full_days": completed_days,
             "recorded_hours": len(rows),
+            "usable_hours": sum(
+                1
+                for row in rows
+                if any(
+                    item.get("usable_for_learning")
+                    for item in (row.get("channel_quality") or {}).values()
+                    if isinstance(item, dict)
+                )
+            ),
+            "history_first_hour": min(
+                (str(row.get("hour")) for row in rows if row.get("hour")),
+                default=None,
+            ),
+            "history_last_hour": max(
+                (str(row.get("hour")) for row in rows if row.get("hour")),
+                default=None,
+            ),
+            "channel_diagnostics": channel_diagnostics,
             "learning_stage": stage,
             "readiness": stage["readiness"],
             "load_profile_7x24": self.load_profile_7x24,
@@ -3020,11 +4760,11 @@ class DeyeEnergyManagerRuntime:
             "solcast_last_accuracy": latest.get("accuracy_percent"),
             "solcast_last_date": latest.get("date"),
             "current_forecast_progress": round(current_progress, 1) if current_progress is not None else None,
-            "typical_daily_pv_kwh": round(sum(row["pv_kwh"] for row in per_hour), 2),
-            "typical_daily_load_kwh": round(sum(row["load_kwh"] for row in per_hour), 2),
-            "typical_daily_grid_export_kwh": round(sum(row["grid_export_kwh"] for row in per_hour), 2),
-            "typical_daily_battery_charge_kwh": round(sum(row["battery_charge_kwh"] for row in per_hour), 2),
-            "typical_daily_battery_discharge_kwh": round(sum(row["battery_discharge_kwh"] for row in per_hour), 2),
+            "typical_daily_pv_kwh": round(sum(row["pv_kwh"] or 0 for row in per_hour), 2),
+            "typical_daily_load_kwh": round(sum(row["load_kwh"] or 0 for row in per_hour), 2),
+            "typical_daily_grid_export_kwh": round(sum(row["grid_export_kwh"] or 0 for row in per_hour), 2),
+            "typical_daily_battery_charge_kwh": round(sum(row["battery_charge_kwh"] or 0 for row in per_hour), 2),
+            "typical_daily_battery_discharge_kwh": round(sum(row["battery_discharge_kwh"] or 0 for row in per_hour), 2),
             "sources": {
                 "pv_power": self.pv_power_sensor,
                 "load_power": self.load_power_sensor,
@@ -3051,9 +4791,15 @@ class DeyeEnergyManagerRuntime:
                 continue
             item = grouped.setdefault(day, {"date": day})
             for key in ("pv_kwh", "load_kwh", "grid_import_kwh", "grid_export_kwh", "battery_charge_kwh", "battery_discharge_kwh"):
-                item[key] = self.safe_float(item.get(key), 0) + self.safe_float(row.get(key), 0)
-            item["soc_min"] = min(self.safe_float(item.get("soc_min"), 100), self.safe_float(row.get("soc_min"), 100))
-            item["soc_max"] = max(self.safe_float(item.get("soc_max"), 0), self.safe_float(row.get("soc_max"), 0))
+                value = finite_float(row.get(key))
+                if value is not None:
+                    item[key] = self.safe_float(item.get(key), 0) + value
+            soc_min = finite_float(row.get("soc_min"))
+            soc_max = finite_float(row.get("soc_max"))
+            if soc_min is not None:
+                item["soc_min"] = min(self.safe_float(item.get("soc_min"), soc_min), soc_min)
+            if soc_max is not None:
+                item["soc_max"] = max(self.safe_float(item.get("soc_max"), soc_max), soc_max)
         for day, values in self.sales_stats.get("daily", {}).items():
             item = grouped.setdefault(day, {"date": day})
             item["sold_kwh"] = self.safe_float(values.get("kwh"), 0)
@@ -4786,7 +6532,25 @@ class DeyeEnergyManagerRuntime:
 
     def set_control_mode(self, mode: str) -> None:
         if mode in CONTROL_MODES:
+            previous_mode = self.control_mode
             self.control_mode = mode
+            if previous_mode == "Schedule" and mode != "Schedule":
+                current = ha_now()
+                active_profile_ids = {
+                    str(row.get("profile_id"))
+                    for row in self.optimizer_plan.get("rows", [])
+                    if isinstance(row, dict)
+                    and row.get("profile_id")
+                    and str(row.get("date") or "") == current.date().isoformat()
+                    and int(self.safe_float(row.get("hour"), -1)) == current.hour
+                }
+                for profile_id in active_profile_ids:
+                    self._set_profile_execution_status(
+                        profile_id,
+                        current.date().isoformat(),
+                        "manual_override",
+                        failure_reason=f"Ręczna zmiana trybu: {mode}",
+                    )
             self.notify_update()
 
     def set_work_mode_for_slot(self, slot_key: str, mode: str) -> None:

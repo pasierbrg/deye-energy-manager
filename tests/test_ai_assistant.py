@@ -132,6 +132,33 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('"entity_id"', raw)
         self.assertFalse(payload["privacy"]["entity_names_included"])
 
+    def test_private_payload_contains_only_safe_polish_review_context(self):
+        payload = assistant.build_private_payload(
+            plan(),
+            {"current_soc_pct": 50},
+            config={"role": "review"},
+            user_profiles={
+                "profiles": {
+                    "morning_sale": {
+                        "enabled": True,
+                        "start": "05:00",
+                        "end": "10:00",
+                        "target_energy_kwh": 6,
+                        "preferred_power_w": 3000,
+                        "min_price": 0.4,
+                        "note": "prywatna notatka",
+                    },
+                },
+            },
+            tariff={"provider_name": "PGE Dystrybucja", "plan_name": "G12w"},
+        )
+        self.assertEqual("pl-PL", payload["locale"])
+        self.assertEqual("review", payload["requested_role"])
+        self.assertEqual(3000, payload["user_profiles"]["morning_sale"]["preferred_power_w"])
+        self.assertNotIn("note", payload["user_profiles"]["morning_sale"])
+        self.assertEqual("PGE Dystrybucja", payload["tariff"]["provider_name"])
+        self.assertTrue(payload["privacy"]["protection_enforced"])
+
     def test_response_schema_accepts_valid_and_rejects_unknown_fields(self):
         self.assertEqual("safe", assistant.validate_response(valid_analysis())["plan_assessment"])
         invalid = valid_analysis()
@@ -192,6 +219,13 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("subprocess", raw)
         self.assertNotIn("auth.json", raw)
         self.assertNotIn("write inverter", raw)
+        self.assertIn("wyłącznie po polsku", body["messages"][0]["content"])
+
+    def test_explain_role_forbids_external_alternative(self):
+        config = self.config()
+        config["role"] = "explain"
+        body = assistant.request_body(config, assistant.build_private_payload(plan()))
+        self.assertIn("alternative.enabled na false", body["messages"][0]["content"])
 
 
 if __name__ == "__main__":

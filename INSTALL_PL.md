@@ -1,21 +1,25 @@
-# Deye Energy Manager 0.7.7 — instalacja
+# Deye Energy Manager 0.7.9 — instalacja
 
 Wymagany Home Assistant: `2026.6` lub nowszy.
 
-## Aktualizacja z 0.7.6 przez HACS
+## Lokalny test wersji 0.7.9
 
-1. W HACS otwórz Deye Energy Manager i wybierz aktualizację do `0.7.7`.
+1. Skopiuj lokalnie pliki integracji 0.7.9 oraz obie identyczne kopie karty.
 2. Uruchom ponownie Home Assistant.
 3. Sprawdź w **Ustawienia i diagnostyka → System**, czy integracja i karta
-   pokazują `0.7.7`.
-4. Ustaw rewizję zasobu karty na `v=24`, przeładuj zasoby Lovelace i wykonaj
+   pokazują `0.7.9`.
+4. Ustaw rewizję zasobu karty na `v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj
    twarde odświeżenie przeglądarki.
 5. W **Historia i dane** sprawdź status migracji, zachowaną liczbę dni oraz
-   `history_schema_version = 2`. Migracja jest automatyczna i nie kasuje danych.
+   `history_schema_version = 4`. Migracja jest automatyczna i nie kasuje danych.
 6. Przejrzyj mapowanie encji. Nowe PV3 Power i Battery SOH są opcjonalne.
 7. Pozostaw nowe profile AI wyłączone, dopóki nie skonfigurujesz ich świadomie.
+8. W **Sugestie AI** sprawdź, czy minimalna cena odpowiada ustawieniom profilu,
+   a „Moc do slotu” jest zgodna z pokazywaną energią i długością godziny.
+9. W **Asystent AI przez API** zachowaj wybrane ustawienia prywatności i uruchom
+   ponowną analizę, aby otrzymać nową odpowiedź po polsku.
 
-## Pierwsza konfiguracja planowania 0.7.7
+## Pierwsza konfiguracja planowania 0.7.9
 
 W **Sugestie AI → Ustawienia** skonfiguruj kolejno:
 
@@ -90,13 +94,13 @@ Automatyczne mapowanie niczego nie zapisuje bez końcowego potwierdzenia. Kreato
 Dodaj zasób JavaScript:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=24
+/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
 Przy instalacji ręcznej użyj:
 
 ```text
-/local/deye-energy-manager-card.js?v=24
+/local/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
 Następnie dodaj kartę ręczną:
@@ -199,16 +203,16 @@ layout:
 
 #### Zmiana wersji zasobu i odświeżenie cache
 
-Po każdej aktualizacji karty ustaw w zasobie JavaScript parametr `v=24`:
+Po tej lokalnej aktualizacji karty ustaw w zasobie JavaScript parametr `v=0.7.9.11`:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=24
+/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
 jeśli korzystasz z karty dostarczanej przez integrację, albo:
 
 ```text
-/local/deye-energy-manager-card.js?v=24
+/local/deye-energy-manager-card.js?v=0.7.9.11
 ```
 
 jeśli skopiowałeś plik ręcznie do `/config/www/`.
@@ -230,7 +234,7 @@ Błędne wartości w konfiguracji YAML są automatycznie zastępowane bezpieczny
 
 1. Wykonaj kopię konfiguracji w panelu **System i diagnostyka**.
 2. Zaktualizuj integrację i uruchom ponownie Home Assistant.
-3. Zmień parametr cache zasobu na `v=24`.
+3. Zmień parametr cache zasobu na `v=0.7.9.11`.
 4. Odśwież przeglądarkę przez `Ctrl + F5`.
 5. Sprawdź mapowanie encji w opcjach integracji.
 6. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**, wybierz operatora i taryfę, a następnie użyj przycisku **Zapisz ustawienia taryfy**.
@@ -257,12 +261,12 @@ Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_ho
 8. Po zakończeniu pełnego dnia sprawdź trafność historyczną; w ciągu dnia używaj pola `Realizacja dzisiaj`.
 9. Otwórz **Sugestie AI** i sprawdź zakładkę **Jakość danych**. Brak cen jutra lub prognozy pogody powinien być jawnie opisany jako brak danych.
 10. W **Proponowanych zmianach** sprawdź osobno **Dziś** i **Jutro**. Plan jutra jest tylko zapisywany; nie zmienia od razu powtarzalnego Deye Time Of Use.
-11. Sprawdź wykresy **Plan na dziś**, **Plan na jutro** i **Plan energii 48h**. Każda godzina powinna mieć ikonę pogody; lewa oś opisuje energię w kWh, prawa SOC w procentach, a dolne pasy sprzedaż, ładowanie i tanią dystrybucję. Po najechaniu lub dotknięciu godziny powinny być widoczne: produkcja rzeczywista, prognoza Solcast, prognoza skorygowana, przedział prognozy, zużycie, SOC, działanie i pogoda. Brak pomiaru powinien być opisany jako brak danych.
+11. Sprawdź **Plan i wykonanie → Dziś/Jutro/48 h/Historia**. Dla zakończonych godzin tabela powinna porównywać plan z rzeczywistym PV, zużyciem domu, SOC, importem, eksportem i wynikiem. Widok 48 h powinien pokazywać pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brak pomiaru powinien być opisany jako brak danych.
 12. W sekcji **Pogoda** przełącz widok **Dzienna/Godzinowa** i potwierdź, że jako źródło widoczna jest wybrana encja `weather.*`.
 
 Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
 
-Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=24`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=24`.
+Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11`. Nie używaj obu adresów równocześnie.
 
 Plan na jutro wymaga ręcznego zaznaczenia godzin i potwierdzenia przyciskiem **Zaplanuj wybrane na jutro**. Plan jest zapisany z datą i pozostaje oczekujący po restarcie Home Assistant. W dniu wykonania integracja sprawdza encje sterujące oraz tylko SOC i ceny wymagane przez zatwierdzony slot `Selling First`, po czym stosuje dokładnie zaakceptowane pozycje. Nie tworzy planu zastępczego. W razie błędu plan jest oznaczony jako nieudany, a falownik otrzymuje pełne **Ustawienia domyślne** 1:1.
 

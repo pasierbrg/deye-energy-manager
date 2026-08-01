@@ -13,7 +13,7 @@ from dataclasses import dataclass
 import math
 from typing import Any
 
-HISTORY_SCHEMA_VERSION = 2
+HISTORY_SCHEMA_VERSION = 4
 PROFILE_SCHEMA_VERSION = 2
 
 UNKNOWN_STATES = {"", "unknown", "unavailable", "none", "nan", "inf", "-inf"}
@@ -125,6 +125,21 @@ def migrate_ai_payload(raw: Any) -> tuple[dict[str, Any], bool]:
         if normalized != profiles:
             changed = True
         data["user_profiles"] = normalized
+    archive = data.get("plan_execution_archive")
+    if not isinstance(archive, list):
+        data["plan_execution_archive"] = []
+        changed = True
+    else:
+        normalized_archive = [
+            dict(row)
+            for row in archive
+            if isinstance(row, dict)
+            and isinstance(row.get("date"), str)
+            and finite_float(row.get("hour")) is not None
+        ][:2160]
+        if normalized_archive != archive:
+            changed = True
+        data["plan_execution_archive"] = normalized_archive
     return data, changed
 
 
@@ -166,7 +181,60 @@ def migrate_learning_payload(raw: Any) -> tuple[dict[str, Any], bool]:
     data = deepcopy(raw) if isinstance(raw, dict) else {}
     changed = int(finite_float(data.get("schema_version")) or 1) < HISTORY_SCHEMA_VERSION
     data["schema_version"] = HISTORY_SCHEMA_VERSION
-    data.setdefault("history", [])
+    source_history = data.get("history") if isinstance(data.get("history"), list) else []
+    history: list[dict[str, Any]] = []
+    field_map = {
+        "pv": ("pv_kwh",),
+        "load": ("load_kwh",),
+        "load_l1": ("load_l1_kwh",),
+        "load_l2": ("load_l2_kwh",),
+        "load_l3": ("load_l3_kwh",),
+        "grid": ("grid_import_kwh", "grid_export_kwh"),
+        "battery": ("battery_charge_kwh", "battery_discharge_kwh"),
+        "soc": ("soc_start", "soc_end", "soc_avg"),
+        "sell_price": ("sell_price_avg",),
+        "buy_price": ("buy_price_avg",),
+    }
+    for source in source_history:
+        row = dict(source) if isinstance(source, dict) else {}
+        row["schema_version"] = HISTORY_SCHEMA_VERSION
+        if not isinstance(row.get("channel_quality"), dict):
+            samples = max(0, int(finite_float(row.get("samples")) or 0))
+            coverage = finite_float(row.get("completeness_percent"))
+            if coverage is None:
+                coverage = min(100.0, samples / 60.0 * 100.0)
+            global_quality = (
+                finite_float((row.get("source_quality") or {}).get("score"))
+                if isinstance(row.get("source_quality"), dict)
+                else None
+            )
+            quality = 70.0 if global_quality is None else global_quality
+            channels: dict[str, dict[str, Any]] = {}
+            for name, fields in field_map.items():
+                available = any(finite_float(row.get(field)) is not None for field in fields)
+                effective_coverage = coverage if available else 0.0
+                level = (
+                    "full" if effective_coverage >= 90
+                    else "partial" if effective_coverage >= 60
+                    else "very_low" if effective_coverage > 0
+                    else "missing"
+                )
+                channels[name] = {
+                    "samples": samples,
+                    "valid_samples": samples if available else 0,
+                    "missing_samples": 0 if available else samples,
+                    "covered_seconds": round(effective_coverage / 100.0 * 3600.0, 1),
+                    "coverage_percent": round(effective_coverage, 1),
+                    "quality_score": round(quality, 1) if available else 0.0,
+                    "level": level,
+                    "usable_for_learning": available and quality >= 40,
+                    "last_status": "legacy_migrated" if available else "unavailable",
+                    "last_source": "legacy_hourly_history",
+                }
+            row["channel_quality"] = channels
+            changed = True
+        history.append(row)
+    data["history"] = history
     data.setdefault("tracking", {})
     data.setdefault("load_profile_7x24", {})
     data.setdefault("pv_profile", {})
@@ -230,7 +298,7 @@ def default_user_profiles() -> dict[str, Any]:
         "max_effective_price": 0.0,
         "max_grid_energy_kwh": None,
         "preferred_power_w": None,
-        "purpose": "general",
+        "purpose": "mixed",
         "charge_missing_only": True,
         "use_corrected_pv": True,
         "preserve_pv_room": True,

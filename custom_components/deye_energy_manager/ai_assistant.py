@@ -159,8 +159,38 @@ def _clean_number(value: Any, digits: int = 5) -> float | None:
     return round(number, digits) if number is not None else None
 
 
-def build_private_payload(local_plan: dict[str, Any], battery: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Build the documented minimum aggregate payload without entity/location data."""
+def _private_profiles(user_profiles: dict[str, Any] | None) -> dict[str, Any]:
+    """Return only profile fields needed to review the local plan."""
+    root = user_profiles if isinstance(user_profiles, dict) else {}
+    profiles = root.get("profiles") if isinstance(root.get("profiles"), dict) else {}
+    allowed = {
+        "name", "enabled", "type", "start", "end", "active_days", "priority",
+        "goal_character", "allow_partial", "minimum_confidence",
+        "target_energy_kwh", "target_basis", "min_price", "preferred_power_w",
+        "distribution_method", "min_soc_after", "target_type", "target_value",
+        "source", "max_effective_price", "max_grid_energy_kwh",
+        "preserve_pv_room", "minimum_free_room_kwh",
+    }
+    return {
+        str(profile_id): {
+            key: deepcopy(value)
+            for key, value in profile.items()
+            if key in allowed
+        }
+        for profile_id, profile in profiles.items()
+        if isinstance(profile, dict)
+    }
+
+
+def build_private_payload(
+    local_plan: dict[str, Any],
+    battery: dict[str, Any] | None = None,
+    *,
+    config: dict[str, Any] | None = None,
+    user_profiles: dict[str, Any] | None = None,
+    tariff: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build a Polish, privacy-safe advisory payload without entity/location data."""
     rows = []
     for row in (local_plan.get("rows") if isinstance(local_plan.get("rows"), list) else [])[:48]:
         if not isinstance(row, dict):
@@ -196,9 +226,24 @@ def build_private_payload(local_plan: dict[str, Any], battery: dict[str, Any] | 
             "comparison": value.get("comparison"),
             "recommended_write": bool(value.get("recommended_write")),
         }
+    input_summary = (
+        local_plan.get("input_data_summary")
+        if isinstance(local_plan.get("input_data_summary"), dict)
+        else {}
+    )
+    channels = (
+        input_summary.get("channel_diagnostics")
+        if isinstance(input_summary.get("channel_diagnostics"), dict)
+        else {}
+    )
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "role": "advisory_only",
+        "requested_role": str((config or {}).get("role") or "review"),
+        "locale": "pl-PL",
+        "timezone": "Europe/Warsaw",
+        "currency": "PLN",
+        "units": {"energy": "kWh", "power": "W", "price": "zł/kWh", "soc": "%"},
         "current_soc_pct": _clean_number((battery or {}).get("current_soc_pct")),
         "battery": {
             "capacity_kwh": _clean_number((battery or {}).get("capacity_kwh")),
@@ -217,11 +262,40 @@ def build_private_payload(local_plan: dict[str, Any], battery: dict[str, Any] | 
             "variants": variants,
             "hours": rows,
         },
+        "user_profiles": _private_profiles(user_profiles),
+        "tariff": {
+            key: deepcopy((tariff or {}).get(key))
+            for key in (
+                "provider", "provider_name", "plan", "plan_name", "mode",
+                "price_includes_distribution", "configured",
+            )
+        },
+        # Only non-identifying aggregate quality counters are shared. Live
+        # telemetry, entity ids and raw history remain local to Home Assistant.
+        "data_quality_summary": {
+            "history_schema_version": input_summary.get("history_schema_version"),
+            "historical_hours_supplied": int(
+                _finite(input_summary.get("historical_hours_supplied")) or 0
+            ),
+            "channels": {
+                str(name): {
+                    key: deepcopy(details.get(key))
+                    for key in (
+                        "usable_hours", "full_hours", "partial_hours",
+                        "very_low_hours", "missing_hours",
+                        "average_coverage_percent", "average_quality_score",
+                    )
+                }
+                for name, details in channels.items()
+                if isinstance(details, dict)
+            },
+        },
         "privacy": {
             "entity_names_included": False,
             "device_names_included": False,
             "exact_location_included": False,
             "raw_history_included": False,
+            "protection_enforced": True,
         },
     }
 
@@ -306,8 +380,30 @@ def _extract_content(response: dict[str, Any]) -> Any:
 
 
 def request_body(config: dict[str, Any], payload: dict[str, Any], *, connection_test: bool = False) -> dict[str, Any]:
+    role = str(config.get("role") or "review")
+    role_instruction = {
+        "explain": (
+            "Wyjaśnij plan lokalny. Nie proponuj alternatywnych godzin; ustaw "
+            "alternative.enabled na false i alternative.hours na pustą listę."
+        ),
+        "review": (
+            "Sprawdź plan lokalny i tylko w razie rzeczywistej korzyści możesz "
+            "zaproponować bezpieczną alternatywę."
+        ),
+        "experimental": (
+            "Wykonaj pogłębioną analizę wariantów, ale traktuj ją wyłącznie "
+            "jako opinię i zachowaj wszystkie lokalne ograniczenia bezpieczeństwa."
+        ),
+    }.get(role, "Sprawdź plan lokalny jako niezależny doradca.")
     prompt_data = (
-        {"connection_test": True, "instruction": "Return a valid schema response without analysing an installation."}
+        {
+            "connection_test": True,
+            "locale": "pl-PL",
+            "instruction": (
+                "Zwróć testową odpowiedź zgodną ze schematem bez analizowania "
+                "instalacji. Wszystkie pola tekstowe zapisz po polsku."
+            ),
+        }
         if connection_test
         else payload
     )
@@ -318,8 +414,13 @@ def request_body(config: dict[str, Any], payload: dict[str, Any], *, connection_
             {
                 "role": "system",
                 "content": (
-                    "You are an advisory reviewer. The local deterministic optimizer is authoritative. "
-                    "Never claim to control an inverter. Return only JSON matching the supplied schema."
+                    "Jesteś polskojęzycznym doradcą analizującym plan energii. "
+                    "Lokalny deterministyczny Optimizer Core jest nadrzędny, a Twoja "
+                    "odpowiedź nigdy nie steruje falownikiem ani harmonogramem. "
+                    f"{role_instruction} "
+                    "Wartości summary, reasons i risks muszą być napisane wyłącznie "
+                    "po polsku. Nazwy technicznych kluczy i wartości enum pozostaw "
+                    "zgodne ze schematem. Zwróć wyłącznie JSON zgodny ze schematem."
                 ),
             },
             {"role": "user", "content": json.dumps(prompt_data, ensure_ascii=False, separators=(",", ":"))},
@@ -358,7 +459,17 @@ async def request_analysis(
                         await asyncio.sleep(min(2.0, max(0.0, retry_after)))
                         continue
                     if response.status < 200 or response.status >= 300:
-                        raise ValueError(f"HTTP {response.status}: {text[:300]}")
+                        message = {
+                            400: "Dostawca odrzucił format żądania",
+                            401: "Błąd autoryzacji — sprawdź klucz API",
+                            403: "Dostawca odmówił dostępu",
+                            404: "Nie znaleziono endpointu lub modelu",
+                            429: "Przekroczono limit zapytań dostawcy",
+                            500: "Wewnętrzny błąd dostawcy",
+                            502: "Brama dostawcy jest chwilowo niedostępna",
+                            503: "Usługa dostawcy jest chwilowo niedostępna",
+                        }.get(response.status, "Dostawca zwrócił błąd")
+                        raise ValueError(f"{message} (HTTP {response.status})")
                     try:
                         envelope = json.loads(text)
                     except json.JSONDecodeError as err:
@@ -380,4 +491,6 @@ async def request_analysis(
             break
     if isinstance(last_error, TimeoutError):
         raise ValueError("Przekroczono limit czasu API") from last_error
+    if isinstance(last_error, OSError):
+        raise ValueError("Błąd połączenia z dostawcą AI") from last_error
     raise ValueError(str(last_error or "Nieznany błąd API"))

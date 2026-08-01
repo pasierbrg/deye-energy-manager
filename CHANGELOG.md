@@ -1,5 +1,127 @@
 # Changelog
 
+## [0.7.9] - 2026-08-01
+
+### Local resource revision v=0.7.9.11
+
+- Ujednolicono rewizję wyświetlaną w diagnostyce karty z nagłówkiem zasobu,
+  dokumentacją instalacji i testami wersjonowania.
+- Rewizja `v=0.7.9.11` nie zmienia wersji integracji ani karty `0.7.9` oraz nie
+  zmienia backendu, Optimizer Core ani sterowania falownikiem.
+
+### Local resource revision v=0.7.9.10
+
+- Harmonogram pracy odświeża tryb i zależne parametry po potwierdzonej zmianie
+  encji, bez wymuszania pełnego renderowania przy aktualizacjach samej telemetrii.
+- Wartość trybu wybrana dla pojedynczego slotu jest pokazywana optymistycznie,
+  a następnie zastępowana stanem potwierdzonym przez Home Assistant.
+- Przycisk „Zastosuj zmiany” w bocznym panelu edycji zbiorczej ponownie wywołuje
+  zapis wyłącznie zaznaczonych godzin i pól. Trwający zapis blokuje ponowne
+  kliknięcie, a błąd zachowuje formularz i zaznaczenie.
+- Nie zmieniono backendu, Optimizer Core, mapowania Deye TOU ani logiki
+  sterowania falownikiem.
+
+### Local resource revision v=0.7.9.4
+
+- Telemetria PV, domu, sieci, baterii, SOC i cen jest próbkowana co minutę
+  oraz oceniana niezależnie, bez zamiany brakujących danych na zera.
+- Zakończona godzina zachowuje energię kanałów, SOC start/koniec/min/max/średni,
+  tryb i moc, migawkę Solcast i pogody, kompletność każdego kanału oraz kontrolę
+  bilansu energii. Godziny częściowe pozostają w historii i mają mniejszą wagę.
+- Optimizer Core otrzymuje historię godzinową, bieżący stan i część otwartej
+  godziny. Historyczny SOC jest oddzielony od prognozy, a bieżąca godzina jest
+  zakotwiczona na zmierzonym SOC i aktualnych mocach.
+- Panel jakości pokazuje użyteczne godziny, zakres historii i osobne pokrycie
+  kanałów. Rewizja zasobu `v=0.7.9.4` nie zmienia wersji integracji ani karty
+  `0.7.9`.
+
+### Added
+
+- Pełne egzekwowanie profili: `allow_partial`, `min_net_result`,
+  `profitable_only`, `purpose`, `deadline`, `charge_missing_only`,
+  `use_corrected_pv`, `allow_earlier_grid_charge` i dynamiczne miejsce na PV.
+- Rozliczanie `profile_execution` z celem, planem, wykonaniem, SOC, ceną,
+  importem, eksportem, wynikiem, jakością danych i stanem realizacji.
+- Zakładka **Plan i wykonanie** z widokami Dziś, Jutro, 48 h i Historia,
+  porównaniem plan/real oraz stanami propozycji, akceptacji, wdrożenia i wykonania.
+- Wersjonowane, 90-dniowe archiwum godzinowe zamraża plan obowiązujący dla
+  danej godziny i dopina do niego rzeczywiste pomiary bez przeliczania historii.
+- Usługa `get_plan_execution` zwraca wyłącznie do odczytu jeden wybrany dzień,
+  dzięki czemu pełna historia nie obciąża atrybutów encji Home Assistant.
+- Ponowna walidacja każdego zaakceptowanego slotu planu na jutro bez
+  automatycznej zmiany innych slotów.
+- Testy cen zerowych i ujemnych, OSD, chronologii ładowania, celów końcowego
+  SOC, profili częściowych, backendowego źródła planu i wersjonowania.
+
+### Changed
+
+- Optimizer Core analizuje późniejszą sprzedaż, uniknięty import domu i jawną
+  rezerwę; nie stosuje ukrytych limitów 1/3/4 godzin.
+- Warianty 55% / 45% / 30% używają końcowego SOC jako miękkiego celu mającego
+  rzeczywisty wpływ na symulację.
+- Ceny `0,00` i ujemne pozostają poprawnymi danymi, a koszt zakupu uwzględnia
+  dystrybucję OSD.
+- Karta nie tworzy niezależnego planu JavaScript przy braku backendu.
+- Rankingi sprzedaży i zakupu są sortowane według rzeczywistej ceny, a szczegóły
+  decyzji pokazują cel ładowania, źródło PV, późniejszy cel i miejsce na PV.
+- Rewizja zasobu `v=0.7.9.3` unieważnia wcześniejszy cache planu i prezentuje
+  rzeczywiste pokrycie profili, częściowe pokrycie OSD oraz wpływ odrzuconych
+  próbek na pewność.
+- Karta jakości rozdziela status propozycji od faktycznej realizacji profilu,
+  nie zamienia brakujących danych na zera i pokazuje średnią pewność osobno dla
+  dziś, jutra oraz całego planu 48 h.
+- Integracja, karta i fallback mają wspólną wersję `0.7.9`;
+  aktywny parametr cache to `v=0.7.9.4`.
+
+### Safety
+
+- Nie zmieniono fizycznego mapowania Deye TOU, kompresji 6/6, confirm/retry,
+  fail-closed ani wymogu działania i potwierdzenia użytkownika.
+- Zewnętrzny asystent AI pozostaje wyłącznie polskojęzycznym doradcą i nie może
+  wykonywać zapisów do Deye.
+
+## [0.7.7 — lokalna rewizja karty v=0.7.7.2] - 2026-07-29
+
+### Added
+
+- Jednoznaczne rankingi Porannej i Wieczornej sprzedaży z okien, celów,
+  minimalnych cen i minimalnego SOC ustawionych przez użytkownika.
+- Ranking zakupu według efektywnego kosztu energii z godzinowym profilem OSD,
+  składowymi ceny i informacją o pokryciu danych.
+- Lokalne rejestrowanie zmierzonego wykonania profili bez zmiany ich parametrów
+  i bez wywoływania usług Deye.
+- Wspólne polskie mapowanie statusów, źródeł decyzji i błędów asystenta API.
+
+### Changed
+
+- Przegląd jest krótkim podsumowaniem i nie dubluje pełnych wykresów dziennych
+  ani rozbudowanych kart pogody.
+- Profile pokazują osobno cel, zaplanowaną energię, wykonanie, pozostałą energię
+  oraz przyczynę ograniczenia.
+- Proponowane zmiany rozdzielają realizację profili, sugestie optymalizatora
+  i akcje bez zmiany planu bazowego.
+- Moc sprzedaży przekazywana do slotu odpowiada planowanej energii i faktycznej
+  długości slotu; propozycje zerowe oraz nieopłacalne nie są udostępniane do
+  zaznaczenia.
+- Bieżąca minimalna cena profilu ma pierwszeństwo przed starszą wartością
+  zapisaną w planie, a tabele Dziś/Jutro pokazują pełne ceny chronologicznie.
+- Przywrócono dotychczasowy, edytowalny układ prywatności Asystenta AI przez API;
+  zmiana w tej części ogranicza się do polskiego polecenia i polskiej odpowiedzi.
+- Wykresy używają osi energii od 0 kWh, zakresu SOC 0–100%, osobnych linii
+  twardego i efektywnego minimum SOC oraz nie rysują produkcji rzeczywistej dla
+  przyszłych godzin.
+- Dolny pasek działań jest nieprzezroczystym sticky footerem widocznym wyłącznie
+  w zakładce Proponowane zmiany.
+- Wersja integracji i karty pozostaje `0.7.7`; lokalna rewizja zasobu wynosi
+  `v=0.7.7.2`.
+
+### Safety
+
+- Brak pełnych danych OSD blokuje automatyczne propozycje ładowania z sieci
+  przedstawiane jako opłacalne; surowa cena pozostaje informacyjna.
+- Nie zmieniono Deye TOU, kompresji 6/6, confirm/retry, fail-closed ani
+  parametrów profili użytkownika.
+
 ## [0.7.7] - 2026-07-29
 
 ### Added

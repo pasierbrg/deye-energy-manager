@@ -1,4 +1,4 @@
-"""Compatibility entry point for the deterministic 0.7.7 Optimizer Core."""
+"""Compatibility entry point for the deterministic 0.7.9 Optimizer Core."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import sys
 try:
     from .optimizer_core import (  # type: ignore
         ALGORITHM_VERSION,
+        PLAN_SCHEMA_VERSION,
         build_energy_plan,
         build_plan_bundle,
         simulate_alternative,
@@ -28,6 +29,7 @@ except (ImportError, ValueError):
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
     ALGORITHM_VERSION = module.ALGORITHM_VERSION
+    PLAN_SCHEMA_VERSION = module.PLAN_SCHEMA_VERSION
     build_energy_plan = module.build_energy_plan
     build_plan_bundle = module.build_plan_bundle
     simulate_alternative = module.simulate_alternative
@@ -36,6 +38,7 @@ except (ImportError, ValueError):
 
 __all__ = [
     "ALGORITHM_VERSION",
+    "PLAN_SCHEMA_VERSION",
     "build_energy_plan",
     "build_plan_bundle",
     "simulate_alternative",

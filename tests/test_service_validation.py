@@ -152,6 +152,7 @@ def _install_home_assistant_stubs() -> None:
 
     core.HomeAssistant = object
     core.ServiceCall = object
+    core.SupportsResponse = types.SimpleNamespace(ONLY="only")
     core.callback = lambda function: function
     event.async_track_time_interval = lambda *_args, **_kwargs: lambda: None
     event.async_track_point_in_time = lambda *_args, **_kwargs: lambda: None
@@ -275,6 +276,21 @@ class ServiceJsonValidationTests(unittest.TestCase):
     def test_tariff_settings_schema_rejects_non_string(self):
         with self.assertRaises(Exception):
             init.TARIFF_SETTINGS_SCHEMA({"data": {"provider": "pge"}})
+
+    def test_plan_execution_schema_is_optional_and_length_limited(self):
+        self.assertEqual({}, init.PLAN_EXECUTION_SCHEMA({}))
+        self.assertEqual(
+            "2026-07-30",
+            init.PLAN_EXECUTION_SCHEMA({"date": "2026-07-30"})["date"],
+        )
+        with self.assertRaises(Exception):
+            init.PLAN_EXECUTION_SCHEMA({"date": "2026-07-300"})
+
+    def test_plan_execution_service_is_registered_as_response_only(self):
+        source = (PACKAGE / "__init__.py").read_text(encoding="utf-8")
+        self.assertIn('"get_plan_execution"', source)
+        self.assertIn("supports_response=SupportsResponse.ONLY", source)
+        self.assertIn("return runtime.plan_execution_day", source)
 
     def test_apply_settings_schema_accepts_optional_charge_current(self):
         result = init.APPLY_SCHEMA({

@@ -5,7 +5,7 @@ import json
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
 from pathlib import Path
 
@@ -66,6 +66,11 @@ NORMAL_PROFILE_SCHEMA = vol.Schema(
         vol.Required("tou_soc"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
     }
 )
+PLAN_EXECUTION_SCHEMA = vol.Schema(
+    {
+        vol.Optional("date"): vol.All(cv.string, vol.Length(max=10)),
+    }
+)
 SERVICE_NAMES = (
     "apply_settings",
     "manual_sell",
@@ -91,6 +96,7 @@ SERVICE_NAMES = (
     "refresh_tariff_catalog",
     "save_future_plan",
     "cancel_future_plan",
+    "get_plan_execution",
 )
 _STATIC_PATH_REGISTERED = False
 
@@ -233,6 +239,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     async def handle_cancel_future_plan(call: ServiceCall) -> None:
         await runtime.async_cancel_future_plan()
 
+    async def handle_get_plan_execution(call: ServiceCall) -> dict[str, Any]:
+        return runtime.plan_execution_day(call.data.get("date"))
+
     hass.services.async_register(DOMAIN, "apply_settings", handle_apply_settings, schema=APPLY_SCHEMA)
     hass.services.async_register(DOMAIN, "manual_sell", handle_manual_sell, schema=MANUAL_SELL_SCHEMA)
     hass.services.async_register(DOMAIN, "charge_now", handle_charge_now, schema=CHARGE_SCHEMA)
@@ -286,6 +295,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.services.async_register(DOMAIN, "save_future_plan", handle_save_future_plan, schema=AI_DATA_SCHEMA)
     hass.services.async_register(DOMAIN, "cancel_future_plan", handle_cancel_future_plan)
+    hass.services.async_register(
+        DOMAIN,
+        "get_plan_execution",
+        handle_get_plan_execution,
+        schema=PLAN_EXECUTION_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
     return True
 
 

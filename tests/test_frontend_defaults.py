@@ -54,7 +54,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_card_sources_declare_current_resource_revision(self):
         for source in self.sources:
-            self.assertTrue(source.startswith("// Resource revision: v=24\n"))
+            self.assertTrue(source.startswith("// Resource revision: v=0.7.9.11\n"))
 
     def test_apply_defaults_uses_one_backend_service_call_only(self):
         method = extract_method(self.sources[0], "async applyDefaultValues()")
@@ -106,9 +106,11 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         for required in (
             "Przegląd",
             "Proponowane zmiany",
-            "Plan na dziś",
-            "Plan na jutro",
-            "Plan energii 48h",
+            "Plan i wykonanie",
+            "Dziś",
+            "Jutro",
+            "48 h",
+            "Historia",
             "Jakość danych",
             "Zaznacz wszystkie",
             "Odznacz wszystkie",
@@ -423,7 +425,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=24", source)
+            self.assertIn("deye-energy-manager-card.js?v=0.7.9.11", source)
             self.assertNotIn("deye-energy-manager-card.js?v=22", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
@@ -918,12 +920,23 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         for label in (
             "Przegląd",
             "Proponowane zmiany",
-            "Plan na dziś",
-            "Plan na jutro",
-            "Plan energii 48h",
+            "Plan i wykonanie",
             "Jakość danych",
         ):
             self.assertIn(label, render_ai)
+
+    def test_plan_execution_view_is_read_only_and_has_all_ranges(self):
+        source = self.sources[0]
+        method = extract_method(source, "renderAiPlanExecution(planner)")
+        for label in ("Dziś", "Jutro", "48 h", "Historia", "Plan to zamrożona propozycja"):
+            self.assertIn(label, method)
+        self.assertIn("renderAiExecutionChart", method)
+        self.assertIn("renderAiExecutionTable", method)
+        loader = extract_method(source, "async loadAiExecutionDay(dateKey)")
+        self.assertIn('service: "get_plan_execution"', loader)
+        self.assertIn("return_response: true", loader)
+        self.assertNotIn("save_future_plan", loader)
+        self.assertNotIn("apply_schedule_patch", loader)
 
     def test_ai_mobile_charts_tables_and_weather_keep_only_local_overflow(self):
         source = self.sources[0]
