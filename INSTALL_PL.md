@@ -1,4 +1,4 @@
-# Deye Energy Manager 0.7.9 — instalacja
+Deye Energy Manager 0.7.9 — instalacja
 
 Wymagany Home Assistant: `2026.6` lub nowszy.
 
@@ -251,18 +251,19 @@ Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_ho
 
 ## Kontrola po instalacji
 
-1. W diagnostyce sprawdź, czy wymagane encje mają stan `OK`.
-2. Porównaj znaki `Sieć` i `Bateria` z kartą falownika.
-3. W zakładce **Taryfa i dystrybucja** wybierz tryb automatyczny lub ręczny, operatora i taryfę, ustaw znaki przepływu, a następnie kliknij **Zapisz ustawienia taryfy**.
-4. Sprawdź profil 48 godzin: strefy na dziś i jutro, rodzaj dnia, sezon oraz łączną stawkę dystrybucji.
-5. Jeżeli encja ceny zakupu zawiera dystrybucję, zaznacz **Cena zakupu zawiera już dystrybucję**.
-6. Sprawdź stan i wersję katalogu. Automatyczna kontrola odbywa się przy starcie i co 7 dni; przycisk **Sprawdź aktualizację katalogu** uruchamia ją ręcznie. Przy błędzie pozostaje ostatnia poprawna kopia, a ostatecznym zabezpieczeniem jest katalog dostarczony z integracją.
-7. Sprawdź, czy dashboard reaguje na zmianę mocy bez czekania jednej minuty.
-8. Po zakończeniu pełnego dnia sprawdź trafność historyczną; w ciągu dnia używaj pola `Realizacja dzisiaj`.
-9. Otwórz **Sugestie AI** i sprawdź zakładkę **Jakość danych**. Brak cen jutra lub prognozy pogody powinien być jawnie opisany jako brak danych.
-10. W **Proponowanych zmianach** sprawdź osobno **Dziś** i **Jutro**. Plan jutra jest tylko zapisywany; nie zmienia od razu powtarzalnego Deye Time Of Use.
-11. Sprawdź **Plan i wykonanie → Dziś/Jutro/48 h/Historia**. Dla zakończonych godzin tabela powinna porównywać plan z rzeczywistym PV, zużyciem domu, SOC, importem, eksportem i wynikiem. Widok 48 h powinien pokazywać pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brak pomiaru powinien być opisany jako brak danych.
-12. W sekcji **Pogoda** przełącz widok **Dzienna/Godzinowa** i potwierdź, że jako źródło widoczna jest wybrana encja `weather.*`.
+1. Przed uruchomieniem harmonogramu i Optimizer Core skonfiguruj w **Ustawienia i diagnostyka → Ustawienia Trybów** ustawienia domyślne falownika oraz profile **Ładowania** i **Normalnej Pracy**. Wszystkie tryby, moce, prądy i poziomy SOC muszą być zgodne z parametrami falownika i magazynu energii, warunkami operatora OSD oraz mocą i warunkami przyłączenia mikroinstalacji. Nie kopiuj wartości widocznych na przykładach ani zrzutach ekranu — ustawienia muszą odpowiadać konkretnej instalacji.
+2. W diagnostyce sprawdź, czy wymagane encje mają stan `OK`.
+3. Porównaj znaki `Sieć` i `Bateria` z kartą falownika.
+4. W zakładce **Taryfa i dystrybucja** wybierz tryb automatyczny lub ręczny, operatora i taryfę, ustaw znaki przepływu, a następnie kliknij **Zapisz ustawienia taryfy**.
+5. Sprawdź profil 48 godzin: strefy na dziś i jutro, rodzaj dnia, sezon oraz łączną stawkę dystrybucji.
+6. Jeżeli encja ceny zakupu zawiera dystrybucję, zaznacz **Cena zakupu zawiera już dystrybucję**.
+7. Sprawdź stan i wersję katalogu. Automatyczna kontrola odbywa się przy starcie i co 7 dni; przycisk **Sprawdź aktualizację katalogu** uruchamia ją ręcznie. Przy błędzie pozostaje ostatnia poprawna kopia, a ostatecznym zabezpieczeniem jest katalog dostarczony z integracją.
+8. Sprawdź, czy dashboard reaguje na zmianę mocy bez czekania jednej minuty.
+9. Po zakończeniu pełnego dnia sprawdź trafność historyczną; w ciągu dnia używaj pola `Realizacja dzisiaj`.
+10. Otwórz **Sugestie AI** i sprawdź zakładkę **Jakość danych**. Brak cen jutra lub prognozy pogody powinien być jawnie opisany jako brak danych.
+11. W **Proponowanych zmianach** sprawdź osobno **Dziś** i **Jutro**. Plan jutra jest tylko zapisywany; nie zmienia od razu powtarzalnego Deye Time Of Use.
+12. Sprawdź **Plan i wykonanie → Dziś/Jutro/48 h/Historia**. Dla zakończonych godzin tabela powinna porównywać plan z rzeczywistym PV, zużyciem domu, SOC, importem, eksportem i wynikiem. Widok 48 h powinien pokazywać pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brak pomiaru powinien być opisany jako brak danych.
+13. W sekcji **Pogoda** przełącz widok **Dzienna/Godzinowa** i potwierdź, że jako źródło widoczna jest wybrana encja `weather.*`.
 
 Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
 
