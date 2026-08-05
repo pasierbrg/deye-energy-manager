@@ -25,158 +25,262 @@ PROJECT-SPECIFIC SAFETY AND LIABILITY NOTICE
 DEYE ENERGY MANAGER
 -------------------------------------------------------------------------------
 
-This notice explains project-specific risks and responsibilities. It does not
-restrict the rights granted under the MIT License above.
+This notice explains the risks and responsibilities connected with the use of
+Deye Energy Manager. It does not restrict the rights granted under the MIT
+License above.
 
-1. Free and open-source software
+1. Software provided without warranty
 
-Deye Energy Manager is provided free of charge as open-source software. The
-authors, copyright holders and contributors do not provide a paid monitoring,
-installation, engineering, maintenance or support service merely by making the
-Software available.
+Deye Energy Manager is provided free of charge as open-source software and
+without any warranty of correct, safe, continuous or uninterrupted operation.
 
-2. User responsibility
+The Software may read data from and request changes to an inverter, battery
+energy storage system, battery management system, meter and related Home
+Assistant entities.
 
-The Software can read data from and request changes to an inverter, battery
-energy storage system, battery management system and related Home Assistant
-entities. The user is solely responsible for reviewing, configuring, testing
-and supervising their installation, including, without limitation:
+2. Full responsibility of the user
 
+Every user installs, configures and uses the Software entirely at their own
+risk and assumes full responsibility for:
+
+- all configuration settings;
+- all entity mappings;
+- all commands sent to connected devices;
 - inverter operating modes and export settings;
-- battery charge and discharge currents, power limits and SOC limits;
-- grid charging, Time Of Use schedules and safe default settings;
-- entity mappings, automations, tariffs, prices and energy forecasts;
-- compatibility with the inverter, battery, BMS, meter, wiring and firmware;
-- backups of Home Assistant configuration and restoration procedures.
+- battery charge and discharge currents;
+- power limits and SOC limits;
+- grid charging and Time Of Use schedules;
+- safe default and emergency settings;
+- automations, tariffs, prices, forecasts and AI suggestions;
+- compatibility with the inverter, battery, BMS, meter, wiring, firmware and
+  the electrical installation;
+- backups, restoration procedures, supervision and testing of the installation.
 
-Example values, defaults, schedules, forecasts, suggestions and optimization
-results are not guaranteed to be safe or suitable for a particular device,
-battery chemistry, electrical installation, energy contract or grid operator.
-The user must validate all settings against the current manuals, ratings,
-warranty conditions and safety requirements of every connected device.
+The user is solely responsible for verifying all settings against current
+manufacturer documentation, device ratings, warranty conditions, electrical
+requirements, grid operator rules and the user's energy contract.
 
-3. Electrical and battery safety
+3. No liability of the author and contributors
 
-Inverters and energy storage systems can involve dangerous voltages, high
+The author, project owner and contributors shall not be held responsible for
+any damage, failure, loss, cost, injury, claim or other consequence resulting
+directly or indirectly from the installation, configuration, use, misuse,
+malfunction, interruption or inability to use the Software.
+
+This includes, without limitation:
+
+- damage to an inverter, battery, BMS, meter, wiring, electrical installation
+  or other property;
+- overheating, fire, electric shock, personal injury or other safety incidents;
+- battery degradation or reduced battery life;
+- loss or corruption of data;
+- loss of warranty;
+- loss of energy, revenue or expected savings;
+- increased electricity charges;
+- unintended grid import or export;
+- incorrect operation of schedules, automations, forecasts, optimization or AI
+  functions;
+- downtime and third-party claims.
+
+By installing or using the Software, the user confirms that they understand
+the associated risks, accept those risks and agree not to hold the author,
+project owner or contributors responsible for the consequences of using the
+Software.
+
+4. Electrical and battery safety
+
+Inverters and energy storage systems may involve dangerous voltages, high
 currents, stored energy and remotely initiated operating changes. Incorrect
-configuration or equipment failure may cause electric shock, fire, overheating,
-battery degradation, equipment damage, unintended import or export of energy,
-or other serious consequences.
+configuration, communication failure or equipment failure may cause serious
+damage or injury.
 
-The Software does not replace hardware protection, the inverter or BMS safety
-functions, circuit protection, emergency procedures, inspections or work by a
-qualified electrician or installer. The user must comply with applicable laws,
-grid rules, manufacturer instructions and local electrical requirements.
+The Software does not replace:
 
-4. No professional or financial advice
+- hardware protection;
+- circuit breakers, fuses, contactors or emergency disconnects;
+- inverter or BMS protection functions;
+- fire protection;
+- inspections and maintenance;
+- emergency procedures;
+- work performed by a qualified electrician or installer.
+
+The Software must not be treated as an emergency shutdown system, a life-safety
+system or the sole means of preventing hazardous electrical, thermal or battery
+conditions.
+
+5. Automated operation
+
+The Software may perform scheduled or automated control actions without
+additional confirmation immediately before every action.
+
+Before enabling automatic operation, the user must verify all schedules,
+limits, protections, fallback settings and connected entities, and must test
+the installation under safe conditions.
+
+6. No professional, legal or financial advice
 
 Schedules, forecasts, prices, statistics, AI output and optimization results
-are informational and may be incomplete, delayed or incorrect. They do not
-constitute electrical, engineering, safety, legal or financial advice and do
-not guarantee energy savings, revenue, availability or any particular result.
+are informational only and may be incomplete, delayed or incorrect.
 
-5. Third-party systems and data
+They do not constitute electrical, engineering, safety, legal or financial
+advice and do not guarantee savings, revenue, availability or any particular
+result.
 
-The Software may depend on Home Assistant, ESPHome, inverter firmware, external
-integrations, network connectivity, APIs, forecasts and price data. The authors
-and contributors do not control and do not guarantee the availability,
-accuracy, security, compatibility or behaviour of those third-party systems.
+7. Third-party systems and data
 
-6. Assumption of risk and limitation of liability
+The Software may depend on Home Assistant, ESPHome, Solarman, inverter
+firmware, external integrations, network connectivity, APIs, weather forecasts,
+energy price data and AI providers.
 
-Use of the Software is voluntary and at the user's own risk. To the maximum
-extent permitted by applicable law, the authors, copyright holders and
-contributors are not liable for any direct, indirect, incidental, special,
-consequential or other loss, claim, cost or damage arising from or connected
-with the Software or its use, inability to use it, configuration or output.
-This includes, without limitation, damage to an inverter, battery, BMS, meter,
-electrical installation or other property; personal injury; loss or corruption
-of data; battery wear; loss of energy, revenue, warranty or expected savings;
-increased electricity charges; unintended grid import or export; downtime; and
-claims by third parties.
+The author and contributors do not control and do not guarantee the
+availability, accuracy, security, compatibility or behaviour of those systems.
 
-Nothing in this notice excludes or limits liability or mandatory rights that
-cannot lawfully be excluded or limited under applicable law.
+When the user enables an external API or AI provider, selected installation
+data may be transmitted to that third-party service. The user is responsible
+for reviewing the provider's terms and privacy policy, protecting API
+credentials and deciding what data may be transmitted.
+
+8. No affiliation or endorsement
+
+Deye Energy Manager is an independent community project. It is not affiliated
+with, endorsed by, sponsored by or officially supported by Deye, Home
+Assistant, ESPHome, Solarman, any inverter or battery manufacturer, any energy
+supplier or any grid operator.
+
+All product names, company names and trademarks belong to their respective
+owners.
 
 -------------------------------------------------------------------------------
 INFORMACJA O BEZPIECZEŃSTWIE I ODPOWIEDZIALNOŚCI
 DEYE ENERGY MANAGER
 -------------------------------------------------------------------------------
 
-Niniejsza informacja wyjaśnia ryzyka i obowiązki właściwe dla projektu. Nie
-ogranicza praw udzielonych użytkownikowi przez powyższą licencję MIT.
+Niniejsza informacja opisuje ryzyko i odpowiedzialność związane z korzystaniem
+z Deye Energy Manager. Nie ogranicza praw udzielonych użytkownikowi przez
+powyższą licencję MIT.
 
-1. Oprogramowanie bezpłatne i open-source
+1. Oprogramowanie bez gwarancji
 
 Deye Energy Manager jest udostępniany bezpłatnie jako oprogramowanie
-open-source. Samo udostępnienie Oprogramowania nie oznacza, że autorzy,
-posiadacze praw autorskich lub współtwórcy świadczą odpłatną usługę nadzoru,
-instalacji, projektowania, utrzymania albo wsparcia technicznego.
-
-2. Odpowiedzialność użytkownika
+open-source, bez jakiejkolwiek gwarancji poprawnego, bezpiecznego, ciągłego
+lub nieprzerwanego działania.
 
 Oprogramowanie może odczytywać dane oraz zlecać zmiany ustawień falownika,
-magazynu energii, systemu zarządzania baterią i powiązanych encji Home
-Assistant. Użytkownik ponosi odpowiedzialność za sprawdzenie, konfigurację,
-testowanie i nadzorowanie swojej instalacji, w szczególności za:
+magazynu energii, systemu zarządzania baterią, licznika i powiązanych encji
+Home Assistant.
 
+2. Pełna odpowiedzialność użytkownika
+
+Każdy użytkownik instaluje, konfiguruje i korzysta z Oprogramowania wyłącznie
+na własne ryzyko oraz ponosi pełną odpowiedzialność za:
+
+- wszystkie ustawienia konfiguracji;
+- wszystkie mapowania encji;
+- wszystkie polecenia wysyłane do podłączonych urządzeń;
 - tryby pracy falownika i ustawienia eksportu energii;
-- prądy ładowania i rozładowania, limity mocy oraz limity SOC baterii;
-- ładowanie z sieci, harmonogram Time Of Use i bezpieczne ustawienia domyślne;
-- mapowanie encji, automatyzacje, taryfy, ceny i prognozy energii;
-- zgodność falownika, baterii, BMS, licznika, instalacji i oprogramowania;
-- kopie konfiguracji Home Assistant oraz procedury jej przywracania.
+- prądy ładowania i rozładowania baterii;
+- limity mocy i limity SOC;
+- ładowanie z sieci i harmonogramy Time Of Use;
+- bezpieczne ustawienia domyślne i awaryjne;
+- automatyzacje, taryfy, ceny, prognozy i sugestie AI;
+- zgodność z falownikiem, baterią, BMS, licznikiem, okablowaniem,
+  oprogramowaniem urządzeń i instalacją elektryczną;
+- kopie zapasowe, procedury przywracania, nadzorowanie i testowanie instalacji.
 
-Przykładowe wartości, ustawienia domyślne, harmonogramy, prognozy, sugestie i
-wyniki optymalizacji nie mają gwarancji bezpieczeństwa ani przydatności dla
-konkretnego urządzenia, chemii baterii, instalacji elektrycznej, umowy na
-energię lub operatora sieci. Użytkownik musi zweryfikować wszystkie ustawienia
-z aktualnymi instrukcjami, parametrami znamionowymi, warunkami gwarancji i
-wymaganiami bezpieczeństwa każdego podłączonego urządzenia.
+Użytkownik jest wyłącznie odpowiedzialny za sprawdzenie wszystkich ustawień
+z aktualnymi instrukcjami producentów, parametrami urządzeń, warunkami
+gwarancji, wymaganiami elektrycznymi, zasadami operatora sieci oraz własną
+umową na energię.
 
-3. Bezpieczeństwo elektryczne i magazynu energii
+3. Brak odpowiedzialności autora i współtwórców
+
+Autor, właściciel projektu i współtwórcy nie ponoszą odpowiedzialności za
+jakiekolwiek szkody, awarie, straty, koszty, obrażenia, roszczenia ani inne
+konsekwencje wynikające bezpośrednio lub pośrednio z instalacji, konfiguracji,
+używania, niewłaściwego używania, błędnego działania, przerwy w działaniu albo
+braku możliwości użycia Oprogramowania.
+
+Dotyczy to w szczególności:
+
+- uszkodzenia falownika, baterii, BMS, licznika, okablowania, instalacji
+  elektrycznej lub innego mienia;
+- przegrzania, pożaru, porażenia prądem, obrażeń lub innych zdarzeń
+  zagrażających bezpieczeństwu;
+- degradacji baterii lub skrócenia jej żywotności;
+- utraty albo uszkodzenia danych;
+- utraty gwarancji;
+- utraty energii, przychodów lub oczekiwanych oszczędności;
+- zwiększonych rachunków za energię;
+- niezamierzonego importu albo eksportu energii;
+- błędnego działania harmonogramów, automatyzacji, prognoz, optymalizacji lub
+  funkcji AI;
+- przestojów i roszczeń podmiotów trzecich.
+
+Instalując lub używając Oprogramowania, użytkownik potwierdza, że rozumie
+związane z nim ryzyko, przyjmuje je na siebie i zgadza się nie obarczać autora,
+właściciela projektu ani współtwórców odpowiedzialnością za skutki korzystania
+z Oprogramowania.
+
+4. Bezpieczeństwo elektryczne i magazynu energii
 
 Falowniki i magazyny energii mogą pracować z niebezpiecznymi napięciami,
 wysokimi prądami i znaczną energią zgromadzoną oraz umożliwiać zdalne wywołanie
-zmian trybu pracy. Błędna konfiguracja albo awaria urządzenia może spowodować
-porażenie prądem, pożar, przegrzanie, degradację baterii, uszkodzenie sprzętu,
-niezamierzony import lub eksport energii albo inne poważne skutki.
+zmian trybu pracy. Błędna konfiguracja, utrata komunikacji albo awaria
+urządzenia może spowodować poważne szkody lub obrażenia.
 
-Oprogramowanie nie zastępuje zabezpieczeń sprzętowych, funkcji ochronnych
-falownika i BMS, zabezpieczeń obwodów, procedur awaryjnych, przeglądów ani pracy
-wykwalifikowanego elektryka lub instalatora. Użytkownik musi przestrzegać
-obowiązującego prawa, wymagań operatora sieci, instrukcji producentów i
-lokalnych zasad wykonywania instalacji elektrycznych.
+Oprogramowanie nie zastępuje:
 
-4. Brak profesjonalnej i finansowej porady
+- zabezpieczeń sprzętowych;
+- wyłączników, bezpieczników, styczników ani rozłączników awaryjnych;
+- funkcji ochronnych falownika i BMS;
+- zabezpieczeń przeciwpożarowych;
+- przeglądów i konserwacji;
+- procedur awaryjnych;
+- pracy wykwalifikowanego elektryka lub instalatora.
+
+Oprogramowania nie należy traktować jako systemu awaryjnego wyłączenia,
+systemu ochrony życia ani jedynego środka zapobiegania niebezpiecznym stanom
+elektrycznym, termicznym lub związanym z baterią.
+
+5. Działanie automatyczne
+
+Oprogramowanie może wykonywać zaplanowane lub automatyczne działania sterujące
+bez dodatkowego potwierdzenia bezpośrednio przed każdym działaniem.
+
+Przed włączeniem automatycznego sterowania użytkownik musi sprawdzić wszystkie
+harmonogramy, limity, zabezpieczenia, ustawienia awaryjnego powrotu i podłączone
+encje oraz przetestować instalację w bezpiecznych warunkach.
+
+6. Brak profesjonalnej, prawnej i finansowej porady
 
 Harmonogramy, prognozy, ceny, statystyki, odpowiedzi AI i wyniki optymalizacji
-mają charakter informacyjny i mogą być niepełne, opóźnione albo błędne. Nie są
-poradą elektryczną, techniczną, dotyczącą bezpieczeństwa, prawną ani finansową
-i nie gwarantują oszczędności, przychodów, dostępności ani określonego wyniku.
+mają wyłącznie charakter informacyjny i mogą być niepełne, opóźnione albo
+błędne.
 
-5. Systemy i dane podmiotów trzecich
+Nie stanowią porady elektrycznej, technicznej, dotyczącej bezpieczeństwa,
+prawnej ani finansowej i nie gwarantują oszczędności, przychodów, dostępności
+ani określonego wyniku.
 
-Działanie Oprogramowania może zależeć od Home Assistant, ESPHome,
+7. Systemy i dane podmiotów trzecich
+
+Działanie Oprogramowania może zależeć od Home Assistant, ESPHome, Solarman,
 oprogramowania falownika, zewnętrznych integracji, połączenia sieciowego, API,
-prognoz i danych cenowych. Autorzy i współtwórcy nie kontrolują oraz nie
-gwarantują dostępności, poprawności, bezpieczeństwa, zgodności ani zachowania
-tych systemów podmiotów trzecich.
+prognoz pogody, danych cenowych i dostawców AI.
 
-6. Przyjęcie ryzyka i ograniczenie odpowiedzialności
+Autor i współtwórcy nie kontrolują oraz nie gwarantują dostępności, poprawności,
+bezpieczeństwa, zgodności ani zachowania tych systemów.
 
-Korzystanie z Oprogramowania jest dobrowolne i odbywa się na własne ryzyko
-użytkownika. W maksymalnym zakresie dozwolonym przez obowiązujące prawo
-autorzy, posiadacze praw autorskich i współtwórcy nie odpowiadają za jakiekolwiek
-bezpośrednie, pośrednie, przypadkowe, szczególne, następcze lub inne straty,
-roszczenia, koszty albo szkody wynikające z Oprogramowania lub związane z jego
-użyciem, niemożnością użycia, konfiguracją albo wynikami jego działania.
-Obejmuje to w szczególności uszkodzenie falownika, baterii, BMS, licznika,
-instalacji elektrycznej lub innego mienia; obrażenia; utratę albo uszkodzenie
-danych; zużycie baterii; utratę energii, przychodów, gwarancji lub oczekiwanych
-oszczędności; zwiększone rachunki za energię; niezamierzony import lub eksport
-energii; przestój oraz roszczenia podmiotów trzecich.
+Jeżeli użytkownik włączy zewnętrzne API albo dostawcę AI, wybrane dane
+instalacji mogą zostać przesłane do tej usługi. Użytkownik odpowiada za
+zapoznanie się z regulaminem i polityką prywatności dostawcy, ochronę kluczy
+API oraz decyzję, jakie dane mogą zostać przesłane.
 
-Żadne postanowienie niniejszej informacji nie wyłącza ani nie ogranicza
-odpowiedzialności lub bezwzględnie obowiązujących praw, których zgodnie z
-właściwym prawem nie można skutecznie wyłączyć albo ograniczyć.
+8. Brak powiązania i oficjalnego wsparcia
+
+Deye Energy Manager jest niezależnym projektem społecznościowym. Projekt nie
+jest powiązany, zatwierdzony, sponsorowany ani oficjalnie wspierany przez Deye,
+Home Assistant, ESPHome, Solarman, producentów falowników lub baterii,
+sprzedawców energii ani operatorów sieci.
+
+Wszystkie nazwy produktów, firm i znaki towarowe należą do ich odpowiednich
+właścicieli.
