@@ -35,6 +35,46 @@ możesz [postawić kawę](https://buycoffee.to/pasierbrg) ☕. To najlepszy sygn
 - automatycznie zarządzany zasób Lovelace w standardowym trybie UI/storage;
 - diagnostyka providerów, mapowania i jakości danych.
 
+## Zrzuty ekranu — Deye Energy Manager 0.8.0
+
+**Status energii** — bieżące przepływy PV, bateria, sieć, dom i decyzja Managera.
+
+![Status energii Deye Energy Manager 0.8.0](docs/screenshots/0.8.0/status-energy.png)
+
+<table>
+  <tr>
+    <td width="50%">
+      <strong>Ceny energii i Solcast</strong><br>
+      <img src="docs/screenshots/0.8.0/prices-solcast.png" alt="Ceny zakupu i sprzedaży energii oraz prognoza Solcast" width="100%"><br>
+      <sub>Ceny zakupu i sprzedaży oraz prognoza PV.</sub>
+    </td>
+    <td width="50%">
+      <strong>Harmonogram pracy</strong><br>
+      <img src="docs/screenshots/0.8.0/schedule.png" alt="Harmonogram pracy Deye Energy Manager obejmujący 24 godziny" width="100%"><br>
+      <sub>Pełne 24 h z Normalną Pracą, Sprzedażą i Ładowaniem.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <strong>Statystyki sprzedaży</strong><br>
+      <img src="docs/screenshots/0.8.0/sales-statistics.png" alt="Statystyki sprzedaży energii i wynik w PLN" width="100%"><br>
+      <sub>Energia sprzedana i wynik w PLN.</sub>
+    </td>
+    <td width="50%">
+      <strong>Sugestie AI — Proponowane zmiany</strong><br>
+      <img src="docs/screenshots/0.8.0/ai-proposals.png" alt="Sugestie AI z proponowanymi zmianami Optimizer Core" width="100%"><br>
+      <sub>Propozycje Optimizer Core i wybór akcji.</sub>
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2">
+      <strong>Sugestie AI — Plan i wykonanie</strong><br>
+      <img src="docs/screenshots/0.8.0/ai-plan-execution.png" alt="Sugestie AI z porównaniem planu i wykonania oraz przebiegiem SOC" width="100%"><br>
+      <sub>Porównanie planu z wykonaniem oraz przebieg SOC.</sub>
+    </td>
+  </tr>
+</table>
+
 ## Obsługiwane źródła Deye i providerzy
 
 | Provider | Odczyty | Sterowanie | Deye Time Of Use |
