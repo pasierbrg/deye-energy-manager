@@ -47,9 +47,19 @@ function assertFalse(value, message) {
 }
 
 function makeHass(overrides = {}) {
-  const managerStatus = overrides.managerStatus || {
+  const sourceStatus = overrides.managerStatus || {
     state: "idle",
     attributes: {},
+  };
+  const managerStatus = {
+    ...sourceStatus,
+    attributes: {
+      normal_profile_options: overrides.normalProfileOptions || [
+        { value: "Zero Export To Load", label: "Eksport wyłączony — pomiar Load", available: true },
+        { value: "Zero Export To CT", label: "Eksport wyłączony — pomiar CT", available: true },
+      ],
+      ...(sourceStatus.attributes || {}),
+    },
   };
   return {
     states: {

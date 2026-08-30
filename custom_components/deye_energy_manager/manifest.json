@@ -6,9 +6,9 @@
   ],
   "config_flow": true,
   "dependencies": [],
-  "documentation": "https://github.com/pasierbrg/deye-energy-manager-0.7.1-main",
+  "documentation": "https://github.com/pasierbrg/deye-energy-manager",
   "iot_class": "local_push",
-  "issue_tracker": "https://github.com/pasierbrg/deye-energy-manager-0.7.1-main/issues",
+  "issue_tracker": "https://github.com/pasierbrg/deye-energy-manager/issues",
   "requirements": [],
-  "version": "0.7.9"
+  "version": "0.8.0"
 }

@@ -1,21 +1,39 @@
 from __future__ import annotations
 
-import inspect
 import json
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.helpers import config_validation as cv
-from pathlib import Path
-
-from .const import DOMAIN, PLATFORMS, WORK_MODES, PHYSICAL_NORMAL_MODES
+from homeassistant.helpers.typing import ConfigType
+from .const import (
+    ABSOLUTE_INVERTER_MAX_POWER_W,
+    CONF_BUY_SELLER_ID,
+    CONF_BUY_SELLER_TARIFF_ID,
+    CONF_INVERTER_PROVIDER,
+    DEFAULT_BUY_SELLER_ID,
+    DEFAULT_BUY_SELLER_TARIFF_ID,
+    DOMAIN,
+    PHYSICAL_NORMAL_MODES,
+    PLATFORMS,
+    PROVIDER_LEWA_REKA,
+    WORK_MODES,
+)
+from .frontend import async_setup_frontend, cancel_frontend_followup
 from .manager import DeyeEnergyManagerRuntime
+from .price_sources import (
+    contract_mapping_matches,
+    detect_source_adapter,
+    migrate_legacy_price_contracts,
+    rebuild_price_contract,
+    resolve_contract_schemas,
+)
 
 APPLY_SCHEMA = vol.Schema(
     {
         vol.Required("mode"): vol.In(WORK_MODES),
-        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=13000)),
+        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=ABSOLUTE_INVERTER_MAX_POWER_W)),
         vol.Required("discharge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Optional("charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Optional("grid_charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
@@ -23,7 +41,7 @@ APPLY_SCHEMA = vol.Schema(
 )
 MANUAL_SELL_SCHEMA = vol.Schema(
     {
-        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=13000)),
+        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=ABSOLUTE_INVERTER_MAX_POWER_W)),
         vol.Required("discharge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
     }
 )
@@ -35,7 +53,8 @@ AI_RATING_SCHEMA = vol.Schema({vol.Required("timestamp"): vol.Coerce(float), vol
 DEFAULT_SETTINGS_SCHEMA = vol.Schema(
     {
         vol.Required("mode"): vol.In(WORK_MODES),
-        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=13000)),
+        vol.Optional("physical_work_mode"): vol.In(list(PHYSICAL_NORMAL_MODES)),
+        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=ABSOLUTE_INVERTER_MAX_POWER_W)),
         vol.Required("discharge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Required("charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Required("grid_charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
@@ -59,7 +78,7 @@ CHARGE_PROFILE_SCHEMA = vol.Schema(
 NORMAL_PROFILE_SCHEMA = vol.Schema(
     {
         vol.Required("physical_work_mode"): vol.In(list(PHYSICAL_NORMAL_MODES)),
-        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=13000)),
+        vol.Required("sell_power"): vol.All(vol.Coerce(float), vol.Range(min=0, max=ABSOLUTE_INVERTER_MAX_POWER_W)),
         vol.Required("discharge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Required("charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
         vol.Required("grid_charge_current"): vol.All(vol.Coerce(float), vol.Range(min=0, max=240)),
@@ -69,6 +88,15 @@ NORMAL_PROFILE_SCHEMA = vol.Schema(
 PLAN_EXECUTION_SCHEMA = vol.Schema(
     {
         vol.Optional("date"): vol.All(cv.string, vol.Length(max=10)),
+    }
+)
+TOU_SLOT_SCHEMA = vol.Schema(
+    {
+        vol.Required("slot"): vol.All(vol.Coerce(int), vol.Range(min=1, max=6)),
+        vol.Optional("start"): vol.All(cv.string, vol.Length(max=5)),
+        vol.Optional("end"): vol.All(cv.string, vol.Length(max=5)),
+        vol.Optional("soc"): vol.All(vol.Coerce(float), vol.Range(min=0, max=100)),
+        vol.Optional("grid_charge"): cv.boolean,
     }
 )
 SERVICE_NAMES = (
@@ -97,8 +125,146 @@ SERVICE_NAMES = (
     "save_future_plan",
     "cancel_future_plan",
     "get_plan_execution",
+    "set_tou_slot",
 )
-_STATIC_PATH_REGISTERED = False
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Set up the integration domain before config entries are loaded.
+
+    The runtime remains config-entry-only.  This lightweight domain hook is
+    required by Home Assistant during the normal integration setup phase and
+    also keeps a legacy YAML domain declaration from preventing config entries
+    and the frontend resource from loading.
+    """
+    hass.data.setdefault(DOMAIN, {})
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate legacy entries without changing any mapped entity identifier.
+
+    Entries created before the provider layer are Lewa-Reka mappings.  Adding
+    the explicit provider is data-only and deliberately leaves options and all
+    entity IDs untouched.
+    """
+    if entry.version != 1:
+        return False
+    if entry.minor_version >= 24:
+        return True
+    data = dict(entry.data)
+    options = dict(entry.options)
+    if entry.minor_version >= 23:
+        if CONF_BUY_SELLER_ID not in data and CONF_BUY_SELLER_ID not in options:
+            options[CONF_BUY_SELLER_ID] = DEFAULT_BUY_SELLER_ID
+        if CONF_BUY_SELLER_TARIFF_ID not in data and CONF_BUY_SELLER_TARIFF_ID not in options:
+            options[CONF_BUY_SELLER_TARIFF_ID] = DEFAULT_BUY_SELLER_TARIFF_ID
+        hass.config_entries.async_update_entry(
+            entry,
+            data=data,
+            options=options,
+            minor_version=24,
+        )
+        return True
+    if CONF_INVERTER_PROVIDER not in data and CONF_INVERTER_PROVIDER not in options:
+        data[CONF_INVERTER_PROVIDER] = PROVIDER_LEWA_REKA
+    merged = migrate_legacy_price_contracts({**data, **options})
+    definitions = {
+        "buy_price_contract": ("buy_price_today_sensor", "buy_price_tomorrow_sensor"),
+        "sell_price_contract": ("price_sensor", "sell_price_tomorrow_sensor"),
+    }
+    for key, mapping_keys in definitions.items():
+        saved_contract = dict(merged.get(key) or {})
+        entities = {
+            day_name: str(
+                merged.get(mapping_key) or ""
+                if mapping_key in merged
+                else saved_contract.get(f"{day_name}_entity") or ""
+            )
+            for day_name, mapping_key in zip(("today", "tomorrow"), mapping_keys)
+        }
+        try:
+            from homeassistant.helpers import entity_registry as er
+
+            registry = er.async_get(hass)
+        except (AttributeError, ImportError, TypeError):
+            registry = None
+        states = []
+        bindings: dict[str, dict[str, str]] = {}
+        adapters: dict[str, str] = {}
+        for day_name in ("today", "tomorrow"):
+            entity_id = entities[day_name]
+            registry_entry = registry.async_get(entity_id) if registry is not None and hasattr(registry, "async_get") else None
+            if registry_entry is None and registry is not None:
+                registry_entry = getattr(registry, "entities", {}).get(entity_id)
+            binding = {"entity_id": entity_id} if entity_id else {}
+            if registry_entry is not None:
+                binding.update({
+                    "registry_entry_id": str(getattr(registry_entry, "id", "") or ""),
+                    "platform": str(getattr(registry_entry, "platform", "") or ""),
+                    "config_entry_id": str(getattr(registry_entry, "config_entry_id", "") or ""),
+                    "unique_id": str(getattr(registry_entry, "unique_id", "") or ""),
+                    "device_id": str(getattr(registry_entry, "device_id", "") or ""),
+                })
+            bindings[day_name] = binding
+            detected = detect_source_adapter(
+                entity_id,
+                platform=str(getattr(registry_entry, "platform", "") or "") or None,
+            )
+            saved_adapter = str(
+                saved_contract.get(f"resolved_adapter_{day_name}")
+                or saved_contract.get("source_adapter")
+                or ""
+            )
+            adapters[day_name] = (
+                saved_adapter
+                if detected == "generic"
+                and contract_mapping_matches(saved_contract, entities["today"], entities["tomorrow"])
+                and saved_adapter in {"pstryk", "rce_pse", "custom"}
+                else detected
+            )
+            states.append(hass.states.get(entity_id) if entity_id else None)
+        contract = rebuild_price_contract(
+            saved_contract,
+            "buy" if key == "buy_price_contract" else "sell",
+            entities["today"],
+            entities["tomorrow"],
+            adapters["today"],
+            adapters["tomorrow"],
+        )
+        for day_name in ("today", "tomorrow"):
+            entity_id = entities[day_name]
+            binding = bindings[day_name]
+            contract[f"{day_name}_binding"] = binding
+            contract[f"resolved_{day_name}_entity"] = entity_id
+            contract[f"stable_identity_{day_name}_status"] = "unmapped" if not entity_id else "bound" if binding.get("registry_entry_id") else "entity_id_only"
+            contract[f"stable_identity_{day_name}_reason"] = "user_unmapped" if not entity_id else ""
+            if not entity_id:
+                contract[f"resolved_schema_{day_name}"] = {}
+        contract, _diagnostics = resolve_contract_schemas(contract, states[0], states[1])
+        if key in data:
+            data[key] = contract
+        else:
+            options[key] = contract
+        for mapping_key, entity_field in zip(mapping_keys, ("today_entity", "tomorrow_entity")):
+            value = entities["today" if entity_field == "today_entity" else "tomorrow"]
+            if mapping_key in data:
+                data[mapping_key] = value
+            elif mapping_key in options:
+                options[mapping_key] = value
+            elif key in data:
+                data[mapping_key] = value
+            else:
+                options[mapping_key] = value
+    if CONF_BUY_SELLER_ID not in data and CONF_BUY_SELLER_ID not in options:
+        options[CONF_BUY_SELLER_ID] = DEFAULT_BUY_SELLER_ID
+    if CONF_BUY_SELLER_TARIFF_ID not in data and CONF_BUY_SELLER_TARIFF_ID not in options:
+        options[CONF_BUY_SELLER_TARIFF_ID] = DEFAULT_BUY_SELLER_TARIFF_ID
+    hass.config_entries.async_update_entry(
+        entry,
+        data=data,
+        options=options,
+        minor_version=24,
+    )
+    return True
 
 
 def _parse_json_payload(value: str, expected_type: type | tuple[type, ...]) -> Any:
@@ -118,42 +284,38 @@ def _parse_json_payload(value: str, expected_type: type | tuple[type, ...]) -> A
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    global _STATIC_PATH_REGISTERED
     runtime = DeyeEnergyManagerRuntime(
         hass=hass,
         entry_id=entry.entry_id,
         data={**entry.data, **entry.options},
     )
+    runtime._platform_setup_in_progress = True
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     await runtime.async_start()
-    if not _STATIC_PATH_REGISTERED:
-        static_path = str(Path(__file__).parent / "www")
-        if hasattr(hass.http, "async_register_static_paths"):
-            from homeassistant.components.http import StaticPathConfig
-
-            await hass.http.async_register_static_paths(
-                [StaticPathConfig("/deye_energy_manager", static_path, True)]
-            )
-        elif hasattr(hass.http, "async_register_static_path"):
-            result = hass.http.async_register_static_path("/deye_energy_manager", static_path, True)
-            if inspect.isawaitable(result):
-                await result
-        elif hasattr(hass.http, "register_static_path"):
-            hass.http.register_static_path("/deye_energy_manager", static_path, True)
-        _STATIC_PATH_REGISTERED = True
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    await async_setup_frontend(hass)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:
+        runtime._platform_setup_in_progress = False
+        raise
+    else:
+        runtime.finish_platform_setup()
 
     async def handle_apply_settings(call: ServiceCall) -> None:
+        sell_power = call.data["sell_power"]
+        runtime.validate_manual_sell_power_w("apply_settings", sell_power)
         await runtime.async_apply_settings(
             call.data["mode"],
-            call.data["sell_power"],
+            sell_power,
             call.data["discharge_current"],
             call.data.get("charge_current", runtime.default_charge_current),
             call.data.get("grid_charge_current", runtime.default_grid_charge_current),
         )
 
     async def handle_manual_sell(call: ServiceCall) -> None:
-        runtime.manual_sell_power = call.data["sell_power"]
+        sell_power = call.data["sell_power"]
+        runtime.validate_manual_sell_power_w("manual_sell", sell_power)
+        runtime.manual_sell_power = sell_power
         runtime.manual_discharge_current = call.data["discharge_current"]
         await runtime.async_manual_sell()
 
@@ -209,8 +371,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         await runtime.async_clear_all_history()
 
     async def handle_apply_schedule_patch(call: ServiceCall) -> None:
-        updates = _parse_json_payload(call.data["data"], list)
-        await runtime.async_apply_schedule_patch(updates)
+        payload = _parse_json_payload(call.data["data"], (list, dict))
+        if isinstance(payload, list):
+            await runtime.async_apply_schedule_patch(payload)
+            return
+        unknown = set(payload) - {"updates", "replace_day", "date"}
+        if unknown:
+            raise ValueError(
+                "Nieobsługiwane pola Apply Today: " + ", ".join(sorted(unknown))
+            )
+        if payload.get("replace_day") is not True:
+            raise ValueError("Obiektowy payload harmonogramu wymaga replace_day=true")
+        updates = payload.get("updates")
+        if not isinstance(updates, list):
+            raise ValueError("Apply Today wymaga listy updates")
+        await runtime.async_apply_schedule_patch(
+            updates,
+            replace_day=True,
+            date=str(payload.get("date") or ""),
+        )
 
     async def handle_save_tariff_settings(call: ServiceCall) -> None:
         settings = _parse_json_payload(call.data["data"], dict)
@@ -241,6 +420,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     async def handle_get_plan_execution(call: ServiceCall) -> dict[str, Any]:
         return runtime.plan_execution_day(call.data.get("date"))
+
+    async def handle_set_tou_slot(call: ServiceCall) -> None:
+        await runtime.async_set_physical_tou_slot(
+            call.data["slot"],
+            start=call.data.get("start"),
+            end=call.data.get("end"),
+            soc=call.data.get("soc"),
+            grid_charge=call.data.get("grid_charge"),
+        )
 
     hass.services.async_register(DOMAIN, "apply_settings", handle_apply_settings, schema=APPLY_SCHEMA)
     hass.services.async_register(DOMAIN, "manual_sell", handle_manual_sell, schema=MANUAL_SELL_SCHEMA)
@@ -302,6 +490,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         schema=PLAN_EXECUTION_SCHEMA,
         supports_response=SupportsResponse.ONLY,
     )
+    hass.services.async_register(
+        DOMAIN,
+        "set_tou_slot",
+        handle_set_tou_slot,
+        schema=TOU_SLOT_SCHEMA,
+    )
     return True
 
 
@@ -311,6 +505,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if runtime:
         await runtime.async_unload()
     if unload_ok and DOMAIN in hass.data and not hass.data[DOMAIN]:
+        cancel_frontend_followup(hass)
         hass.data.pop(DOMAIN)
         for service_name in SERVICE_NAMES:
             if hass.services.has_service(DOMAIN, service_name):

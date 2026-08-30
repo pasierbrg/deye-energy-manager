@@ -3,13 +3,23 @@
   "config": {
     "step": {
       "user": {
+        "title": "Typ komunikacji z falownikiem",
+        "description": "Wybierz integrację, która udostępnia falownik w Home Assistant. Stare konfiguracje pozostają zgodne z ESPHome Deye Inverter — Lewa-Reka.",
+        "data": {"name": "Nazwa integracji", "inverter_provider": "Typ komunikacji z falownikiem"}
+      },
+      "mapping_mode": {
         "title": "Sposób mapowania",
-        "description": "Wybierz automatyczne podpowiedzi albo ręczne mapowanie. Automat tylko proponuje encje — przed zapisaniem zobaczysz i zatwierdzisz każdy wybór.",
-        "data": {"name": "Nazwa integracji", "mapping_mode": "Sposób wyboru encji"}
+        "description": "Automat tylko podpowiada encje. Każdy wybór zostanie pokazany przed końcowym zapisem.",
+        "data": {"mapping_mode": "Sposób wyboru encji"}
+      },
+      "inverter_device": {
+        "title": "Wybór falownika w Home Assistant",
+        "description": "Wybierz konkretne urządzenie falownika. Automatyczne mapowanie użyje wyłącznie encji przypisanych do tego urządzenia i nie połączy danych z drugim falownikiem ani starą integracją.",
+        "data": {"inverter_device_id": "Urządzenie falownika Deye"}
       },
       "inverter": {
         "title": "1 z 5 — Falownik Deye i przepływy energii",
-        "description": "Wskaż encje sterujące oraz pomiary. Pola trybu pracy, mocy sprzedaży, prądu rozładowania i SOC są wymagane dla bezpiecznego działania.",
+        "description": "Wskaż dostępne encje sterujące oraz pomiary. Każde pole można pozostawić puste; brak encji ograniczy odpowiednią funkcję, ale nie zablokuje zapisania mapowania po końcowym potwierdzeniu.",
         "data": {
           "work_mode_select": "Tryb pracy falownika",
           "max_sell_power_number": "Maksymalna moc sprzedaży",
@@ -29,6 +39,21 @@
           "battery_power_sensor": "Znak ładowania/rozładowania ustawisz później w zakładce Taryfa i dystrybucja."
         }
       },
+      "provider_options": {
+        "title": "Niestandardowe wartości sterujące",
+        "description": "Wpisz dokładne wartości opcji widoczne w wybranych encjach select. Integracja nie zgaduje trybów sterowania.",
+        "data": {"work_mode_sell_option": "Opcja: sprzedaż", "work_mode_zero_load_option": "Opcja: Zero Export To Load", "work_mode_zero_ct_option": "Opcja: Zero Export To CT", "tou_grid_enable_option": "Opcja: źródło Grid", "tou_grid_disable_option": "Opcja: źródło wyłączone", "tou_grid_generator_option": "Opcja: źródło Generator", "tou_grid_both_option": "Opcja: Grid i Generator"}
+      },
+      "tou_1_3": {
+        "title": "Mapowanie Deye Time Of Use — zakresy 1–3",
+        "description": "Wskaż start, SOC i źródło ładowania dla zakresów 1–3. Integracja nie włącza ani nie wyłącza głównego Time Of Use.",
+        "data": {"work_mode_aux_entity": "Sunsynk — Solar Export", "tou_1_start_entity": "Zakres 1 — start", "tou_1_soc_entity": "Zakres 1 — SOC", "tou_1_grid_entity": "Zakres 1 — ładowanie z sieci", "tou_2_start_entity": "Zakres 2 — start", "tou_2_soc_entity": "Zakres 2 — SOC", "tou_2_grid_entity": "Zakres 2 — ładowanie z sieci", "tou_3_start_entity": "Zakres 3 — start", "tou_3_soc_entity": "Zakres 3 — SOC", "tou_3_grid_entity": "Zakres 3 — ładowanie z sieci"}
+      },
+      "tou_4_6": {
+        "title": "Mapowanie Deye Time Of Use — zakresy 4–6",
+        "description": "Uzupełnij pozostałe trzy fizyczne zakresy TOU.",
+        "data": {"tou_4_start_entity": "Zakres 4 — start", "tou_4_soc_entity": "Zakres 4 — SOC", "tou_4_grid_entity": "Zakres 4 — ładowanie z sieci", "tou_5_start_entity": "Zakres 5 — start", "tou_5_soc_entity": "Zakres 5 — SOC", "tou_5_grid_entity": "Zakres 5 — ładowanie z sieci", "tou_6_start_entity": "Zakres 6 — start", "tou_6_soc_entity": "Zakres 6 — SOC", "tou_6_grid_entity": "Zakres 6 — ładowanie z sieci"}
+      },
       "energy_details": {
         "title": "Szczegóły Deye — encje opcjonalne",
         "description": "Wszystkie pola są opcjonalne. Fazy LOAD poprawiają historię i zapewniają fallback, a liczniki energii służą do rozliczeń. Brak pola nie blokuje integracji.",
@@ -36,6 +61,13 @@
           "load_l1_power_sensor": "Moc domu L1 — opcjonalne, zalecane",
           "load_l2_power_sensor": "Moc domu L2 — opcjonalne, zalecane",
           "load_l3_power_sensor": "Moc domu L3 — opcjonalne, zalecane",
+          "grid_l1_power_sensor": "Moc sieci L1 — opcjonalne",
+          "grid_l2_power_sensor": "Moc sieci L2 — opcjonalne",
+          "grid_l3_power_sensor": "Moc sieci L3 — opcjonalne",
+          "grid_l1_voltage_sensor": "Napięcie sieci L1 — opcjonalne",
+          "grid_l2_voltage_sensor": "Napięcie sieci L2 — opcjonalne",
+          "grid_l3_voltage_sensor": "Napięcie sieci L3 — opcjonalne",
+          "load_frequency_sensor": "Częstotliwość AC — opcjonalne",
           "daily_load_consumption_sensor": "Energia zużyta przez dom — licznik kWh",
           "daily_energy_bought_sensor": "Dzienna energia pobrana z sieci",
           "daily_energy_sold_sensor": "Dzienna energia oddana do sieci",
@@ -88,25 +120,38 @@
         "data": {"weather_entity": "Encja lokalnej prognozy pogody"},
         "data_description": {"weather_entity": "Domyślna propozycja: weather.forecast_home_2. Możesz wskazać dowolną encję weather.* z prognozą godzinową."}
       },
+      "capabilities": {"title": "5 z 6 — Test możliwości (bez zapisu)", "description": "Urządzenie: {device}. Odczyty: {readings}. Sterowanie podstawowe: {basic_control}. Sprzedaż: {selling}. Ładowanie: {charging}. Pełne TOU: {full_tou}. Core/AI: {core_ai}. Ten test wyłącznie odczytuje encje i nie wysyła poleceń do falownika.", "data": {"continue": "Rozumiem wynik testu i przechodzę dalej"}},
+      "inverter_power": {
+        "title": "6 z 6 — Maksymalna moc AC falownika",
+        "description": "Wykryty limit encji mocy sprzedaży: {detected} W. Ustaw górną granicę mocy sprzedaży w watach (1–{absolute} W). Wartość domyślna: {default} W.",
+        "data": {"inverter_max_power_w": "Maksymalna moc AC (W)"}
+      },
       "summary": {
         "title": "5 z 5 — Test i zatwierdzenie",
-        "description": "Zmapowano: {mapped}. Brakujące wymagane pola: {missing}. Sprawdź poprzednie ekrany i zatwierdź konfigurację.",
+        "description": "Łącznie pól: {total}. Zmapowano: {mapped}. Pominięto: {skipped}. Dostępne możliwości: {capabilities}. Brakujące pola pełnego sterowania: {missing}. Brakujące pola dostawcy/TOU: {provider_missing}. Encje z innego urządzenia: {device_issues}. Braki ograniczają wskazane funkcje, lecz po świadomym potwierdzeniu można zapisać mapowanie częściowe.",
         "data": {"confirm": "Potwierdzam mapowanie i ustawienia"}
       }
     },
-    "error": {"required_entity_missing": "Co najmniej jedna wymagana encja nie istnieje albo jest niedostępna. Wróć do kroku Deye i popraw mapowanie."},
+    "error": {"required_entity_missing": "Co najmniej jedna encja pełnego sterowania nie istnieje albo jest niedostępna.", "provider_entity_missing": "Brakuje encji lub jawnej opcji wybranego dostawcy; odpowiednia funkcja pozostanie niedostępna.", "entity_from_other_device": "Co najmniej jedna wybrana encja należy do innego urządzenia Home Assistant. Popraw mapowanie, aby nie sterować niewłaściwym falownikiem.", "invalid_inverter_max_power_w": "Moc musi być w zakresie 1000–30000 W.", "mapped_entity_missing": "Wybrana encja cen nie istnieje. DEM nie zastąpi jej inną encją.", "unsupported_price_schema": "Wybrana encja nie publikuje obsługiwanego szeregu cen. Ustaw jawne mapowanie custom."},
     "abort": {"already_configured": "Deye Energy Manager jest już skonfigurowany."}
   },
   "options": {
     "step": {
-      "init": {"title": "Mapowanie encji", "description": "Wybierz sposób ponownego mapowania. Zmiany zostaną zapisane dopiero po ostatnim potwierdzeniu.", "data": {"mapping_mode": "Sposób wyboru encji"}},
-      "inverter": {"title": "1 z 5 — Falownik Deye i przepływy energii", "description": "Sprawdź encje sterujące oraz pomiary.", "data": {"work_mode_select": "Tryb pracy falownika", "max_sell_power_number": "Maksymalna moc sprzedaży", "discharge_current_number": "Maksymalny prąd rozładowania", "charge_current_number": "Maksymalny prąd ładowania baterii", "grid_charge_current_number": "Maksymalny prąd ładowania z sieci", "battery_soc_sensor": "Poziom naładowania baterii (SOC)", "grid_power_sensor": "Moc sieci", "pv_power_sensor": "Moc PV", "load_power_sensor": "Zużycie domu", "battery_power_sensor": "Moc baterii", "daily_pv_production_sensor": "Produkcja PV dzisiaj"}},
-      "energy_details": {"title": "Szczegóły Deye — encje opcjonalne", "description": "Wszystkie pola są opcjonalne. Brak pola nie blokuje integracji.", "data": {"load_l1_power_sensor": "Moc domu L1 — opcjonalne, zalecane", "load_l2_power_sensor": "Moc domu L2 — opcjonalne, zalecane", "load_l3_power_sensor": "Moc domu L3 — opcjonalne, zalecane", "daily_load_consumption_sensor": "Energia zużyta przez dom — licznik kWh", "daily_energy_bought_sensor": "Dzienna energia pobrana z sieci", "daily_energy_sold_sensor": "Dzienna energia oddana do sieci", "pv1_power_sensor": "Moc PV string 1", "pv2_power_sensor": "Moc PV string 2", "pv3_power_sensor": "Moc PV string 3", "pv1_voltage_sensor": "Napięcie PV string 1", "pv2_voltage_sensor": "Napięcie PV string 2", "pv1_current_sensor": "Prąd PV string 1", "pv2_current_sensor": "Prąd PV string 2", "battery_bms_voltage_sensor": "Napięcie magazynu", "battery_current_sensor": "Prąd magazynu", "battery_temperature_sensor": "Temperatura magazynu", "battery_soh_sensor": "SOH magazynu", "daily_battery_charge_sensor": "Dzienna energia naładowana do magazynu", "daily_battery_discharge_sensor": "Dzienna energia rozładowana z magazynu", "inverter_ac_temperature_sensor": "Temperatura AC falownika"}},
+      "init": {"title": "Typ komunikacji z falownikiem", "description": "Wybierz źródło encji falownika. Zmiana zostanie zapisana dopiero po ostatnim potwierdzeniu.", "data": {"inverter_provider": "Typ komunikacji z falownikiem"}},
+      "inverter_device": {"title": "Wybór falownika w Home Assistant", "description": "Automatyczne mapowanie zostanie ograniczone do encji wybranego urządzenia.", "data": {"inverter_device_id": "Urządzenie falownika Deye"}},
+      "mapping_mode": {"title": "Mapowanie encji", "description": "Wybierz sposób ponownego mapowania.", "data": {"mapping_mode": "Sposób wyboru encji"}},
+      "provider_options": {"title": "Niestandardowe wartości sterujące", "description": "Wpisz dokładne wartości opcji encji select.", "data": {"work_mode_sell_option": "Opcja: sprzedaż", "work_mode_zero_load_option": "Opcja: Zero Export To Load", "work_mode_zero_ct_option": "Opcja: Zero Export To CT", "tou_grid_enable_option": "Opcja: źródło Grid", "tou_grid_disable_option": "Opcja: źródło wyłączone", "tou_grid_generator_option": "Opcja: źródło Generator", "tou_grid_both_option": "Opcja: Grid i Generator"}},
+      "tou_1_3": {"title": "Mapowanie TOU — zakresy 1–3", "description": "Sprawdź start, SOC i źródło ładowania. Integracja nie włącza ani nie wyłącza głównego Time Of Use.", "data": {"work_mode_aux_entity": "Sunsynk — Solar Export", "tou_1_start_entity": "Zakres 1 — start", "tou_1_soc_entity": "Zakres 1 — SOC", "tou_1_grid_entity": "Zakres 1 — ładowanie z sieci", "tou_2_start_entity": "Zakres 2 — start", "tou_2_soc_entity": "Zakres 2 — SOC", "tou_2_grid_entity": "Zakres 2 — ładowanie z sieci", "tou_3_start_entity": "Zakres 3 — start", "tou_3_soc_entity": "Zakres 3 — SOC", "tou_3_grid_entity": "Zakres 3 — ładowanie z sieci"}},
+      "tou_4_6": {"title": "Mapowanie TOU — zakresy 4–6", "description": "Sprawdź pozostałe zakresy.", "data": {"tou_4_start_entity": "Zakres 4 — start", "tou_4_soc_entity": "Zakres 4 — SOC", "tou_4_grid_entity": "Zakres 4 — ładowanie z sieci", "tou_5_start_entity": "Zakres 5 — start", "tou_5_soc_entity": "Zakres 5 — SOC", "tou_5_grid_entity": "Zakres 5 — ładowanie z sieci", "tou_6_start_entity": "Zakres 6 — start", "tou_6_soc_entity": "Zakres 6 — SOC", "tou_6_grid_entity": "Zakres 6 — ładowanie z sieci"}},
+      "inverter": {"title": "1 z 5 — Falownik Deye i przepływy energii", "description": "Sprawdź dostępne encje. Każde pole jest opcjonalne; brak encji ograniczy odpowiednią funkcję, ale nie zablokuje zapisu po potwierdzeniu.", "data": {"work_mode_select": "Tryb pracy falownika", "max_sell_power_number": "Maksymalna moc sprzedaży", "discharge_current_number": "Maksymalny prąd rozładowania", "charge_current_number": "Maksymalny prąd ładowania baterii", "grid_charge_current_number": "Maksymalny prąd ładowania z sieci", "battery_soc_sensor": "Poziom naładowania baterii (SOC)", "grid_power_sensor": "Moc sieci", "pv_power_sensor": "Moc PV", "load_power_sensor": "Zużycie domu", "battery_power_sensor": "Moc baterii", "daily_pv_production_sensor": "Produkcja PV dzisiaj"}},
+      "energy_details": {"title": "Szczegóły Deye — encje opcjonalne", "description": "Wszystkie pola są opcjonalne. Brak pola nie blokuje integracji.", "data": {"load_l1_power_sensor": "Moc domu L1 — opcjonalne, zalecane", "load_l2_power_sensor": "Moc domu L2 — opcjonalne, zalecane", "load_l3_power_sensor": "Moc domu L3 — opcjonalne, zalecane", "grid_l1_power_sensor": "Moc sieci L1 — opcjonalne", "grid_l2_power_sensor": "Moc sieci L2 — opcjonalne", "grid_l3_power_sensor": "Moc sieci L3 — opcjonalne", "grid_l1_voltage_sensor": "Napięcie sieci L1 — opcjonalne", "grid_l2_voltage_sensor": "Napięcie sieci L2 — opcjonalne", "grid_l3_voltage_sensor": "Napięcie sieci L3 — opcjonalne", "load_frequency_sensor": "Częstotliwość AC — opcjonalne", "daily_load_consumption_sensor": "Energia zużyta przez dom — licznik kWh", "daily_energy_bought_sensor": "Dzienna energia pobrana z sieci", "daily_energy_sold_sensor": "Dzienna energia oddana do sieci", "pv1_power_sensor": "Moc PV string 1", "pv2_power_sensor": "Moc PV string 2", "pv3_power_sensor": "Moc PV string 3", "pv1_voltage_sensor": "Napięcie PV string 1", "pv2_voltage_sensor": "Napięcie PV string 2", "pv1_current_sensor": "Prąd PV string 1", "pv2_current_sensor": "Prąd PV string 2", "battery_bms_voltage_sensor": "Napięcie magazynu", "battery_current_sensor": "Prąd magazynu", "battery_temperature_sensor": "Temperatura magazynu", "battery_soh_sensor": "SOH magazynu", "daily_battery_charge_sensor": "Dzienna energia naładowana do magazynu", "daily_battery_discharge_sensor": "Dzienna energia rozładowana z magazynu", "inverter_ac_temperature_sensor": "Temperatura AC falownika"}},
       "prices": {"title": "2 z 5 — Encje cen energii", "description": "Sprawdź wyłącznie encje cen. Operatora, taryfę i znaki przepływu ustawisz w zakładce Taryfa i dystrybucja.", "data": {"price_sensor": "Cena sprzedaży dzisiaj", "sell_price_tomorrow_sensor": "Cena sprzedaży jutro", "buy_price_today_sensor": "Cena zakupu dzisiaj", "buy_price_tomorrow_sensor": "Cena zakupu jutro"}},
       "solcast": {"title": "3 z 5 — Prognoza Solcast", "description": "Sprawdź encje prognozy PV.", "data": {"solcast_current_power_sensor": "Aktualna moc", "solcast_forecast_today_sensor": "Prognoza na dziś", "solcast_forecast_tomorrow_sensor": "Prognoza na jutro", "solcast_forecast_day_3_sensor": "Prognoza dzień 3", "solcast_forecast_day_4_sensor": "Prognoza dzień 4", "solcast_forecast_day_5_sensor": "Prognoza dzień 5", "solcast_forecast_day_6_sensor": "Prognoza dzień 6", "solcast_forecast_day_7_sensor": "Prognoza dzień 7", "solcast_remaining_today_sensor": "Pozostała prognoza na dziś", "solcast_peak_power_today_sensor": "Szczytowa moc dzisiaj", "solcast_peak_time_today_sensor": "Czas szczytowej mocy"}},
       "weather": {"title": "4 z 5 — Lokalna pogoda", "description": "Wybierz pomocniczą prognozę godzinową.", "data": {"weather_entity": "Encja weather.*"}},
-      "summary": {"title": "5 z 5 — Test i zatwierdzenie", "description": "Zmapowano: {mapped}. Brakujące wymagane pola: {missing}.", "data": {"confirm": "Potwierdzam zmiany"}}
+      "capabilities": {"title": "Test możliwości (bez zapisu)", "description": "Urządzenie: {device}. Odczyty: {readings}. Sterowanie podstawowe: {basic_control}. Sprzedaż: {selling}. Ładowanie: {charging}. Pełne TOU: {full_tou}. Core/AI: {core_ai}.", "data": {"continue": "Rozumiem wynik testu"}},
+      "inverter_power": {"title": "Maksymalna moc AC falownika", "description": "Wykryty limit encji mocy sprzedaży: {detected} W. Ustaw górną granicę mocy sprzedaży w watach (1–{absolute} W). Wartość domyślna: {default} W.", "data": {"inverter_max_power_w": "Maksymalna moc AC (W)"}},
+      "summary": {"title": "Test i zatwierdzenie", "description": "Łącznie pól: {total}. Zmapowano: {mapped}. Pominięto: {skipped}. Dostępne możliwości: {capabilities}. Brakujące pola pełnego sterowania: {missing}. Brakujące pola dostawcy/TOU: {provider_missing}. Encje z innego urządzenia: {device_issues}. Mapowanie częściowe można zapisać po świadomym potwierdzeniu.", "data": {"confirm": "Potwierdzam zmiany i ograniczenia"}}
     },
-    "error": {"required_entity_missing": "Wymagana encja jest niedostępna. Wróć i popraw mapowanie."}
+    "error": {"required_entity_missing": "Encja pełnego sterowania jest niedostępna.", "provider_entity_missing": "Brakuje encji lub jawnej opcji dostawcy; odpowiednia funkcja pozostanie niedostępna.", "entity_from_other_device": "Wybrana encja należy do innego urządzenia Home Assistant. Popraw mapowanie przed zapisaniem.", "invalid_inverter_max_power_w": "Moc musi być w zakresie 1000–30000 W.", "mapped_entity_missing": "Wybrana encja cen nie istnieje. DEM nie zastąpi jej inną encją.", "unsupported_price_schema": "Wybrana encja nie publikuje obsługiwanego szeregu cen. Ustaw jawne mapowanie custom."}
   }
 }

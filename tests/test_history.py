@@ -51,6 +51,18 @@ class HistoryMigrationTests(unittest.TestCase):
         self.assertEqual(row["latest_forecast_kwh"], 22.5)
         self.assertEqual(row["forecast_snapshots"], [])
 
+    def test_issue_8_solcast_migration_keeps_empty_tracking_truly_empty(self):
+        raw = {
+            "schema_version": history.HISTORY_SCHEMA_VERSION,
+            "history": [],
+            "tracking": {},
+        }
+
+        migrated, changed = history.migrate_solcast_payload(raw)
+
+        self.assertFalse(changed)
+        self.assertEqual(migrated["tracking"], {})
+
     def test_learning_migration_adds_independent_channel_quality(self):
         raw = {
             "schema_version": 2,

@@ -9,6 +9,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import DeyeEnergyManagerEntity
+from .inverter_provider import normal_profile_mode_metadata
 
 
 class DeyeManagerSensor(DeyeEnergyManagerEntity, SensorEntity):
@@ -45,7 +46,21 @@ class DeyeManagerSensor(DeyeEnergyManagerEntity, SensorEntity):
 
         @callback
         def _source_changed(_event) -> None:
+            self.runtime._performance.record_proxy_event(entity_id)
+            signature = self.runtime._entity_public_signature(self)
+            if (
+                signature is not None
+                and self.runtime._entity_publish_signatures.get(id(self)) == signature
+            ):
+                return
+            self.runtime._performance.record_entity_write(
+                self._deye_manager_key,
+                "proxy_source_event",
+                channel="proxy",
+            )
             self.async_write_ha_state()
+            if signature is not None:
+                self.runtime._entity_publish_signatures[id(self)] = signature
 
         self.async_on_remove(async_track_state_change_event(self.hass, [entity_id], _source_changed))
 
@@ -84,55 +99,44 @@ def sales_stats_attrs(runtime):
         "sold_value_week": round(sum(row["value"] for row in week), 4),
         "sold_energy_month": round(sum(row["kwh"] for row in month), 4),
         "sold_value_month": round(sum(row["value"] for row in month), 4),
+        "energy_reconciliation": runtime.data_quality.get("sales_today", {}),
     }
+
+
+def build_ai_state_snapshot(runtime):
+    """Build the heavy AI publication payload outside entity getters."""
+    return runtime.build_ai_state_snapshot()
 
 
 def ai_state_attrs(runtime):
-    return {
-        "settings": runtime.ai_settings,
-        "user_profiles": runtime.user_profiles,
-        "optimizer_plan_history": runtime.optimizer_plan_history[:30],
-        "api_assistant": runtime.ai_api_public_context(),
-        "history": runtime.ai_history,
-        "history_count": len(runtime.ai_history),
-        "learning_summary": runtime.learning_summary(),
-        "learning_recent": runtime.learning_history[:24],
-        "learning_current_hour": runtime._finalize_learning_hour(
-            runtime.learning_tracking,
-            update_models=False,
-        ) if runtime.learning_tracking else {},
-        "current_hour_partial": runtime.current_hour_partial_context(),
-        "live_state": runtime.live_state_context(),
-        "daily_summary": runtime.history_daily_summary(),
-        "monthly_summary": runtime.history_monthly_summary(),
-        "solcast_history": runtime.solcast_history,
-        "energy_samples": runtime.energy_samples[-288:],
-        "weather": runtime.weather_context(),
-        "tariff": runtime.tariff_context(),
-        "planner_48h": runtime.ai_plan_48h(),
-        "future_plan": runtime.future_plan,
-        "plan_execution_index": runtime.plan_execution_index(),
-        "plan_execution_today": runtime.plan_execution_day(),
-    }
+    """Return only the ready runtime cache; never run optimizer or Store work."""
+    return runtime._ai_state_snapshot
+
+
+def solcast_accuracy_value(runtime):
+    """Read the value from the same cached learning snapshot as the attributes."""
+    return runtime.learning_summary().get("solcast_accuracy_avg")
 
 
 def solcast_accuracy_attrs(runtime):
-    tracking = runtime.solcast_tracking
-    forecast = runtime.safe_float(tracking.get("forecast"), 0)
-    actual = runtime.safe_float(tracking.get("actual"), 0)
     summary = runtime.learning_summary()
+    metrics = runtime.solcast_current_day_metrics(
+        historical_accuracy_pct=summary.get("solcast_accuracy_avg"),
+    )
     return {
         "history": runtime.solcast_history,
-        "historical_accuracy_percent": summary.get("solcast_accuracy_avg"),
+        **metrics,
+        # Stable legacy aliases are retained for existing dashboards, but they
+        # now point at the canonical fields instead of independent formulas.
+        "historical_accuracy_percent": metrics.get("historical_accuracy_pct"),
         "historical_correction_factor": summary.get("solcast_correction_factor"),
         "completed_days": summary.get("solcast_accuracy_days", 0),
         "last_completed_day": summary.get("solcast_last_date"),
         "last_completed_accuracy_percent": summary.get("solcast_last_accuracy"),
-        "current_day": tracking.get("date"),
-        "forecast_today_kwh": round(forecast, 3),
-        "actual_today_kwh": round(actual, 3),
-        "difference_today_kwh": round(actual - forecast, 3),
-        "forecast_progress_percent": round(min(100, actual / forecast * 100), 1) if forecast > 0 else None,
+        "current_day": metrics.get("tracking_day"),
+        "actual_today_kwh": metrics.get("production_today_kwh"),
+        "difference_today_kwh": metrics.get("forecast_difference_today_kwh"),
+        "forecast_progress_percent": metrics.get("realization_today_pct"),
         "day_complete": False,
         "source_forecast": runtime.solcast_forecast_today_sensor,
         "source_actual": runtime.daily_pv_production_sensor,
@@ -140,7 +144,7 @@ def solcast_accuracy_attrs(runtime):
 
 
 def diagnostics_attrs(runtime):
-    return runtime.diagnostics()
+    return runtime.diagnostics_public_snapshot()
 
 
 def tariff_attrs(runtime):
@@ -153,6 +157,15 @@ def weather_attrs(runtime):
 
 def manager_status_attrs(runtime):
     return {
+        "control": {
+            "entity_id": runtime.control_entity_id,
+            "enabled": bool(runtime.control_enabled),
+            "status": runtime.control_status,
+        },
+        "control_enabled": bool(runtime.control_enabled),
+        "control_status": runtime.control_status,
+        "planned_manager_action": runtime.planned_manager_action,
+        "executed_manager_action": runtime.executed_manager_action,
         "charge_profile": {
             "grid_charge_enabled": bool(runtime.charge_profile_grid_enabled),
             "charge_current": round(runtime.charge_profile_charge_current, 2),
@@ -160,6 +173,15 @@ def manager_status_attrs(runtime):
             "grid_charge_current": round(runtime.charge_profile_grid_charge_current, 2),
             "target_soc": round(runtime.charge_profile_target_soc, 1),
         },
+        "default_settings": {
+            "mode": runtime.default_work_mode,
+            "physical_work_mode": runtime.default_normal_physical_work_mode(),
+            "sell_power": round(runtime.default_sell_power, 1),
+            "discharge_current": round(runtime.default_discharge_current, 1),
+            "charge_current": round(runtime.default_charge_current, 1),
+            "grid_charge_current": round(runtime.default_grid_charge_current, 1),
+        },
+        "normal_profile_options": normal_profile_mode_metadata(runtime.data),
         "normal_profile": {
             "physical_work_mode": runtime.normal_profile_physical_work_mode,
             "sell_power": round(runtime.normal_profile_sell_power, 1),
@@ -175,6 +197,24 @@ def manager_status_attrs(runtime):
             }
             for key, slot in runtime.slots.items()
         },
+        # Canonical per-slot snapshot used by the transactional schedule editor.
+        # In particular, physical_work_mode has no dedicated per-slot entity.
+        "schedule_slots": {
+            key: {
+                "enabled": bool(slot.enabled),
+                "mode": slot.mode,
+                "physical_work_mode": slot.physical_work_mode,
+                "sell_power": round(slot.sell_power, 2),
+                "discharge_current": round(slot.discharge_current, 2),
+                "charge_enabled": bool(slot.charge_enabled),
+                "charge_current": round(slot.charge_current, 2),
+                "grid_charge_current": round(slot.grid_charge_current, 2),
+                "minimum_sell_soc": round(slot.minimum_sell_soc, 2),
+                "tou_soc": None if slot.tou_soc is None else round(slot.tou_soc, 2),
+                "min_sell_price": round(slot.min_sell_price, 4),
+            }
+            for key, slot in runtime.slots.items()
+        },
     }
 
 
@@ -183,6 +223,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     async_add_entities(
         [
             DeyeManagerSensor(runtime, "manager_status", "Manager status", lambda r: r.manager_status, attrs_fn=manager_status_attrs),
+            DeyeManagerSensor(
+                runtime,
+                "planned_manager_action",
+                "Planowana decyzja Managera",
+                lambda r: r.planned_manager_action,
+            ),
+            DeyeManagerSensor(
+                runtime,
+                "executed_manager_action",
+                "Wykonana decyzja Managera",
+                lambda r: r.executed_manager_action,
+            ),
             DeyeManagerSensor(runtime, "decision_reason", "Decision reason", lambda r: r.decision_reason),
             DeyeManagerSensor(runtime, "next_active_slot", "Next active slot", lambda r: r.next_active_slot),
             DeyeManagerSensor(runtime, "last_applied_at", "Last settings applied", lambda r: r.last_applied_at or "never"),
@@ -200,9 +252,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
             DeyeManagerSensor(runtime, "target_sell_power", "Target sell power", lambda r: r.target_sell_power, "W", SensorDeviceClass.POWER),
             DeyeManagerSensor(runtime, "target_discharge_current", "Target discharge current", lambda r: r.target_discharge_current, "A", SensorDeviceClass.CURRENT),
             DeyeManagerSensor(runtime, "target_charge_current", "Target charge current", lambda r: r.target_charge_current, "A", SensorDeviceClass.CURRENT),
-            DeyeManagerSensor(runtime, "battery_soc", "Battery SOC", lambda r: r.state_float(r.battery_soc_sensor, 0), "%", SensorDeviceClass.BATTERY, source_fn=lambda r: r.battery_soc_sensor),
-            DeyeManagerSensor(runtime, "pv_power", "PV power", lambda r: r.state_float(r.pv_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv_power_sensor),
-            DeyeManagerSensor(runtime, "load_power", "Load power", lambda r: r.state_float(r.load_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_power_sensor),
+            DeyeManagerSensor(runtime, "battery_soc", "Battery SOC", lambda r: r.current_soc_or_none(), "%", SensorDeviceClass.BATTERY, source_fn=lambda r: r.battery_soc_sensor),
+            DeyeManagerSensor(runtime, "pv_power", "PV power", lambda r: r._measurement(r.pv_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv_power_sensor),
+            DeyeManagerSensor(runtime, "load_power", "Load power", lambda r: r.load_power_reading().get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_power_sensor),
             DeyeManagerSensor(runtime, "battery_power", "Battery power", lambda r: r.normalized_battery_power(), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.battery_power_sensor),
             DeyeManagerSensor(runtime, "grid_power", "Grid power", lambda r: r.normalized_grid_power(), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_power_sensor),
             DeyeManagerSensor(runtime, "energy_price", "Energy price", lambda r: r.state_float(r.price_sensor, 0), "PLN/kWh", source_fn=lambda r: r.price_sensor),
@@ -250,6 +302,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     "settings",
                     "user_profiles",
                     "optimizer_plan_history",
+                    "optimizer_plan_history_format",
+                    "optimizer_plan_history_schema_version",
                     "api_assistant",
                     "history",
                     "learning_summary",
@@ -267,32 +321,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
                     "future_plan",
                 },
             ),
-            DeyeManagerSensor(runtime, "daily_pv_production", "Daily PV production", lambda r: r.state_float(r.daily_pv_production_sensor, 0), "kWh", SensorDeviceClass.ENERGY, attrs_fn=source_sensor_attrs(lambda r: r.daily_pv_production_sensor), source_fn=lambda r: r.daily_pv_production_sensor),
-            DeyeManagerSensor(runtime, "solcast_accuracy", "Historical Solcast accuracy", lambda r: r.learning_summary().get("solcast_accuracy_avg"), "%", attrs_fn=solcast_accuracy_attrs),
+            DeyeManagerSensor(runtime, "daily_pv_production", "Daily PV production", lambda r: r.daily_energy_value(r.daily_pv_production_sensor), "kWh", SensorDeviceClass.ENERGY, attrs_fn=source_sensor_attrs(lambda r: r.daily_pv_production_sensor), source_fn=lambda r: r.daily_pv_production_sensor),
+            DeyeManagerSensor(runtime, "solcast_accuracy", "Historical Solcast accuracy", solcast_accuracy_value, "%", attrs_fn=solcast_accuracy_attrs),
             DeyeManagerSensor(runtime, "weather_forecast", "Weather forecast support", lambda r: r.weather_context().get("condition"), attrs_fn=weather_attrs, source_fn=lambda r: r.weather_entity),
             DeyeManagerSensor(runtime, "tariff_status", "Distribution tariff", lambda r: r.tariff_context().get("zone"), attrs_fn=tariff_attrs),
             # Status panel detail sensors (optional, source configurable in mapping wizard)
-            DeyeManagerSensor(runtime, "pv1_power", "PV1 power", lambda r: r.state_float(r.pv1_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv1_power_sensor),
+            DeyeManagerSensor(runtime, "pv1_power", "PV1 power", lambda r: r._measurement(r.pv1_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv1_power_sensor),
             DeyeManagerSensor(runtime, "pv1_voltage", "PV1 voltage", lambda r: r.state_float(r.pv1_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.pv1_voltage_sensor),
             DeyeManagerSensor(runtime, "pv1_current", "PV1 current", lambda r: r.state_float(r.pv1_current_sensor, 0), "A", SensorDeviceClass.CURRENT, source_fn=lambda r: r.pv1_current_sensor),
-            DeyeManagerSensor(runtime, "pv2_power", "PV2 power", lambda r: r.state_float(r.pv2_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv2_power_sensor),
+            DeyeManagerSensor(runtime, "pv2_power", "PV2 power", lambda r: r._measurement(r.pv2_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.pv2_power_sensor),
             DeyeManagerSensor(runtime, "pv2_voltage", "PV2 voltage", lambda r: r.state_float(r.pv2_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.pv2_voltage_sensor),
             DeyeManagerSensor(runtime, "pv2_current", "PV2 current", lambda r: r.state_float(r.pv2_current_sensor, 0), "A", SensorDeviceClass.CURRENT, source_fn=lambda r: r.pv2_current_sensor),
             DeyeManagerSensor(runtime, "battery_bms_voltage", "Battery BMS voltage", lambda r: r.state_float(r.battery_bms_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.battery_bms_voltage_sensor),
             DeyeManagerSensor(runtime, "battery_current", "Battery current", lambda r: r.state_float(r.battery_current_sensor, 0), "A", SensorDeviceClass.CURRENT, source_fn=lambda r: r.battery_current_sensor),
             DeyeManagerSensor(runtime, "battery_temperature", "Battery temperature", lambda r: r.state_float(r.battery_temperature_sensor, 0), "°C", SensorDeviceClass.TEMPERATURE, source_fn=lambda r: r.battery_temperature_sensor),
-            DeyeManagerSensor(runtime, "daily_battery_charge", "Daily battery charge", lambda r: r.state_float(r.daily_battery_charge_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_battery_charge_sensor),
-            DeyeManagerSensor(runtime, "daily_battery_discharge", "Daily battery discharge", lambda r: r.state_float(r.daily_battery_discharge_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_battery_discharge_sensor),
-            DeyeManagerSensor(runtime, "daily_energy_bought", "Daily energy bought", lambda r: r.state_float(r.daily_energy_bought_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_energy_bought_sensor),
-            DeyeManagerSensor(runtime, "daily_energy_sold", "Daily energy sold", lambda r: r.state_float(r.daily_energy_sold_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_energy_sold_sensor),
-            DeyeManagerSensor(runtime, "grid_l1_power", "Grid L1 power", lambda r: r.state_float(r.grid_l1_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l1_power_sensor),
+            DeyeManagerSensor(runtime, "daily_battery_charge", "Daily battery charge", lambda r: r.daily_energy_value(r.daily_battery_charge_sensor), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_battery_charge_sensor),
+            DeyeManagerSensor(runtime, "daily_battery_discharge", "Daily battery discharge", lambda r: r.daily_energy_value(r.daily_battery_discharge_sensor), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_battery_discharge_sensor),
+            DeyeManagerSensor(runtime, "daily_energy_bought", "Daily energy bought", lambda r: r.daily_energy_value(r.daily_energy_bought_sensor), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_energy_bought_sensor),
+            DeyeManagerSensor(runtime, "daily_energy_sold", "Daily energy sold", lambda r: r.daily_energy_value(r.daily_energy_sold_sensor), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_energy_sold_sensor),
+            DeyeManagerSensor(runtime, "grid_l1_power", "Grid L1 power", lambda r: r._measurement(r.grid_l1_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l1_power_sensor),
             DeyeManagerSensor(runtime, "grid_l1_voltage", "Grid L1 voltage", lambda r: r.state_float(r.grid_l1_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.grid_l1_voltage_sensor),
-            DeyeManagerSensor(runtime, "grid_l2_power", "Grid L2 power", lambda r: r.state_float(r.grid_l2_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l2_power_sensor),
+            DeyeManagerSensor(runtime, "grid_l2_power", "Grid L2 power", lambda r: r._measurement(r.grid_l2_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l2_power_sensor),
             DeyeManagerSensor(runtime, "grid_l2_voltage", "Grid L2 voltage", lambda r: r.state_float(r.grid_l2_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.grid_l2_voltage_sensor),
-            DeyeManagerSensor(runtime, "grid_l3_power", "Grid L3 power", lambda r: r.state_float(r.grid_l3_power_sensor, 0), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l3_power_sensor),
+            DeyeManagerSensor(runtime, "grid_l3_power", "Grid L3 power", lambda r: r._measurement(r.grid_l3_power_sensor).get("value") or 0, "W", SensorDeviceClass.POWER, source_fn=lambda r: r.grid_l3_power_sensor),
             DeyeManagerSensor(runtime, "grid_l3_voltage", "Grid L3 voltage", lambda r: r.state_float(r.grid_l3_voltage_sensor, 0), "V", SensorDeviceClass.VOLTAGE, source_fn=lambda r: r.grid_l3_voltage_sensor),
             DeyeManagerSensor(runtime, "load_frequency", "Load frequency", lambda r: r.state_float(r.load_frequency_sensor, 0), "Hz", SensorDeviceClass.FREQUENCY, source_fn=lambda r: r.load_frequency_sensor),
-            DeyeManagerSensor(runtime, "daily_load_consumption", "Daily load consumption", lambda r: r.state_float(r.daily_load_consumption_sensor, 0), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_load_consumption_sensor),
+            DeyeManagerSensor(runtime, "daily_load_consumption", "Daily load consumption", lambda r: r.daily_energy_value(r.daily_load_consumption_sensor), "kWh", SensorDeviceClass.ENERGY, source_fn=lambda r: r.daily_load_consumption_sensor),
             DeyeManagerSensor(runtime, "load_l1_power", "Load L1 power", lambda r: r.state_float_or_none(r.load_l1_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l1_power_sensor),
             DeyeManagerSensor(runtime, "load_l2_power", "Load L2 power", lambda r: r.state_float_or_none(r.load_l2_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l2_power_sensor),
             DeyeManagerSensor(runtime, "load_l3_power", "Load L3 power", lambda r: r.state_float_or_none(r.load_l3_power_sensor), "W", SensorDeviceClass.POWER, source_fn=lambda r: r.load_l3_power_sensor),

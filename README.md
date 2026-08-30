@@ -2,12 +2,15 @@
 
 ![Deye Energy Manager](docs/banner.svg)
 
-[![version](https://img.shields.io/badge/version-0.7.9-blue.svg)](#wersja-079)
-[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](#instalacja)
+[![version](https://img.shields.io/badge/version-0.8.0-blue.svg)](#co-nowego-w-080)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](#szybki-start)
 [![license](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6%2B-18BCF2.svg)](#wymagania)
 
-Deye Energy Manager jest niestandardową integracją Home Assistant dla falowników Deye. Łączy harmonogram sprzedaży, ochronę magazynu energii, ładowanie z sieci, ceny Pstryk, prognozę Solcast oraz statystyki w jednej karcie Lovelace.
+Deye Energy Manager to niestandardowa integracja Home Assistant do planowania i
+bezpiecznego sterowania falownikiem Deye. Łączy Harmonogram pracy, fizyczne Deye
+Time Of Use, ceny energii, Solcast, statystyki, Optimizer Core i opcjonalne
+Sugestie AI w jednej karcie Lovelace.
 
 💛 **Darmowe i open-source.** Jeśli Deye Energy Manager pomaga Ci lepiej
 sprzedawać energię, oszczędzać kWh albo wygodniej obsługiwać falownik Deye,
@@ -18,561 +21,422 @@ możesz [postawić kawę](https://buycoffee.to/pasierbrg) ☕. To najlepszy sygn
   <img src="https://buycoffee.to/static/img/share/share-button-primary.png" width="166" height="43" alt="Postaw kawę dla pasierbrg na buycoffee.to">
 </a>
 
-## Wymagany projekt ESPHome Deye Inverter
+## Najważniejsze możliwości
 
-Deye Energy Manager został zaprojektowany i przetestowany do współpracy z
-projektem **ESPHome Deye Inverter** autorstwa Lewa-Reka:
+- Harmonogram pracy obejmujący 24 jednogodzinne sloty;
+- trzy logiczne tryby: **Normalna Praca**, **Ładowanie** i **Sprzedaż**;
+- Mapowanie Deye z planu 24 h do sześciu fizycznych zakresów 6/6;
+- edytor fizycznego Deye Time Of Use z odczytem actual/expected/status;
+- nadrzędny przełącznik **Sterowanie Deye**;
+- transakcyjne zapisy diff-only z confirmation i rollbackiem;
+- automatyczne źródła cen Pstryk/PSE/RCE oraz katalog taryf sprzedawców i OSD;
+- Optimizer Core, FuturePlan Dziś/Jutro i bezpieczne wykonanie JIT;
+- spójna analiza Solcast z historią oraz opcjonalne, doradcze Sugestie AI;
+- automatycznie zarządzany zasób Lovelace w standardowym trybie UI/storage;
+- diagnostyka providerów, mapowania i jakości danych.
 
-[Lewa-Reka/esphome-deye-inverter](https://github.com/Lewa-Reka/esphome-deye-inverter)
+## Obsługiwane źródła Deye i providerzy
 
-Projekt ESPHome zapewnia komunikację z falownikiem Deye oraz wymagane encje,
-tryby pracy i zabezpieczenia używane przez Deye Energy Manager. Jest wymagany
-do prawidłowego odczytu danych i bezpiecznego sterowania falownikiem.
+| Provider | Odczyty | Sterowanie | Deye Time Of Use |
+|---|---:|---:|---:|
+| ESPHome Deye Inverter — Lewa-Reka | tak | tak | pełne 6/6 |
+| Solarman | po zmapowaniu | tak | pełne 6/6 |
+| Sunsynk | po zmapowaniu | tak | pełne 6/6 |
+| Mapowanie niestandardowe | częściowe lub pełne | zależnie od encji | częściowe lub pełne |
+| Deye Inverter MQTT / Addon | po zmapowaniu | nie | tylko odczyt |
 
-Inne źródła encji lub sposoby komunikacji z falownikiem nie są obecnie objęte
-pełnym wsparciem ani testami zgodności.
+Referencyjnym źródłem encji jest
+[ESPHome Deye Inverter — Lewa-Reka](https://github.com/Lewa-Reka/esphome-deye-inverter).
+Obsługiwane są również encje publikowane przez
+[Solarman](https://github.com/StephanJoubert/home_assistant_solarman),
+[Sunsynk](https://github.com/kellerza/sunsynk) i odczytowy profil
+[Deye Inverter MQTT](https://github.com/kbialek/deye-inverter-mqtt/tree/0fd4b4d6416f93118829fa7c133c1533bb6440f2).
 
-## Zobacz Deye Energy Manager
+Kreator ogranicza automatyczne wykrywanie do wybranego urządzenia falownika.
+Mapowanie może być częściowe, ale niedostępne funkcje pozostają bezpiecznie
+zablokowane. Profil read-only nie otrzymuje zastępczych surowych zapisów MQTT.
 
-### Status energii i przepływy
+## Jak działa Harmonogram pracy
 
-Aktualne moce PV, sieci, baterii i domu, stan magazynu, kierunki przepływu oraz
-tryb pracy falownika w jednym widoku.
+Harmonogram zawiera 24 sloty po jednej godzinie. Edycja pojedynczego slotu działa
+na lokalnym szkicu: zmiana pola nie wywołuje usługi Home Assistant. **Anuluj**
+odrzuca szkic, a **Zapisz** wysyła jeden logiczny patch zawierający wszystkie
+rzeczywiście zmienione pola. Dialog czeka na potwierdzony stan backendu.
 
-![Status energii i przepływy](docs/screenshots/status-energy-0.7.9.png)
+Zmiana trybu może skopiować do szkicu zapisany profil Normalnej Pracy albo
+Ładowania. Późniejsze ręczne wartości slotu mają pierwszeństwo. Aktualizacja
+stanów Home Assistant nie nadpisuje aktywnego szkicu.
 
-### Ceny energii i prognoza Solcast
+## Tryby Managera
 
-Godzinowe ceny sprzedaży i zakupu, prognoza produkcji oraz bieżąca realizacja
-prognozy PV.
+### Normalna Praca
 
-![Ceny energii i prognoza Solcast](docs/screenshots/prices-solcast-0.7.9.png)
+To logiczny tryb Managera. Fizycznie provider używa odpowiedniego wariantu
+pracy falownika, na przykład `Zero Export To Load` albo `Zero Export To CT`.
+Wariant jest zapisany w slocie jako `physical_work_mode`; techniczne nazwy
+providera nie są nazwami trybów użytkownika.
 
-### Harmonogram pracy
+### Ładowanie
 
-Pełne 24 godziny z trybem, mocą, prądami, zgodą na ładowanie z sieci, SOC i
-minimalną ceną sprzedaży dla każdego slotu.
+Slot przechowuje osobno:
 
-![Harmonogram pracy](docs/screenshots/schedule-0.7.9.png)
+- `charge_current` — prąd ładowania baterii;
+- `grid_charge_current` — globalny limit prądu ładowania z sieci używany przy
+  wykonywaniu aktywnego slotu;
+- `charge_enabled` — fizyczną zgodę Grid Charge dla godzin objętych slotem;
+- `tou_soc` — fizyczny SOC Deye TOU.
 
-### Statystyki sprzedaży
+Sama dodatnia wartość prądu nie włącza Ładowania z sieci. Decyduje o tym jawne
+`charge_enabled` zapisane w slocie.
 
-Energia i wartość sprzedaży w bieżącej godzinie, dniu, tygodniu oraz miesiącu.
+### Sprzedaż
 
-![Statystyki sprzedaży](docs/screenshots/sales-statistics-0.7.9.png)
+Slot Sprzedaży może określać moc sprzedaży, prąd rozładowania, minimalną cenę i
+dwa niezależne poziomy SOC:
 
-### Zbiorcza edycja godzin
+- `minimum_sell_soc` — **logiczny próg zatrzymania sprzedaży przez Managera**;
+- `tou_soc` — **fizyczny SOC zapisywany do Deye Time Of Use**.
 
-Wybrane pola można bezpiecznie zastosować tylko do zaznaczonych godzin, bez
-nadpisywania pozostałych parametrów.
+Osiągnięcie `minimum_sell_soc` wstrzymuje sprzedaż, ale nie zmienia fizycznego
+SOC TOU. Brak lub błąd danych SOC/ceny blokuje wyłącznie aktywny slot Sprzedaży,
+który wymaga danego warunku.
 
-![Zbiorcza edycja harmonogramu](docs/screenshots/schedule-bulk-edit-0.7.9.png)
+## Mapowanie Deye 24 h → 6/6
 
-### Propozycje Optimizer Core
+Przepływ danych jest jednoznaczny:
 
-Proponowane działania pokazują źródło decyzji, moc, energię, przewidywany SOC,
-wynik netto i pewność dla każdej godziny.
+```text
+Harmonogram pracy 24 h
+→ oczekiwana mapa sześciu zakresów
+→ Deye Time Of Use
+→ confirmation/readback
+→ rollback przy błędzie
+```
 
-![Proponowane zmiany Optimizer Core](docs/screenshots/ai-proposals-0.7.9.png)
+Aktualne kryterium segmentacji fizycznej obejmuje wyłącznie parę:
 
-### Plan, prognoza i SOC
+- `tou_soc`;
+- `charge_enabled` (Grid Charge).
 
-Wspólny wykres produkcji, zużycia, prognozy Solcast, skorygowanej prognozy,
-SOC, pogody, taryfy oraz zaplanowanych działań.
+Sąsiednie godziny o tej samej parze tworzą jeden zakres. Jeżeli zakresów jest
+mniej niż sześć, najdłuższe są deterministycznie dzielone. Jeżeli plan wymaga
+więcej niż sześciu różnych kolejnych zakresów, zapis zostaje zablokowany przed
+pierwszą zmianą falownika. `minimum_sell_soc`, logiczny tryb, moc i prądy nie są
+kryteriami fizycznej segmentacji TOU.
 
-![Plan energii i prognoza SOC](docs/screenshots/ai-plan-0.7.9.png)
+Każdy fizyczny zakres zawiera:
 
-### Ustawienia trybów i zabezpieczenia
+- **Od** — start zakresu;
+- **Do** — start następnego fizycznego slotu;
+- **SOC Deye TOU**;
+- **Grid Charge / źródło ładowania**.
 
-Domyślne ustawienia bezpiecznego powrotu, profile ładowania i normalnej pracy
-oraz kontrolowane zastosowanie parametrów falownika.
+Globalne limity mocy i prądów nie są polami per-slot fizycznego TOU.
 
-![Ustawienia trybów i zabezpieczenia](docs/screenshots/mode-settings-0.7.9.png)
+## Deye Time Of Use
 
-## Wersja 0.7.9
+Edytor pokazuje pola na podstawie capabilities zwróconych przez backend. Dzięki
+temu pełny provider udostępnia 6/6, Custom może pokazać tylko zmapowane pola, a
+provider read-only nie oferuje zapisu.
 
-Wersja `0.7.9` porządkuje Optimizer Core, okno **Sugestie AI** oraz dane przygotowywane dla tego
-widoku. Ranking sprzedaży rozdziela profile Poranna sprzedaż i Wieczorna
-sprzedaż, a ranking zakupu wykorzystuje efektywny koszt energii z wybranego
-profilu OSD. Widok osobno pokazuje cel, plan i lokalnie zmierzone wykonanie
-profili, czytelnie porównuje wynik z planem bazowym i nie przedstawia przyszłej
-produkcji jako danych rzeczywistych.
+W aktualnym modelu ręczne granice są godzinowe (`HH:00`):
 
-W obrębie Sugestii AI moc przekazywana do godzinnego slotu jest teraz wyliczana
-z planowanej energii i rzeczywistej długości slotu. Deye TOU, kompresja 6/6,
-confirm/retry i fail-closed pozostają bez zmian. Zewnętrzny model nadal wyłącznie
-ocenia gotowy plan i nie ma dostępu do usług sterujących Deye.
+- **Do slotu N** jest fizycznie zapisywane jako **Od slotu N+1**;
+- **Do slotu 6** jest zapisywane jako **Od slotu 1**.
 
-Najważniejsze nowości:
+Widok pokazuje wartości oczekiwane, rzeczywisty readback i status każdego pola.
+Równoległy zapis jest blokowany. Po zapisie backend czeka na confirmation, a w
+razie błędu przywraca tylko encje rzeczywiście zmienione w tej transakcji.
 
-- minutowa telemetria z niezależną oceną kompletności PV, domu, sieci,
-  baterii, SOC i cen, bez zamiany brakujących odczytów na zera;
-- odświeżanie trybu i parametrów slotu bez przeładowania strony po
-  potwierdzonej zmianie encji;
-- działająca edycja zbiorcza, która zapisuje wyłącznie zaznaczone godziny i
-  pola, blokuje podwójne kliknięcie oraz zachowuje formularz po błędzie;
-- krótki Przegląd bez zduplikowanych pełnych wykresów i kart pogody;
-- osobne rankingi porannej i wieczornej sprzedaży z ustawień użytkownika;
-- bieżąca minimalna cena profilu ma pierwszeństwo przed starszym wynikiem
-  zapisanym w planie, a ceny są pokazywane chronologicznie z dokładnością do
-  dwóch miejsc;
-- zerowe i nieopłacalne propozycje optymalizatora nie mogą zostać zaznaczone,
-  a moc slotu odpowiada pokazywanej energii i czasowi jego trwania;
-- ranking zakupu według ceny energii plus godzinowego kosztu OSD, bez
-  podwójnego doliczania dystrybucji;
-- rozdzielenie celu, zaplanowanej energii, wykonania i pozostałej energii
-  profili;
-- polskie statusy, daty i liczby, czytelne błędy zewnętrznego API oraz
-  polskie polecenia i odpowiedzi zewnętrznego AI;
-- wykresy z osią energii od 0 kWh, SOC 0–100%, osobnym twardym i efektywnym
-  minimum SOC oraz bez serii rzeczywistej dla przyszłych godzin;
-- dolny pasek działań widoczny wyłącznie w zakładce Proponowane zmiany;
-- profil zużycia domu `7 × 24` z bezpiecznymi fallbackami oraz lokalna korekta
-  prognozy PV zależna od miesiąca i godziny;
-- oddzielne prognozy Solcast `initial`, `latest` i `corrected`, bez uczenia na
-  próbkach z curtailmentem, clippingiem lub niepewnym źródłem;
-- sekwencyjna prognoza SOC 48 h, osobne sprawności ładowania i rozładowania,
-  limity mocy/prądu oraz efektywne minimalne SOC obejmujące rezerwę w kWh;
-- plan bazowy i trzy warianty: bezpieczny, zrównoważony i maksymalny zysk;
-- pełny wynik netto: eksport, import, dystrybucja, straty, koszt cyklu baterii
-  oraz końcowa wartość energii;
-- profile **Poranna sprzedaż**, **Wieczorna sprzedaż** i **Ładowanie** jako
-  wejścia planera, nigdy jako bezpośrednie komendy do falownika;
-- opcjonalni dostawcy API: Gemini, OpenRouter, OpenAI, OpenCode oraz własny,
-  zgodny z OpenAI endpoint HTTPS;
-- rozszerzona jakość danych, diagnostyka źródeł i migracja historii bez utraty
-  dotychczasowych próbek.
+## Reverse sync
 
-### Profile użytkownika i uczenie
+Ręczna zmiana TOU wykonana w Deye Energy Managerze przebiega następująco:
 
-Oba profile sprzedaży korzystają ze wspólnego formularza. Użytkownik ustala dni,
-okno czasowe, minimalną cenę, cel energii, minimalny SOC po sprzedaży, limit mocy,
-priorytet, wymaganą pewność oraz sposób rozłożenia celu: najwyższe ceny,
-równomiernie albo możliwie stałą mocą. Cel może oznaczać energię
-`battery_to_grid` lub całkowity eksport.
+```text
+zapis fizyczny → confirmation/readback → reverse sync → kontrola round-trip
+```
 
-Profil Ładowanie obsługuje cel SOC albo kWh, deadline, źródło energii, maksymalną
-efektywną cenę wraz z dystrybucją, limit energii z sieci i zachowanie miejsca na
-prognozowaną produkcję PV. Profile są po migracji wyłączone. Uczenie może oceniać
-ich wykonanie, ale nie zmienia jawnych parametrów użytkownika.
+Reverse sync aktualizuje wyłącznie `tou_soc`, `charge_enabled` i przypisanie
+godzin do fizycznych zakresów. Nie zmienia `mode`, `enabled`,
+`minimum_sell_soc`, mocy, prądów, ceny ani `physical_work_mode`.
 
-Etapy uczenia zależą od liczby kompletnych dni: **Zbieranie danych** (0–2),
-**Plan wstępny** (3–6), **Wstępne uczenie** (7–20), **Profil podstawowy gotowy**
-(21–59) i **Profil rozszerzony** (60+). Pewność planu łączy kompletność danych,
-dojrzałość profili, jakość prognozy i dostępność cen; jest ograniczana na
-wczesnych etapach.
+Dowolne sześć ręcznych granic z identycznym SOC i Grid Charge w sąsiednich
+zakresach może nie być odtwarzalne przez algorytm 24 h → 6/6. W takim przypadku
+round-trip jest odrzucany, a zmiana fizyczna i lokalny Harmonogram są wycofywane.
 
-Efektywne minimalne SOC jest wyższą z wartości: twardego minimum oraz minimum
-powiększonego o rezerwę energetyczną przeliczoną względem pojemności magazynu.
-Brak aktualnego SOC blokuje akcje baterii w trybie fail-closed.
+## Zewnętrzne zmiany Deye TOU
 
-### Dane, taryfa i prywatność
+Jeżeli fizyczne TOU zostanie zmienione poza Deye Energy Managerem, Manager nie
+adoptuje tej zmiany automatycznie do Harmonogramu. Pełny readback 6/6 jest
+porównywany z oczekiwaną mapą; stary cache nie wystarcza do uznania zgodności.
 
-Optimizer używa istniejącego profilu godzinowego z modułu **Taryfa i
-dystrybucja**. Wybrany operator OSD, taryfa, sezon, typ dnia i profil ręczny
-pozostają jedynym źródłem prawdy. Gdy cena zakupu zawiera dystrybucję, koszt nie
-jest doliczany ponownie.
+- przy aktywnym Sterowaniu Deye wykonywane jest diff-only reconciliation;
+- przy wyłączonym sterowaniu różnica jest tylko raportowana;
+- przy `emergency_stop` automatyczna korekta jest zablokowana;
+- provider read-only pozostaje bez zapisów;
+- `unknown`, `unavailable` i częściowy readback nie są uznawane za zgodność.
 
-Preferowanym źródłem domu jest `Load Power`; fallback to komplet faz L1/L2/L3,
-a dopiero potem oznaczony bilans energii. Dziennie resetowane liczniki Deye są
-normalizowane do kWh, wykrywają reset o północy i nigdy nie tworzą ujemnych delt.
-PV3 Power i Battery SOH są opcjonalne. Pojedynczą encję można podmienić w
-kreatorze bez kasowania historii, taryfy, profili ani harmonogramu.
+Po własnym potwierdzonym zapisie aktualizowana jest fizyczna sygnatura, dzięki
+czemu kolejny tick nie tworzy pętli zapisów.
 
-Do zewnętrznego API trafiają wyłącznie zagregowane dane godzinowe niezbędne do
-oceny planu. Klucz nie jest zapisywany w historii ani ujawniany w encjach i
-diagnostyce. Nie są wysyłane identyfikatory encji, urządzeń, lokalizacja ani
-surowa historia. Preset OpenCode działa tylko z oficjalnym publicznym endpointem
-i kluczem podanym przez użytkownika; integracja nigdy nie odczytuje lokalnych
-poświadczeń ani nie uruchamia lokalnego agenta.
+## Sterowanie Deye
 
-### Zgodność z 0.7.6
+Nadrzędny przełącznik ma trzy stany:
 
-Poniższe zabezpieczenia i funkcje wersji 0.7.6 pozostają zachowane:
+- **Aktywne** — fizyczne operacje mogą się rozpocząć;
+- **Wyłączanie** — trwająca transakcja jest bezpiecznie kończona lub wycofywana;
+- **Wyłączone** — nie są wykonywane żadne fizyczne zapisy do falownika.
 
-Wersja 0.7.6 koncentruje się na bezpieczeństwie, jakości danych i wygodniejszej konfiguracji:
+Przy wyłączonym sterowaniu nadal działają monitoring, lokalny Harmonogram,
+Mapowanie Deye, Solcast, AI, Optimizer Core i diagnostyka. Ponowne włączenie nie
+wysyła ślepo całej mapy: kolejny cykl odczytuje fizyczne TOU i naprawia wyłącznie
+rozbieżne pola.
 
-- brakujący albo nieprawidłowy odczyt SOC lub ceny jest błędem wyłącznie aktywnego slotu `Selling First`, gdy dany warunek jest dla niego ustawiony; prawidłowy odczyt poniżej progu jedynie wstrzymuje sprzedaż bez błędu harmonogramu, a sloty `Zero Export` działają bez tych danych;
-- zapisy wielopolowe są serializowane; wartości liczbowe są zapisywane i potwierdzane przed ustawieniem wybranego trybu docelowego;
-- harmonogram przekraczający 6 fizycznych zakresów Deye jest odrzucany przed aktywnym sterowaniem;
-- karta stosuje operacje zbiorcze i sugestie przez jedną transakcyjną usługę backendu;
-- dodano walidację trybów, mocy, prądów, SOC i cen;
-- naprawiono działanie ochrony ceny oraz obsługę slotów ładowania;
-- dodano edycję mapowania encji w opcjach integracji;
-- sensory PV, domu i baterii można mapować bez zmiany kodu;
-- bieżący dzień pokazuje realizację prognozy, a nie przedwczesną „trafność”;
-- trafność historyczna korzysta wyłącznie z zakończonych dni, pokazuje liczbę próbek oraz ograniczoną korektę historyczną;
-- dodano pomocniczą prognozę `weather.*` (domyślnie `weather.forecast_home_2`), która ocenia ryzyko pogodowe, ale nie zastępuje Solcast;
-- próbki energii są zapisywane co minutę; surowe dane są przechowywane 90 dni, dane godzinowe 24 miesiące, dzienne 5 lat, a miesięczne bez automatycznego usuwania;
-- dodano wersjonowany katalog taryf dystrybucyjnych PGE, Tauron, Enea, Energa i Stoen, obejmujący dostępne profile gospodarstw domowych oraz profil własny;
-- katalog taryf jest sprawdzany przy starcie i co 7 dni; przy błędzie pobierania integracja zachowuje ostatnią poprawną kopię, a tryb ręczny pozwala wpisać własne stawki i godziny;
-- koszt dystrybucji jest doliczany przy wyborze najtańszych godzin ładowania, z uwzględnieniem pory roku, dni roboczych, weekendów i polskich świąt;
-- odczyty mocy, SOC i cen aktualizują sensory managera zdarzeniowo, bez oczekiwania na minutowy cykl sterownika;
-- przebudowano „Sugestie AI” na widok Dziś/Jutro z interaktywnym planem energii 24/48 h, prognozą SOC, pogodą, oceną jakości danych i trzema rzeczywiście obliczanymi wariantami;
-- plan na jutro jest zapisywany jako datowany plan oczekujący i nigdy nie jest natychmiast wpisywany do powtarzalnego harmonogramu Deye;
-- kreator mapowania został podzielony na Deye, ceny energii, Solcast, pogodę oraz końcowy test; wybór operatora i taryfy znajduje się w karcie;
-- automatyczne mapowanie wyłącznie podpowiada encje i zawsze wymaga zatwierdzenia użytkownika;
-- poprawiono bezpieczeństwo HTML, widoki mobilne i przewijanie okien;
-- dodano testy regresji najważniejszych reguł bezpieczeństwa.
+## Bezpieczeństwo zapisu
 
-Pełna lista znajduje się w [CHANGELOG.md](CHANGELOG.md).
+- centralny guard obejmuje wszystkie fizyczne ścieżki zapisu;
+- TOU używa diff-only, snapshotu i confirmation z timeoutem do 30 sekund;
+- rollback obejmuje tylko encje zapisane przez bieżącą transakcję;
+- podczas wyłączania Sterowania Deye nie są uruchamiane safe defaults;
+- niepełny albo niedostępny readback działa fail-closed;
+- provider read-only nie otrzymuje zgadywanych operacji zastępczych;
+- AI nigdy samodzielnie nie wywołuje usług falownika.
 
-## Najważniejsze funkcje
+Są to zabezpieczenia programowe i transakcyjne integracji. DEM nie zastępuje BMS,
+zabezpieczeń falownika, limitów instalacji ani świadomej kontroli użytkownika.
 
-- 24 godzinne sloty sprzedaży i ładowania;
-- tryby harmonogramu `Selling First`, `Normalna Praca` i `Charge`; w tle `Normalna Praca` nadal używa fizycznych trybów Deye `Zero Export To Load` lub `Zero Export To CT`;
-- kompresja harmonogramu do 6 fizycznych slotów Deye Time Of Use;
-- **Minimalny SOC sprzedaży** jest wyłącznie warunkiem biznesowym `Selling First`; nie jest zapisywany jako fizyczny SOC Deye Time Of Use;
-- **Ładowanie z sieci: TAK** w konkretnym slocie `Charge` jest jedyną zgodą na ładowanie baterii z sieci; wartość **NIE** pozostawia Deye Grid Charge wyłączone;
-- osobny profil **Ustawienia ładowania** jest zapisywany atomowo przez dedykowaną usługę backendu i zachowywany po ponownym otwarciu okna oraz restarcie Home Assistant; zapis nie wymaga obecności wszystkich encji pomocniczych. Stanowi szablon kopiowany przy wyborze trybu `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci, zgoda na ładowanie z sieci i docelowy SOC. Późniejsze zmiany konkretnego slotu pozostają niezależne, a w edytorze slotu `Charge` dostępny jest przycisk ponownego wczytania szablonu;
-- osobny profil **Ustawienia normalnej pracy** jest zapisywany atomowo przez dedykowaną usługę backendu i zachowywany po restarcie; stanowi szablon kopiowany przy wyborze trybu `Normalna Praca`: fizyczny tryb Deye (`Zero Export To Load` albo `Zero Export To CT`), moc sprzedaży, prąd rozładowania, prąd ładowania baterii, prąd ładowania z sieci i fizyczny SOC Deye TOU. Późniejsze zmiany konkretnego slotu pozostają niezależne, a w edytorze slotu dostępny jest przycisk ponownego wczytania szablonu. Formularz odczytuje dane w kolejności: szkic użytkownika, zapisanego profilu w `manager_status`, stanu encji; stara lub brakująca encja pomocnicza nie nadpisuje potwierdzonego profilu;
-- pomocnicze encje profili (`charge_profile_*`, `normal_profile_*`) mogą być wyłączone w rejestrze encji; integracja nie zmienia automatycznie ich stanu `disabled_by`. Brak lub wyłączenie tych encji nie blokuje zapisu profili ani kopiowania szablonu Charge, ponieważ źródłem prawdy są usługi backendu i atrybuty `manager_status`;
-- ręczne i zbiorcze edytowanie harmonogramu;
-- inteligentne sugestie Dziś/Jutro bazujące na cenach energii i dystrybucji, Solcast, pogodzie, SOC i wyuczonym profilu zużycia;
-- automatycznie aktualizowany katalog profili dystrybucyjnych PGE, Tauron, Enea, Energa i Stoen;
-- wspomaganie prognozy przez lokalną encję pogodową;
-- statystyki sprzedaży, produkcji, zużycia i pracy baterii;
-- diagnostyka wymaganych encji;
-- eksport historii i kopii konfiguracji.
+## Optimizer Core i Sugestie AI
 
-Sugestie nie są stosowane automatycznie. Użytkownik wybiera godziny i zatwierdza każdą zmianę harmonogramu.
+Optimizer Core lokalnie oblicza plan na podstawie cen, Solcast, SOC, profili,
+limitów falownika i jakości danych. Uwzględnia wspólne budżety mocy, importu i
+eksportu oraz oddzielnie ocenia kompletność planu dziś i jutro.
 
-Okno **Sugestie AI** zawiera widoki: **Przegląd**, **Proponowane zmiany**, **Plan i wykonanie** oraz **Jakość danych**. Zakładka **Plan i wykonanie** łączy widoki Dziś, Jutro, 48 h i Historia. Pokazuje zamrożony plan Optimizer Core, stan akceptacji i wdrożenia oraz rzeczywiste pomiary godzinowe. Widok jest wyłącznie diagnostyczny — nie zapisuje niczego do harmonogramu ani Deye. W propozycjach przełącznik **Dziś/Jutro** zmienia tabelę, wykres, pogodę, bilans i prognozę SOC. Domyślnie widoczne są tylko godziny proponowane przez model; przycisk **Pełne 24h** pokazuje cały dzień, a jeden dynamiczny przycisk przełącza funkcję **Zaznacz wszystkie/Odznacz wszystkie**. Godziny o pewności poniżej 50% nie są zaznaczane automatycznie.
+`target_energy_kwh` profilu jest celem dziennym: każdy aktywny lokalny dzień
+ma własny target, fulfillment i shortfall. Stan energii baterii nie jest przy
+tym resetowany o północy — symulacja SOC pozostaje ciągła przez 48 godzin.
 
-Plan 48 h nie tworzy brakujących cen ani pogody. Gdy brakuje cen jutra, karta pokazuje brak danych i nie proponuje fikcyjnej transakcji. Solcast jest prognozą podstawową, a `weather.*` wyłącznie korektą pomocniczą. Przy małej historii widoczny jest stan **Wstępne uczenie** i ograniczona pewność.
+Maksymalny prąd rozładowania jest wejściowym ograniczeniem fizycznym Core.
+Automatyczna sprzedaż zmienia wyłącznie logiczny tryb i moc sprzedaży; nie
+nadpisuje globalnego limitu prądu baterii. Wyliczony z mocy prąd jest wyłącznie
+informacją diagnostyczną.
 
-Wykresy w **Plan i wykonanie** rozdzielają plan i pomiar produkcji PV, zużycia domu oraz SOC. Tabela godzinowa porównuje dodatkowo import, eksport, ceny, wynik netto i błędy prognozy. Widok 48 h zachowuje prognozę Solcast, prognozę skorygowaną, przedział prognozy, pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brakujące pomiary są opisane jako brak danych, a nie zastępowane zerem.
+W profilach sprzedaży pole **Maksymalna moc profilu** jest twardym sufitem dla
+danego celu. Core może użyć niższej mocy z powodu limitu globalnego, eksportu,
+falownika, encji Max Sell Power, prądu i napięcia baterii albo bezpieczeństwa SOC;
+utracona po takim ograniczeniu energia jest redystrybuowana do innych
+kwalifikujących godzin, o ile pozostaje tam realna capacity.
 
-Karta pogody korzysta z wybranej encji `weather.*` (domyślnie `weather.forecast_home_2`) oraz usługi Home Assistant `weather.get_forecasts`. Pokazuje warunki bieżące, temperaturę, ciśnienie, wilgotność i wiatr oraz przełączane prognozy dzienną i godzinową. Jeżeli dostawca nie udostępnia osobnej prognozy dziennej, integracja tworzy jej podsumowanie wyłącznie z dostępnych danych godzinowych.
+Strategia `best_hours` używa ceny sprzedaży jako miary ekonomicznej. Wyraźnie
+droższa godzina ma pierwszeństwo także wtedy, gdy występuje później w tym samym
+profilu. Godziny, których ceny różnią się najwyżej o ustawienie **Różnica ceny
+uznawana za zbliżoną** (domyślnie `0,05 PLN/kWh`), mogą zostać zgrupowane i
+wyrównane bounded water-fill, aby obniżyć chwilowy peak mocy. Dynamiczne limity
+SOC, baterii, falownika, eksportu, PV i obciążenia domu są zawsze nadrzędne.
 
-Przycisk **Zaplanuj wybrane na jutro** zapisuje dokładnie zaakceptowane godziny i parametry wraz z datą. Integracja nie zmienia od razu Deye Time Of Use, ponieważ jego sloty powtarzają się codziennie. Po rozpoczęciu właściwego dnia sprawdzane są encje sterujące oraz tylko te warunki SOC i ceny, których wymaga zaakceptowany slot `Selling First`. Poprawny plan jest zastosowany jeden raz; plan nieaktualny lub niemożliwy do bezpiecznego zastosowania jest anulowany, a integracja stosuje pełne **Ustawienia domyślne** 1:1. Integracja nigdy nie przelicza i nie stosuje samodzielnie innego planu niż zatwierdzony przez użytkownika.
+W Sugestiach AI **Wynik całego slotu** oznacza pełny modelowany bilans przepływów
+tej godziny, a nie zysk wywołany wyłącznie przez widoczną decyzję. Ostatni slot
+może obejmować również wartość terminalną baterii. Różnica wyniku slotu względem
+planu bazowego nie jest izolowanym marginalnym benefitem decyzji; wiarygodna
+**Korzyść całego planu względem bazowego** jest prezentowana oddzielnie.
+
+Ustawienie **Minimalna moc automatycznej sprzedaży** ma wartość domyślną
+`1000 W` i nie ogranicza sterowania ręcznego. Preferowany plan automatyczny nie
+tworzy zapisywalnego slotu poniżej tego minimum: Core najpierw próbuje
+redystrybucji i wyrównania, a nierozdzieloną pozostałość pokazuje jako shortfall.
+Profil wymagany może jawnie zejść do fizycznego minimum, jeżeli jest to potrzebne
+do realizacji wymaganego celu.
+
+Interfejs rozdziela cztery niezależne informacje: **Jakość danych**,
+**Dojrzałość profilu**, **Pewność planu** i **Gotowość wykonania**. Dojrzałość
+jest wyliczana z zapisanych, zwalidowanych godzin i pokrycia profili, więc restart
+nie zeruje uczenia i nie wymusza oczekiwania na siedem nowych dni. Kandydat o
+zbyt niskiej pewności pozostaje widoczny jako podgląd, ale nie można go zaznaczyć
+ani zastosować.
+
+Przycisk **Zastosuj wybrane na dziś** traktuje zaznaczone propozycje jako jedyne
+specjalne akcje kompletnego dzisiejszego planu. Wszystkie pozostałe godziny,
+łącznie z odznaczonymi propozycjami i starszymi akcjami Harmonogramu, są
+ustawiane na **Normalną Pracę**. Plan na jutro pozostaje oddzielny.
+
+Opcjonalny asystent AI może analizować dokładny plan i proponować ograniczoną
+liczbę zmian. Kandydat jest ponownie symulowany przez lokalny Core i wymaga
+świadomego zatwierdzenia użytkownika. Zewnętrzne AI nie ma bezpośredniego dostępu
+do usług Home Assistant ani Deye. Wyłączenie Sterowania Deye blokuje wykonanie,
+ale nie monitoring i analizę.
+
+## FuturePlan Dziś/Jutro
+
+Akcja **Zastosuj wybrane na dziś** zapisuje kompletną intencję na 24 godziny:
+zaznaczone pozycje są jedynymi akcjami specjalnymi, a wszystkie pozostałe godziny
+otrzymują Normalną Pracę. Zwykła usługa częściowej zmiany Harmonogramu nadal
+pozostaje patchem i nie ma tej pełnodniowej semantyki.
+
+Akceptacja planu **Jutro** zapisuje datowany target 24 h, ale nie zmienia dziś
+Harmonogramu ani falownika. Następnego dnia backend materializuje JIT wyłącznie
+aktualny slot. `approved` i `physical_pending` nie oznaczają wykonania — status
+`confirmed` powstaje dopiero po bezpiecznym zapisie i zgodnym readbacku. Brak
+wiarygodnego SOC, ceny albo kontraktu wykonania działa fail-closed; minione okno
+otrzymuje `missed`, bez catch-up i bez powtórki kolejnego dnia. Późniejsza ręczna
+zmiana albo Apply Today ma zawsze pierwszeństwo nad starszą intencją FuturePlan.
+
+## Stabilność runtime
+
+Manager reaguje tylko na dokładną listę skonfigurowanych wejść i nie traktuje
+własnych sensorów wyjściowych jako powodu do ponownego obliczenia. Optimizer Core,
+AI, learning i zapisy Store używają single-flight/coalescing, a cięższe obliczenia
+są wykonywane poza główną pętlą Home Assistant. Publikacja wyników jest
+deduplikowana, historia ograniczana i kompaktowana, start obliczeń czeka na gotowy
+Home Assistant, a unload usuwa listenery i zadania integracji.
 
 ## Wymagania
 
-Wymagany jest Home Assistant `2026.6` lub nowszy.
+- Home Assistant 2026.6 lub nowszy;
+- falownik i encje wspierane przez wybrany provider;
+- komplet wymaganych encji dla funkcji, które mają być używane;
+- poprawnie skonfigurowany fizyczny limit mocy falownika;
+- sześć pełnych zestawów TOU dla zapisu pełnego 6/6.
 
-Podstawowe encje sterujące wymagane do pełnego działania integracji:
+## Szybki start
 
-```text
-select.deye_inverter_system_work_mode
-number.deye_inverter_max_sell_power
-number.deye_inverter_maximum_battery_discharge_current
-number.deye_inverter_maximum_battery_charge_current
-number.deye_inverter_maximum_battery_grid_charge_current
-sensor.deye_inverter_battery
-```
+1. Dodaj `https://github.com/pasierbrg/deye-energy-manager` jako niestandardowe
+   repozytorium HACS i zainstaluj integrację.
+2. Uruchom ponownie Home Assistant.
+3. Dodaj integrację **Deye Energy Manager**.
+4. Wybierz provider i urządzenie falownika, a następnie sprawdź mapowanie encji.
+5. Ustaw maksymalną moc falownika i pozostaw Sterowanie Deye wyłączone na czas
+   pierwszej kontroli.
+6. W standardowym trybie UI/storage integracja automatycznie rejestruje i
+   aktualizuje zasób karty. Nie kopiuj karty do `/config/www` i nie zmieniaj
+   ręcznie parametru `?v=`. W trybie YAML dodaj ręcznie:
 
-Powyższe encje muszą być dostępne, aby integracja mogła bezpiecznie sterować falownikiem. Brak odczytu SOC baterii blokuje sprzedaż z baterii w trybie `Selling First`, natomiast sloty `Zero Export` mogą nadal działać bez aktualnego SOC.
+   ```text
+   /deye_energy_manager/deye-energy-manager-card.js?v=0.8.0.44
+   ```
 
-Cena sprzedaży jest wymagana wyłącznie dla aktywnego slotu `Selling First`, gdy ustawiono dla niego odpowiedni limit. Nie jest wymagana dla `Zero Export`.
+7. Sprawdź diagnostykę, Harmonogram, Mapowanie Deye i fizyczne Deye Time Of Use,
+   a dopiero potem wykonaj pierwszy kontrolowany zapis.
 
-Dla funkcji Deye Time Of Use wymagane są również:
+Pełna instrukcja instalacji i aktualizacji znajduje się w [INSTALL_PL.md](INSTALL_PL.md).
 
-```text
-switch.deye_inverter_time_of_use
-time.deye_inverter_time_of_use_1_start ... 6_start
-number.deye_inverter_time_of_use_1_soc ... 6_soc
-switch.deye_inverter_time_of_use_1_grid_charge ... 6_grid_charge
-```
+## Mapowanie źródeł cen
 
-Opcjonalnie można skonfigurować sensory:
+Jawnie wybrane encje BUY Today, BUY Tomorrow, SELL Today i SELL Tomorrow mają
+zawsze pierwszeństwo. Manager nie podmienia ich na domyślne encje integracji i
+nie skanuje innych sensorów. Stabilne powiązanie Entity Registry pozwala przeżyć
+zmianę nazwy tej samej encji; brak lub niejednoznaczność działa fail-closed.
 
-- mocy PV, domu, sieci i baterii;
-- dziennej produkcji PV;
-- cen sprzedaży i zakupu Pstryk;
-- prognozy oraz aktualnej mocy Solcast.
-- lokalnej prognozy godzinowej `weather.*`.
+Pstryk AIO obsługuje realne atrybuty `today_prices` i `tomorrow_prices` z polami
+`start`, `end`, `price`. Dostępne są też ograniczone, jawne schematy generic,
+PSE/RCE oraz konfiguracja custom. Diagnostyka ustawień pokazuje rozpoznany
+adapter, schemat, pokrycie i powód błędu dla każdego z czterech mapowań.
 
-## Dane, trafność i uczenie
+Każde z czterech pól może pozostać puste. Świadomie wyczyszczone mapowanie jest
+zapisywane jako stan `unmapped` i nie zostanie ponownie zastąpione Pstryk, RCE
+ani inną wartością domyślną po reloadzie, reconfigure lub restarcie. Wyjątek jest
+wyłącznie jawny: gdy oba BUY są puste, użytkownik może wybrać sprzedawcę energii
+w ekranie taryfy. Dla zweryfikowanej standardowej taryfy katalog tworzy 24+24
+kanoniczne ceny BUY z ceny energii brutto i zmiennego OSD doliczonego raz. Brak
+sprzedawcy, ważnej ceny lub jednoznacznego produktu nadal działa fail-closed.
 
-- **Realizacja dzisiaj** informuje, jaka część dzisiejszej prognozy została już wyprodukowana. Nie jest to ocena trafności.
-- **Trafność historyczna** jest średnią z zamkniętych dni: `100% - bezwzględny błąd procentowy`.
-- **Korekta historyczna** porównuje rzeczywistą produkcję z Solcast. Dla bezpieczeństwa pojedyncze współczynniki są ograniczone do zakresu `0,50–1,50`.
-- Brakujące i niedostępne odczyty są oznaczane jako braki danych, a nie zapisywane jako sztuczne zera.
-- Pogoda jest sygnałem pomocniczym. Solcast pozostaje głównym źródłem prognozy PV.
+Cztery mapowania są nadrzędnym źródłem prawdy. Selector providera z
+wcześniejszych wersji jest zachowywany wyłącznie dla migracji i nie nadpisuje
+mapowań ani adaptera. Po zmianie encji kontrakt automatycznie usuwa binding,
+schema i semantykę poprzedniego źródła. Pstryk i RCE są rozpoznawane
+automatycznie; zaawansowana ręczna konfiguracja pozostaje dostępna tylko dla
+Custom/Inne. Katalog sprzedawcy jest niezależnym, świadomie wybieranym fallbackiem
+tylko dla całkowicie pustego BUY i nie wpływa na SELL.
+Standardowy ekran taryfy udostępnia do edycji wyłącznie operatora OSD i taryfę;
+cztery mapowania są podsumowaniem konfiguracji z Options Flow, a szczegółowa
+diagnostyka i polaryzacja pozostają w zwiniętych sekcjach.
 
-## Taryfy i dystrybucja
+## Solcast i bieżąca realizacja
 
-Operatora OSD, taryfę, źródło ceny oraz znaki przepływu ustawia się w karcie: **Ustawienia i diagnostyka → Taryfa i dystrybucja**. Zmiany zaczynają obowiązywać dopiero po użyciu przycisku **Zapisz ustawienia taryfy**. Kreator mapowania integracji służy wyłącznie do wyboru encji Home Assistant.
+Backend utrzymuje jeden kanoniczny zestaw danych bieżącego dnia: prognozę na dziś,
+produkcję od lokalnej północy, pozostałą prognozę, realizację procentową, różnicę
+energii, trafność historyczną oraz prognozę na jutro. Główna karta i widok historii
+pokazują tę samą bieżącą realizację. Wynik może przekroczyć 100%; brak, zero albo
+nieaktualna prognoza nie jest prezentowana jako fałszywe `0%`.
 
-Tryb **Automatyczny katalog OSD** korzysta z wersjonowanego katalogu wbudowanego w integrację. Integracja sprawdza aktualizację przy starcie oraz co 7 dni, czyli kilka razy w miesiącu. Pobrane dane muszą przejść kontrolę schematu i stawek. Jeżeli serwer jest niedostępny albo plik jest nieprawidłowy, używana jest ostatnia poprawna kopia; brak kopii powoduje powrót do katalogu dostarczonego z wydaniem. Aktualizację można też uruchomić ręcznie przyciskiem **Sprawdź aktualizację katalogu**.
+Optimizer Core otrzymuje prognozy energii w kWh i osobną trafność historyczną.
+Nie używa bieżącego procentu realizacji jako sygnału decyzyjnego. Mechanizm
+historii sam inicjalizuje brakujący tracking i bezpiecznie obsługuje rollover dnia.
 
-Zakładka pokazuje profil dystrybucji na 48 godzin — dziś i jutro — wraz ze strefą, rodzajem dnia, sezonem, stawką strefową, opłatami wspólnymi i łącznym kosztem dystrybucji. Profile obejmują sezonowe okna taryfowe, weekendy i polskie dni ustawowo wolne. AI porównuje pełny koszt zakupu dla każdej godziny dziś i jutro oraz zapisuje wyniki uczenia z oznaczeniem operatora, taryfy, strefy, rodzaju dnia, sezonu i wersji katalogu.
+## Co nowego w 0.8.0
 
-Jeżeli cena zakupu z wybranej encji zawiera już dystrybucję, należy włączyć opcję **Cena zakupu zawiera już dystrybucję**, aby koszt nie został doliczony drugi raz. Tryb **Ręczne stawki** pozwala wpisać własną stawkę szczytową, tanią i przedziały tanich godzin. W przypadku taryf dynamicznych wymagających osobnego sygnału integracja nie odgaduje cen ani stref i informuje o braku takiego sygnału.
+Wersja 0.8.0 dodaje providerów Deye, bezpieczne fizyczne TOU 6/6 bez wymaganego
+globalnego przełącznika TOU, rozdzielone znaczenia SOC, transakcyjny edytor
+Harmonogramu, reverse sync, nadrzędne Sterowanie Deye oraz rozszerzony Optimizer
+Core i opcjonalne Sugestie AI. Kanoniczna architektura cen rozdziela BUY i SELL,
+obsługuje Pstryk, PSE/RCE i źródła custom oraz oferuje kontrolowany fallback
+taryfy sprzedawcy z OSD doliczanym dokładnie raz.
 
-Katalog jest pomocą do optymalizacji, ale przed uruchomieniem ładowania z sieci należy porównać operatora, taryfę i stawki z aktualną umową użytkownika.
+FuturePlan rozróżnia zapis logiczny od wykonania fizycznego: status
+`confirmed` pojawia się dopiero po udanym zapisie do falownika i readbacku.
+Zmiana ręczna wykonana po akceptacji ma pierwszeństwo. Datowane akcje nie są
+wykonywane po czasie ani powtarzane następnego dnia.
 
-Po instalacji mapowanie można zmienić przez **Ustawienia → Urządzenia i usługi → Deye Energy Manager → Konfiguruj**.
+Powody decyzji Core są prezentowane po polsku. Finalne poprawki stabilności
+obejmują bezpieczne autodiscovery, semantykę nieustawionego `0 A` w slocie,
+ścisłe rozróżnienie braku danych od prawdziwego zera, poprawki skalowania karty
+oraz opcjonalne PV3/string/SOH bez przypadkowego mapowania.
 
-## Instalacja
+W UI/storage zasób Lovelace jest tworzony i aktualizowany automatycznie. Solcast
+pokazuje tę samą bieżącą realizację w głównej karcie i historii, oddzielając ją
+od trafności historycznej. Wynik realizacji nie jest sztucznie ograniczany do
+100% i nie jest wejściem decyzyjnym Optimizer Core.
 
-### HACS
+Pełna historia zmian: [CHANGELOG.md](CHANGELOG.md).
 
-1. Otwórz HACS.
-2. Dodaj repozytorium jako niestandardowe repozytorium typu **Integracja**.
-3. Zainstaluj Deye Energy Manager.
-4. Uruchom ponownie Home Assistant.
-5. Dodaj integrację w **Ustawienia → Urządzenia i usługi**.
+Opis wydania: [RELEASE_NOTES_0.8.0.md](RELEASE_NOTES_0.8.0.md).
 
-### Karta Lovelace
-
-Integracja udostępnia kartę pod adresem:
-
-```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
-```
-
-Jeżeli karta jest instalowana ręcznie, skopiuj:
-
-```text
-www/deye-energy-manager-card.js
-```
-
-do `/config/www/` i dodaj zasób:
-
-```text
-/local/deye-energy-manager-card.js?v=0.7.9.11
-```
-
-Po podmianie pliku karty ustaw parametr `v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5`). Dla karty udostępnianej przez integrację używaj adresu `/deye_energy_manager/...`; adres `/local/...` jest przeznaczony wyłącznie dla pliku skopiowanego ręcznie do `/config/www/`. Nie konfiguruj obu zasobów równocześnie.
-
-### Zalecana konfiguracja komputera i telefonu
-
-Poniższa konfiguracja zachowuje szeroki, wyśrodkowany dashboard na komputerze,
-a poniżej `768 px` przełącza kartę na pojedynczą kolumnę dopasowaną do ekranu
-telefonu, bez poziomego przewijania:
-
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: auto
-  dashboard_width: 1700
-  center_dashboard: true
-  fit_to_width: false
-  allow_horizontal_scroll: false
-  sections:
-    status_energy: true
-    prices: true
-    solcast: true
-    schedule: true
-    sales_stats: true
-  mobile:
-    mode: grid
-    preserve_desktop_layout: false
-    fit_to_width: true
-    allow_horizontal_scroll: false
-    grid_columns: 1
-    mobile_breakpoint: 768
-  prices_ratio: 0.75
-  buy_prices_ratio: 0.75
-  solcast_ratio: 1.5
-  energy_tile_width: 230
-  energy_tile_gap: 28
-  inverter_scale: 1
-  flow_animation_speed: 6
-```
-
-Przykład kompletnego dashboardu znajduje się w `dashboard/energy_manager.yaml`.
-
-### Konfiguracja układu (opcjonalna)
-
-Wszystkie ustawienia są opcjonalne. Niepoprawne wartości są automatycznie zastępowane domyślnymi.
-
-#### Tryby układu
-
-| Tryb | Opis |
-|------|------|
-| `auto` | Pełny dashboard na komputerze. Na urządzeniach wąskich (poniżej `mobile.mobile_breakpoint`) aktywne są ustawienia mobilne; główny rząd **Ceny / Solcast** automatycznie składa się w jedną kolumnę zamiast trzech proporcjonalnych kolumn. Domyślny tryb. |
-| `full` | Dashboard rozciąga się na pełną szerokość karty; kontener nie jest wyśrodkowywany. |
-| `section` | Wyświetla tylko jedną sekcję główną wybraną w `section`. |
-| `single` | Wyświetla tylko panel **Status energii** lub wybraną sekcję. Jeśli wybierzesz `ai` lub `settings`, otwiera się odpowiedni dialog. |
-| `grid` | Sekcje główne (ceny, Solcast, harmonogram, statystyki) układane są w siatkę o liczbie kolumn określonej w `grid_columns`. Panel **Status energii** zachowuje pełną szerokość. |
-| `fit` | Dashboard rozciąga się do szerokości karty, ale pozostaje wyśrodkowany w swoim maksymalnym rozmiarze. **Nie skaluje proporcjonalnie całego dashboardu** — dostosowuje tylko zewnętrzny kontener. |
-
-```yaml
-# Domyślny układ
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: auto
-
-# Tylko harmonogram, na przykład do osobnej karty/karty mobilnej
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: single
-  section: schedule
-
-# Układ siatki 2 kolumny
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: grid
-  grid_columns: 2
-  sections:
-    status_energy: true
-    prices: true
-    solcast: true
-    schedule: false
-    sales_stats: false
-```
-
-#### Pełna tabela opcji konfiguracyjnych
-
-| Nazwa | Typ | Domyślnie | Zakres / wartości | Opis |
-|-------|-----|-----------|-------------------|------|
-| `layout_mode` | string | `auto` | `auto`, `full`, `section`, `single`, `grid`, `fit` | Główny tryb układu dashboardu. |
-| `dashboard_width` | number | `1280` | 320–2400 | Maksymalna szerokość wewnętrznego kontenera dashboardu w pikselach. |
-| `center_dashboard` | boolean | `true` | `true` / `false` | Wyśrodkowanie dashboardu w karcie. |
-| `fit_to_width` | boolean | `false` | `true` / `false` | Rozciągnięcie kontenera do pełnej szerokości karty. |
-| `allow_horizontal_scroll` | boolean | `false` | `true` / `false` | Gdy `true`, główny kontener `.dem-v073` dostaje `overflow-x: auto`. Gdy `false`, główny kontener dostaje `overflow-x: hidden`, aby zapobiec globalnemu poziomemu przewijaniu strony. Lokalne przewijanie wewnątrz tabeli czy listy dni Solcast nie jest blokowane. |
-| `grid_columns` | number | `null` | 1–6 | Liczba kolumn w trybie `grid`. `null` oznacza automatyczną jedną kolumnę. |
-| `grid_gap` | number | `16` | 0–64 | Odstęp między kolumnami w trybie `grid`. |
-| `section` | string | `null` | `status_energy`, `prices`, `solcast`, `schedule`, `sales_stats`, `ai`, `settings` | Sekcja do wyświetlenia w trybach `section` lub `single`. |
-| `sections.status_energy` | boolean | `true` | `true` / `false` | Widoczność panelu **Status energii**. |
-| `sections.prices` | boolean | `true` | `true` / `false` | Widoczność panelu **Ceny sprzedaży/zakupu**. |
-| `sections.solcast` | boolean | `true` | `true` / `false` | Widoczność panelu **Prognoza Solcast**. |
-| `sections.schedule` | boolean | `true` | `true` / `false` | Widoczność panelu **Harmonogram pracy**. |
-| `sections.sales_stats` | boolean | `true` | `true` / `false` | Widoczność panelu **Statystyki sprzedaży**. |
-| `mobile.mode` | string | `auto` | `auto`, `full`, `section`, `single`, `grid`, `fit` | Tryb układu stosowany na urządzeniach mobilnych. |
-| `mobile.preserve_desktop_layout` | boolean | `false` | `true` / `false` | Jeśli `true`, mobilne urządzenie używa tego samego layoutu co desktop. |
-| `mobile.fit_to_width` | boolean | `true` | `true` / `false` | Rozciągnięcie do szerokości ekranu na urządzeniach mobilnych. |
-| `mobile.allow_horizontal_scroll` | boolean | `false` | `true` / `false` | Poziome przewijanie na urządzeniach mobilnych. |
-| `mobile.grid_columns` | number | `1` | 1–4 | Liczba kolumn w trybie `grid` na urządzeniach mobilnych. |
-| `mobile.mobile_breakpoint` | number | `768` | 320–1600 | Szerokość ekranu (px), poniżej której stosowane są ustawienia mobilne. |
-| `prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny sprzedaży** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
-| `buy_prices_ratio` | number | `0.80` | 0.1–5.0 | Względna szerokość kolumny **Ceny zakupu** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
-| `solcast_ratio` | number | `1.40` | 0.1–5.0 | Względna szerokość kolumny **Prognoza Solcast** w górnym rzędzie informacyjnym **na desktopie**. Na mobilnym układzie sekcje składają się w jedną kolumnę, więc proporcje nie są stosowane. |
-| `energy_tile_width` | number | `300` | 120–360 | Szerokość bocznych kafli PV/sieć/bateria/dom w panelu **Status energii**. |
-| `energy_tile_gap` | number | `28` | 0–100 | Odstęp między kaflem a inverterem w panelu **Status energii**. |
-| `inverter_scale` | number | `1` | 0.5–2.0 | Skala centralnego invertera w panelu **Status energii**. |
-| `flow_animation_speed` | number | `6` | 1–20 | Szybkość animacji przepływów (wyższa wartość = szybsza animacja). |
-| `max_scale` | number | `1` | 0.2–3.0 | **Zarezerwowane.** Wczytywane przez `layoutConfig()`, ale obecnie nie wpływa na renderowanie. |
-| `min_scale` | number | `0.2` | 0.1–1.0 | **Zarezerwowane.** Wczytywane przez `layoutConfig()`, ale obecnie nie wpływa na renderowanie. |
-
-> **Uwagi do trybów i zarezerwowanych opcji**
-> - `layout_mode: fit` nie wykonuje globalnego, proporcjonalnego skalowania całego dashboardu. Włącza tylko `fit_to_width` i `center_dashboard`, dzięki czemu kontener dashboardu dostosowuje się do szerokości karty, ale zachowuje swój wewnętrzny układ.
-> - `max_scale` i `min_scale` są obecnie zarezerwowane. Wartości są walidowane i zapamiętywane, ale nie są używane przez `renderV073()` ani przez panel energii.
-
-#### Przykłady
-
-##### Domyślny układ
-```yaml
-type: custom:deye-energy-manager-card
-```
-
-##### Szeroki monitor (pełna szerokość)
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: full
-  fit_to_width: true
-```
-
-##### Telefon (pojedyncza kolumna, brak przewijania poziomego)
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: auto
-  allow_horizontal_scroll: false
-  mobile:
-    mode: grid
-    preserve_desktop_layout: false
-    grid_columns: 1
-    fit_to_width: true
-    allow_horizontal_scroll: false
-    mobile_breakpoint: 768
-```
-
-Poniżej `mobile_breakpoint` karta porównuje szerokość viewportu i własnego hosta, a następnie przełącza się na konfigurację `mobile`. Przy `grid_columns: 1` sekcje **Ceny sprzedaży**, **Ceny zakupu** i **Solcast** są układane pionowo. Proporcje `prices_ratio`, `buy_prices_ratio` i `solcast_ratio` nadal sterują trzema kolumnami wyłącznie na desktopie.
-
-Główny dashboard nie przewija się poziomo, gdy `allow_horizontal_scroll: false`. Szersza tabela Harmonogramu ma własny poziomy pasek przewijania, a lista dni Solcast przewija się lokalnie na wąskim ekranie. Wykres Solcast dopasowuje się do szerokości panelu i nie zwiększa szerokości całej karty.
-
-##### Pojedyncza sekcja
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: single
-  section: schedule
-```
-
-##### Układ grid z wyłączonymi sekcjami
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: grid
-  grid_columns: 2
-  sections:
-    status_energy: true
-    prices: true
-    solcast: false
-    schedule: true
-    sales_stats: false
-```
-
-##### Szerszy Solcast
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  solcast_ratio: 2.0
-  prices_ratio: 0.6
-  buy_prices_ratio: 0.6
-```
-
-##### Zmiana rozmiaru panelu Status energii
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  energy_tile_width: 260
-  energy_tile_gap: 20
-  inverter_scale: 1.1
-  flow_animation_speed: 8
-```
-
-#### Dialogi
-
-Sekcja **Status energii** używa większych kafli, własnych ikon SVG,
-rozbudowanego falownika, animowanych linii z kierunkiem przepływu oraz czytelnej
-dolnej belki. Wartości mocy pozostają w odpowiednich kaflach, a dzienna
-produkcja PV i dzienne zużycie domu są prezentowane pod ich odczytami
-szczegółowymi. „Tryb Deye” jest odczytywany bezpośrednio z istniejącej encji
-`select.deye_inverter_system_work_mode` albo jej mapowania podanego w
-konfiguracji karty.
-
-Dialogi renderują się w osobnym hoście `.dialog-host`, poza głównym kontenerem
-dashboardu. Dzięki temu:
-- dialogi nie są skalowane razem z dashboardem;
-- otwarcie dialogu nie powoduje pełnego rerenderu całego dashboardu (`renderDialogOnly()`);
-- dialogi nie migają przy przełączaniu zakładek;
-- pozycja przewijania strony jest zapamiętywana przed otwarciem i przywracana po zamknięciu.
-
-## Zasady bezpieczeństwa
-
-- Brakujący albo nieprawidłowy odczyt SOC lub ceny jest błędem tylko wtedy, gdy aktywny slot `Selling First` wymaga minimalnego SOC albo minimalnej ceny sprzedaży. Prawidłowy odczyt poniżej progu jedynie wstrzymuje sprzedaż komunikatem warunkowym — bez `SCHEDULE APPLY ERROR`, bez ponawiania zapisu i bez blokowania slotów `Zero Export`.
-- Aktualizacja ustawień zapisuje i potwierdza wartości liczbowe przed ustawieniem docelowego trybu falownika; integracja nie zastępuje wybranego trybu innym.
-- Falownik może publikować nowy stan z opóźnieniem: po pojedynczym zapisie integracja nasłuchuje zmian encji Deye i wykonuje odczyt kontrolny po 0,5, 1 i 2 sekundach, maksymalnie przez 12 sekund. Nie ponawia tej samej transakcji ani nie wraca przedwcześnie do ustawień domyślnych.
-- Mapowanie ponad 6 zakresów nie jest zapisywane do Deye.
-- Ustawienia zapisane w sekcji **Ustawienia Trybów → Ustawienia domyślne dla falownika** są stanem powrotu po zatrzymaniu lub błędzie.
-- Stop Sell, zatrzymanie awaryjne, brakujący lub nieprawidłowy odczyt wymagany przez aktywny slot, błąd mapowania i błąd zapisu stosują 1:1 domyślny tryb, domyślną moc oraz trzy domyślne prądy użytkownika. Prawidłowy SOC lub cena poniżej progu sprzedaży są normalnym warunkiem wstrzymania sprzedaży, nie błędem. Integracja nie zapisuje automatycznie wartości `0`, chyba że użytkownik sam zapisał ją jako domyślną.
-- Integracja zachowuje `Zero Export To CT`, `Zero Export To Load` albo `Selling First` dokładnie zgodnie z wyborem użytkownika i nie odgaduje topologii instalacji.
-- Stop Sell i zatrzymanie awaryjne zatrzaskują sterowanie managera do świadomego wznowienia oraz stosują pełny zestaw ustawień domyślnych użytkownika.
-- W **System i diagnostyka** przycisk **Włącz Manager i harmonogram** świadomie przywraca tryb `Schedule` i włącza Scheduler. Nie zmienia szablonu Charge ani parametrów slotów: Deye Grid Charge może włączyć wyłącznie **Ładowanie z sieci: TAK** zapisane w aktywnym slocie `Charge`. Diagnostyka pokazuje ostatnią próbę zastosowania slotu, wartości oczekiwane i odczytane oraz stan encji Deye Time Of Use.
-- W oknie pojedynczego slotu widoczne jest jedno pole SOC właściwe dla wybranego trybu: **Minimalny SOC sprzedaży** dla `Selling First`, **SOC baterii Deye (TOU)** dla `Normalna Praca` (fizycznie `Zero Export To Load` lub `Zero Export To CT`) oraz **Docelowy SOC** dla `Charge`. W logice integracji minimalny SOC sprzedaży pozostaje niezależny od fizycznego SOC Deye TOU.
-- **Ustawienia ładowania** są szablonem kopiowanym jednorazowo do slotu po pierwszym wybraniu `Charge`. Użytkownik może później zmienić prądy, docelowy SOC i zgodę **Ładowanie z sieci** dla tej godziny; ponowny zapis szablonu nie nadpisuje istniejących slotów Charge. W oknie slotu `Charge` dostępny jest przycisk **Wczytaj ponownie ustawienia ładowania**. Zapis szablonu odbywa się przez dedykowaną usługę backendu i nie wymaga obecności wszystkich encji pomocniczych; formularz odtwarza cały zapisany profil także wtedy, gdy pomocnicza encja nie opublikowała jeszcze stanu, a tabela harmonogramu zawsze pokazuje zgodę jako **TAK** albo **NIE**.
-- Zakładka **Deye Time Of Use** pozwala również na świadomą, bezpośrednią edycję sześciu fizycznych zakresów. Ponowne zastosowanie mapowania harmonogramu może je nadpisać.
-- Po migracji zachowany jest wcześniej zapisany SOC TOU. Gdy nie można go wiarygodnie odtworzyć, pole jest oznaczone jako **wymaga potwierdzenia**; integracja nie podstawia w jego miejsce ani minimalnego SOC sprzedaży, ani wartości `0` i nie zapisuje wtedy mapowania TOU.
-- Ustawienia można ręcznie przywrócić przyciskiem **Zastosuj ustawienia domyślne teraz**.
-
-Integracja steruje fizycznym urządzeniem. Pierwszą konfigurację należy obserwować w Home Assistant i aplikacji falownika, używając konserwatywnych limitów mocy i prądu.
+Zasady współtworzenia: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Testy
 
-Pełna regresja nie wymaga instalacji Home Assistant:
+Repozytorium zawiera testy backendu, providerów, bezpieczeństwa transakcji,
+Optimizer Core, AI i karty JavaScript. Przed zmianą produkcyjną uruchom pełny
+pytest oraz wszystkie testy JS wskazane w [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```text
-python -m pytest -q -p no:cacheprovider
-```
+### Kontrakt wykonania Optimizer Core
 
-Aktualny wynik lokalny: `375 passed, 18 subtests passed`.
+Core waliduje zakres i świeżość SOC, działa fail-closed przy krytycznym braku
+danych oraz rozróżnia surową i efektywną pewność. Plan 48 h zachowuje ciągłość
+SOC przez północ, porównuje wartość energii dziś i jutro oraz respektuje rezerwę
+wariantu. Plan „Jutro” ponawia slot przy chwilowym braku danych, oznacza minione
+okna jako `missed`, a gotowość do ręcznego potwierdzenia wyznacza na podstawie
+realnych danych, kontraktu wykonania i zabezpieczeń zamiast licznika dni.
+Po akceptacji „Jutro” backend zapisuje datowany, autorytatywny target 24 h:
+zaznaczone pozycje są jedynymi akcjami specjalnymi, a każda pozostała godzina ma
+intencję Normalna Praca. Akceptacja nie zmienia bieżącego harmonogramu ani
+falownika; target jest materializowany dopiero następnego dnia JIT, tylko dla
+aktualnego slotu.
+
+### Kanoniczne źródła cen BUY i SELL
+
+Manager przechowuje osobny kontrakt dla ceny zakupu i sprzedaży. Każdy kontrakt
+opisuje adapter, encje Today/Tomorrow, jednostkę (`PLN/kWh` lub `PLN/MWh`),
+podstawę brutto/netto, znaczenie ceny, mapowanie atrybutów i rozdzielczość.
+Mapowania encji konfiguruje się wyłącznie w kroku **Encje cen energii**.
+**Ustawienia i diagnostyka → Taryfa i dystrybucja** pokazują znane adaptery
+diagnostycznie; edytowalne pola schematu są dostępne tylko dla Custom/Inne.
+
+Pstryk BUY ma rolę `retail_buy_all_in`, a Pstryk SELL `prosumer_sell`. PSE/RCE
+BUY ma rolę `energy_only`, natomiast RCE SELL jest `market_reference`, nie ceną
+prosumencką zgadywaną automatycznie. PSE/RCE BUY jest ceną energii,
+do której backend dodaje zmienną dystrybucję dokładnie raz; `rce_pln` jest
+agregowane z kompletnych kwadransów według `period` i `business_date`. Bieżąca
+cena prosumencka RCE SELL nie jest używana jako prognoza. Dla providerów generic
+i custom nieznana jednostka, podstawa, semantyka albo brak jawnej roli
+ekonomicznej blokuje planowanie do czasu uzupełnienia kontraktu.
+
+Optimizer Core, diagnostyka i tabela cen korzystają z tych samych wierszy
+backendu: `source_price_pln_kwh`, składniki dodane oraz
+`final_price_pln_kwh`. Dzięki temu frontend nie zgaduje formatu providera i nie
+dolicza OSD po raz drugi.
+
+Stałe opłaty miesięczne nie są rozkładane na godziny: optymalizacja porównuje
+wyłącznie marginalne składniki zmienne za kWh.
 
 ## Licencja
 
-Projekt jest udostępniany na licencji MIT. Szczegóły: [LICENSE](LICENSE).
+Projekt jest udostępniany na licencji [MIT](LICENSE).

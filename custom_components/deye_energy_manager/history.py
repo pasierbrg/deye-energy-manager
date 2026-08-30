@@ -15,6 +15,19 @@ from typing import Any
 
 HISTORY_SCHEMA_VERSION = 4
 PROFILE_SCHEMA_VERSION = 2
+ENERGY_COMPACT_FORMAT_VERSION = 2
+
+ENERGY_COMPACT_FIELDS = (
+    "timestamp",
+    "interval_seconds",
+    "pv_power",
+    "load_power",
+    "grid_power",
+    "battery_power",
+    "soc",
+    "sell_price",
+    "buy_price",
+)
 
 UNKNOWN_STATES = {"", "unknown", "unavailable", "none", "nan", "inf", "-inf"}
 POWER_UNITS = {"w": 1.0, "kw": 1000.0}
@@ -101,7 +114,10 @@ def update_energy_counter(
 
 def migrate_ai_payload(raw: Any) -> tuple[dict[str, Any], bool]:
     """Migrate the shared AI/settings payload while preserving 0.7.6 data."""
-    data = deepcopy(raw) if isinstance(raw, dict) else {}
+    # Every normalized nested value below is replaced with a new container.
+    # A shallow root copy avoids duplicating a potentially large restored plan
+    # before it is compacted by the manager.
+    data = dict(raw) if isinstance(raw, dict) else {}
     changed = int(finite_float(data.get("schema_version")) or 1) < HISTORY_SCHEMA_VERSION
     data["schema_version"] = HISTORY_SCHEMA_VERSION
     profiles = data.get("user_profiles")
@@ -168,7 +184,9 @@ def migrate_solcast_payload(raw: Any) -> tuple[dict[str, Any], bool]:
     if tracking and "latest_forecast_kwh" not in tracking:
         tracking["latest_forecast_kwh"] = legacy_tracking
         changed = True
-    tracking.setdefault("forecast_snapshots", [])
+    if tracking and "forecast_snapshots" not in tracking:
+        tracking["forecast_snapshots"] = []
+        changed = True
     data.update(
         schema_version=HISTORY_SCHEMA_VERSION,
         history=migrated,
@@ -239,18 +257,94 @@ def migrate_learning_payload(raw: Any) -> tuple[dict[str, Any], bool]:
     data.setdefault("load_profile_7x24", {})
     data.setdefault("pv_profile", {})
     data.setdefault("profile_execution", [])
+    usable_hours = {
+        str(row.get("hour"))
+        for row in history
+        if row.get("hour")
+        and any(
+            item.get("usable_for_learning")
+            for item in (row.get("channel_quality") or {}).values()
+            if isinstance(item, dict)
+        )
+    }
+    if "learning_revision" not in data:
+        data["learning_revision"] = len(usable_hours)
+        changed = True
+    else:
+        revision = max(0, int(finite_float(data.get("learning_revision")) or 0))
+        if data.get("learning_revision") != revision:
+            data["learning_revision"] = revision
+            changed = True
+    if "history_watermark" not in data:
+        data["history_watermark"] = max(
+            (str(row.get("hour")) for row in history if row.get("hour")),
+            default="",
+        )
+        changed = True
     return data, changed
+
+
+def compact_energy_sample(value: Any) -> dict[str, Any]:
+    """Return the lossless algorithm/archive subset of a raw energy sample."""
+    source = value if isinstance(value, dict) else {}
+    return {
+        key: source.get(key)
+        for key in ENERGY_COMPACT_FIELDS
+        if key in source
+    }
 
 
 def migrate_energy_payload(raw: Any) -> tuple[dict[str, Any], bool]:
-    data = deepcopy(raw) if isinstance(raw, dict) else {}
-    changed = int(finite_float(data.get("schema_version")) or 1) < HISTORY_SCHEMA_VERSION
-    data["schema_version"] = HISTORY_SCHEMA_VERSION
-    data.setdefault("samples", [])
-    data.setdefault("daily", [])
-    data.setdefault("monthly", [])
-    data.setdefault("counter_state", {})
-    return data, changed
+    """Migrate raw one-minute history to the compact, restart-safe format.
+
+    The last 288 detailed samples remain available separately for the public AI
+    sensor. Older details were never consumed by an algorithm; their compact
+    fields are exactly those used by the archive integrator.
+    """
+    source = raw if isinstance(raw, dict) else {}
+    samples = source.get("samples") if isinstance(source.get("samples"), list) else []
+    recent_source = (
+        source.get("recent_details")
+        if isinstance(source.get("recent_details"), list)
+        else samples[-288:]
+    )
+    compact_samples = [
+        compact_energy_sample(row)
+        for row in samples
+        if isinstance(row, dict)
+    ]
+    recent_details = [
+        dict(row)
+        for row in recent_source[-288:]
+        if isinstance(row, dict)
+    ]
+    format_version = int(finite_float(source.get("energy_format_version")) or 1)
+    changed = (
+        int(finite_float(source.get("schema_version")) or 1) < HISTORY_SCHEMA_VERSION
+        or format_version < ENERGY_COMPACT_FORMAT_VERSION
+        or len(compact_samples) != len(samples)
+        or source.get("recent_details") != recent_details
+        or source.get("samples") != compact_samples
+    )
+    return {
+        "schema_version": HISTORY_SCHEMA_VERSION,
+        "energy_format_version": ENERGY_COMPACT_FORMAT_VERSION,
+        "samples": compact_samples,
+        "recent_details": recent_details,
+        "daily": source.get("daily") if isinstance(source.get("daily"), list) else [],
+        "monthly": source.get("monthly") if isinstance(source.get("monthly"), list) else [],
+        "counter_state": (
+            source.get("counter_state")
+            if isinstance(source.get("counter_state"), dict)
+            else {}
+        ),
+        "last_sample": source.get("last_sample"),
+        "learning_checkpoint": (
+            dict(source.get("learning_checkpoint"))
+            if isinstance(source.get("learning_checkpoint"), dict)
+            else {}
+        ),
+    }, changed
 
 
 def default_user_profiles() -> dict[str, Any]:

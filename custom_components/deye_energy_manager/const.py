@@ -36,10 +36,46 @@ CONF_DISTRIBUTION_OFFPEAK_RATE = "distribution_offpeak_rate"
 CONF_CUSTOM_OFFPEAK_WINDOWS = "custom_offpeak_windows"
 CONF_TARIFF_MODE = "tariff_mode"
 CONF_PRICE_INCLUDES_DISTRIBUTION = "price_includes_distribution"
+CONF_BUY_PRICE_CONTRACT = "buy_price_contract"
+CONF_SELL_PRICE_CONTRACT = "sell_price_contract"
 CONF_TARIFF_CATALOG_URL = "tariff_catalog_url"
+CONF_BUY_SELLER_ID = "buy_seller_id"
+CONF_BUY_SELLER_TARIFF_ID = "buy_seller_tariff_id"
 CONF_GRID_POSITIVE_IS_IMPORT = "grid_positive_is_import"
 CONF_BATTERY_POSITIVE_IS_DISCHARGE = "battery_positive_is_discharge"
+CONF_INVERTER_MAX_POWER_W = "inverter_max_power_w"
 CONF_MAPPING_MODE = "mapping_mode"
+CONF_INVERTER_PROVIDER = "inverter_provider"
+CONF_INVERTER_DEVICE_ID = "inverter_device_id"
+CONF_WORK_MODE_AUX_ENTITY = "work_mode_aux_entity"
+CONF_WORK_MODE_SELL_OPTION = "work_mode_sell_option"
+CONF_WORK_MODE_ZERO_LOAD_OPTION = "work_mode_zero_load_option"
+CONF_WORK_MODE_ZERO_CT_OPTION = "work_mode_zero_ct_option"
+CONF_TOU_GRID_ENABLE_OPTION = "tou_grid_enable_option"
+CONF_TOU_GRID_DISABLE_OPTION = "tou_grid_disable_option"
+CONF_TOU_GRID_GENERATOR_OPTION = "tou_grid_generator_option"
+CONF_TOU_GRID_BOTH_OPTION = "tou_grid_both_option"
+
+PROVIDER_LEWA_REKA = "lewa_reka"
+PROVIDER_SOLARMAN = "solarman"
+PROVIDER_SUNSYNK = "sunsynk"
+PROVIDER_DEYE_ADDON = "deye_addon"
+PROVIDER_CUSTOM = "custom"
+INVERTER_PROVIDERS = [
+    PROVIDER_LEWA_REKA,
+    PROVIDER_SOLARMAN,
+    PROVIDER_SUNSYNK,
+    PROVIDER_DEYE_ADDON,
+    PROVIDER_CUSTOM,
+]
+DEFAULT_INVERTER_PROVIDER = PROVIDER_LEWA_REKA
+
+
+def conf_tou_entity(index: int, kind: str) -> str:
+    """Return a stable config key for one physical TOU field."""
+    if kind not in ("start", "soc", "grid") or not 1 <= int(index) <= 6:
+        raise ValueError("Invalid TOU config key")
+    return f"tou_{int(index)}_{kind}_entity"
 
 # Status panel detailed entity mapping
 CONF_PV1_POWER_SENSOR = "pv1_power_sensor"
@@ -105,9 +141,13 @@ DEFAULT_DISTRIBUTION_OFFPEAK_RATE = 0.0
 DEFAULT_CUSTOM_OFFPEAK_WINDOWS = "13:00-15:00,22:00-06:00"
 DEFAULT_TARIFF_MODE = "automatic"
 DEFAULT_PRICE_INCLUDES_DISTRIBUTION = False
-DEFAULT_TARIFF_CATALOG_URL = "https://raw.githubusercontent.com/pasierbrg/deye-energy-manager-0.7.1-main/main/custom_components/deye_energy_manager/tariff_catalog.json"
+DEFAULT_TARIFF_CATALOG_URL = "https://raw.githubusercontent.com/pasierbrg/deye-energy-manager/main/custom_components/deye_energy_manager/tariff_catalog.json"
+DEFAULT_BUY_SELLER_ID = ""
+DEFAULT_BUY_SELLER_TARIFF_ID = ""
 DEFAULT_GRID_POSITIVE_IS_IMPORT = True
 DEFAULT_BATTERY_POSITIVE_IS_DISCHARGE = True
+DEFAULT_INVERTER_MAX_POWER_W = 13000
+ABSOLUTE_INVERTER_MAX_POWER_W = 30000
 DEFAULT_MAPPING_MODE = "automatic"
 
 # Default status panel detail sources
@@ -143,11 +183,14 @@ PRICE_SOURCES = ["pstryk", "pse_rce", "other", "none"]
 OSD_PROVIDERS = ["pge", "tauron", "enea", "energa", "stoen", "other"]
 TARIFF_PLANS = ["g11", "g11f", "g11p", "g11pewna", "g12", "g12w", "g12e", "g12n", "g12r", "g12p", "g12as", "g12sezon", "g12eko", "g13", "g13s", "g13active", "g14dynamic", "custom"]
 
-MODE_SELLING_FIRST = "Selling First"
+MODE_SELLING_FIRST = "Sprzedaż"
 MODE_ZERO_EXPORT = "Zero Export To Load"
 MODE_ZERO_EXPORT_CT = "Zero Export To CT"
-MODE_CHARGE = "Charge"
+MODE_CHARGE = "Ładowanie"
 MODE_NORMAL_OPERATION = "Normalna Praca"
+
+# Canonical logical modes exposed by Deye Energy Manager to the user.
+MANAGER_MODES = (MODE_NORMAL_OPERATION, MODE_CHARGE, MODE_SELLING_FIRST)
 
 # Stable schedule schema.  Physical Deye work modes remain separate from the
 # logical Normal Operation mode and must never be written to the inverter as
@@ -156,10 +199,37 @@ SCHEDULE_SCHEMA_VERSION = 1
 PHYSICAL_NORMAL_MODES = (MODE_ZERO_EXPORT, MODE_ZERO_EXPORT_CT)
 
 CONTROL_MODES = ["Schedule", "Manual Sell", "Stop Sell", "Protect Battery", "Charge Battery"]
-WORK_MODES = [MODE_SELLING_FIRST, MODE_ZERO_EXPORT, MODE_ZERO_EXPORT_CT]
-SLOT_MODES = [MODE_SELLING_FIRST, MODE_NORMAL_OPERATION, MODE_CHARGE]
-LEGACY_SLOT_MODES = [MODE_ZERO_EXPORT, MODE_ZERO_EXPORT_CT]
-ACCEPTED_SLOT_MODES = [*SLOT_MODES, *LEGACY_SLOT_MODES]
+
+# Default work mode is a logical fallback for the inverter, not a slot mode.
+# ``Ładowanie`` is realised through physical TOU Grid Charge, not through the
+# global work mode select entity.
+WORK_MODES = [MODE_NORMAL_OPERATION, MODE_SELLING_FIRST]
+
+SLOT_MODES = list(MANAGER_MODES)
+
+# Legacy values accepted during restore and external service calls.  They are
+# normalised to the canonical Polish manager mode values at runtime.
+LEGACY_MANAGER_MODE_MAP: dict[str, str] = {
+    "Selling First": MODE_SELLING_FIRST,
+    "Sell": MODE_SELLING_FIRST,
+    "Sprzedaż": MODE_SELLING_FIRST,
+    "Charge": MODE_CHARGE,
+    "Ładowanie": MODE_CHARGE,
+    "normal": MODE_NORMAL_OPERATION,
+    "Normalna Praca": MODE_NORMAL_OPERATION,
+    "Zero Export To Load": MODE_NORMAL_OPERATION,
+    "Zero Export To CT": MODE_NORMAL_OPERATION,
+    "Zero Export": MODE_NORMAL_OPERATION,
+    "Essentials": MODE_NORMAL_OPERATION,
+}
+
+
+def normalize_manager_mode(value: str) -> str:
+    """Return the canonical Polish manager mode for legacy or current input."""
+    return LEGACY_MANAGER_MODE_MAP.get(str(value).strip(), str(value).strip())
+
+
+ACCEPTED_SLOT_MODES = [*SLOT_MODES, *list(LEGACY_MANAGER_MODE_MAP.keys())]
 
 SLOTS = [
     ("00_01", "00:00-01:00", 0, 1),

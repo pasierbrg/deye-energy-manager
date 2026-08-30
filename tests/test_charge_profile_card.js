@@ -132,7 +132,7 @@ function fakeSelect(value) {
   assertTrue(!card.chargeProfileGridEnabled(), "grid_charge_enabled false must be preserved");
 }
 
-// 3. Zapis szablonu Charge działa bez wszystkich encji pomocniczych i ustawia stan oczekujący.
+// 3. Zapis szablonu Ładowania działa bez wszystkich encji pomocniczych i ustawia stan oczekujący.
 {
   const card = makeCard({
     managerStatus: {
@@ -182,7 +182,7 @@ function fakeSelect(value) {
   })();
 }
 
-// 4. Potwierdzenie przez manager_status usuwa stan oczekujący Charge.
+// 4. Potwierdzenie przez manager_status usuwa stan oczekujący Ładowania.
 {
   const card = makeCard({
     managerStatus: {
@@ -209,7 +209,7 @@ function fakeSelect(value) {
   assertEqual(card._chargeProfilePending, null, "pending state must be cleared after manager_status confirmation");
 }
 
-// 5. Przycisk przeładowania Charge wysyła force_copy_charge_profile.
+// 5. Przycisk przeładowania Ładowania wysyła force_copy_charge_profile.
 {
   const card = makeCard();
   const calls = [];
@@ -225,7 +225,7 @@ function fakeSelect(value) {
     const updates = JSON.parse(calls[0].data.data);
     assertEqual(updates.length, 1, "patch must contain one update");
     assertEqual(updates[0].slot_key, "12_13", "slot_key must be 12_13");
-    assertEqual(updates[0].mode, "Charge", "mode must be Charge");
+    assertEqual(updates[0].mode, "Ładowanie", "mode must be canonical Ładowanie");
     assertEqual(updates[0].force_copy_charge_profile, true, "force_copy_charge_profile must be true");
   })();
 }

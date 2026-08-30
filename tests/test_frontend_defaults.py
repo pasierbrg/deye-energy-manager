@@ -54,7 +54,31 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
 
     def test_card_sources_declare_current_resource_revision(self):
         for source in self.sources:
-            self.assertTrue(source.startswith("// Resource revision: v=0.7.9.11\n"))
+            self.assertTrue(source.startswith("// Resource revision: v=0.8.0.44\n"))
+
+    def test_mapping_view_is_the_simple_24h_to_six_tou_ranges(self):
+        for source in self.sources:
+            self.assertIn(
+                "Harmonogram 24 h jest układany w sześć zakresów i zapisywany do Deye Time Of Use",
+                source,
+            )
+            self.assertIn("<th>Funkcja</th>", source)
+            self.assertIn("<th>SOC</th>", source)
+            self.assertNotIn(
+                "Minimalny SOC sprzedaży</strong> jest logiczną ochroną Managera",
+                source,
+            )
+            self.assertIn("mappingPlanDiagnostics()", source)
+            self.assertIn("const backendPlan = this.mappingPlanDiagnostics()", source)
+            self.assertIn("Brak pełnego mapowania Deye Time Of Use", source)
+
+    def test_physical_tou_view_uses_only_confirmed_backend_reads(self):
+        for source in self.sources:
+            self.assertIn("touCapabilitiesDiagnostics()", source)
+            self.assertIn("touFieldDiagnostics(slot, field)", source)
+            self.assertIn("const current = physical?.fields?.[field] || {}", source)
+            self.assertIn("capability.supported !== true", source)
+            self.assertNotIn("physical.actual_soc ?? this.numberState(tou.soc)", source)
 
     def test_apply_defaults_uses_one_backend_service_call_only(self):
         method = extract_method(self.sources[0], "async applyDefaultValues()")
@@ -106,6 +130,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         for required in (
             "Przegląd",
             "Proponowane zmiany",
+            "Dlaczego ten plan?",
             "Plan i wykonanie",
             "Dziś",
             "Jutro",
@@ -131,6 +156,10 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
             "ai-status-sell",
             "ai-status-charge",
             "ai-status-tariff",
+            "renderAiExplanation",
+            "recommended_write_by_day",
+            "oczekiwanie na publikację cen po 13:00",
+            "optimizer shadow",
         ):
             self.assertIn(required, source)
         self.assertNotIn(">P50<", source)
@@ -425,7 +454,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_documentation_uses_current_card_cache_revision(self):
         for name in ("README.md", "INSTALL_PL.md"):
             source = (ROOT / name).read_text(encoding="utf-8")
-            self.assertIn("deye-energy-manager-card.js?v=0.7.9.11", source)
+            self.assertIn("deye-energy-manager-card.js?v=0.8.0.44", source)
             self.assertNotIn("deye-energy-manager-card.js?v=22", source)
             self.assertNotIn("deye-energy-manager-card.js?v=10", source)
             self.assertNotIn("deye-energy-manager-card.js?v=09", source)
@@ -462,11 +491,17 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
     def test_card_has_explicit_direct_edit_path_for_physical_tou_entities(self):
         source = self.sources[0]
         self.assertIn("data-open-tou", source)
+        self.assertIn("data-save-tou", source)
+        self.assertIn("async savePhysicalTouSlot(slot)", source)
         tou_dialog = extract_method(source, "renderDialog(slots, touStarts)")
+        editor_field = extract_method(source, "touEditorFieldHtml(slot, field)")
+        for required in ('data-tou-field="${field}"', 'data-tou-field="soc"', 'data-tou-field="grid_charge"'):
+            self.assertIn(required, editor_field)
         for required in (
-            "this.timeInput(tou.",
-            "this.numberInput(tou.",
-            "this.pill(tou.grid)",
+            "this.touCapabilityRow(idx)",
+            "this.touEditorFieldHtml(idx, field)",
+            "data-save-tou",
+            "Zapisz",
         ):
             self.assertIn(required, tou_dialog)
 
@@ -475,13 +510,17 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn("touSocInput(entityId)", source)
         self.assertIn('placeholder="wymaga potwierdzenia"', source)
         dialog = extract_method(source, "renderDialog(slots, touStarts)")
-        self.assertIn("this.touSocInput(entities.touSoc)", dialog)
+        self.assertIn('this.slotDraftInput("tou_soc", "%")', dialog)
         self.assertNotIn("this.numberInput(entities.touSoc", dialog)
 
-    def test_mapping_distinguishes_charge_from_grid_permission(self):
+    def test_mapping_table_shows_only_physical_tou_fields(self):
         source = self.sources[0]
-        self.assertIn("chargeMode: isCharge", source)
-        self.assertIn('item.chargeMode ? "Charge" : "Limit SOC"', source)
+        mapping = extract_method(source, "  scheduleSegments(slots) {")
+        dialog = extract_method(source, "renderDialog(slots, touStarts)")
+        self.assertIn("touSoc: this.asNumber(item.tou_soc)", mapping)
+        self.assertIn("chargeEnabled: Boolean(item.grid_charge)", mapping)
+        self.assertIn('item.chargeEnabled ? "tak" : "nie"', source)
+        self.assertNotIn("<th>Funkcja</th>", dialog)
 
     def test_charge_profile_save_uses_one_backend_service_only(self):
         method = extract_method(self.sources[0], "async saveChargeProfile()")
@@ -582,8 +621,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         dialog = extract_method(source, "renderDialog(slots, touStarts)")
         self.assertIn("this.normalProfileMode()", dialog)
         self.assertIn('["", "-- wybierz --"]', dialog)
-        self.assertIn('["Zero Export To Load", "Zero Export To Load"]', dialog)
-        self.assertIn('["Zero Export To CT", "Zero Export To CT"]', dialog)
+        self.assertIn("...this.normalProfileModeOptions()", dialog)
 
     def test_normal_profile_save_rejects_empty_values(self):
         method = extract_method(self.sources[0], "async saveNormalProfile()")
@@ -606,7 +644,8 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         method = extract_method(source, "async reloadChargeProfileSlot(slotKey)")
         self.assertIn('"apply_schedule_patch"', method)
         self.assertIn('force_copy_charge_profile: true', method)
-        self.assertIn('"Charge"', method)
+        self.assertIn('"Ładowanie"', method)
+        self.assertNotIn('mode: "Charge"', method)
         self.assertIn('data-reload-charge-profile', source)
         self.assertIn(
             'this.reloadChargeProfileSlot(el.dataset.reloadChargeProfile)',
@@ -657,26 +696,27 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         source = self.sources[0]
         dialog = extract_method(source, "renderDialog(slots, touStarts)")
         for required in (
-            "numberInput(entities.chargeCurrent",
-            "numberInput(entities.dischargeCurrent",
-            "numberInput(entities.gridChargeCurrent",
-            "touSocInput(entities.touSoc)",
-            "pill(entities.chargeEnabled)",
-            "Wartości początkowe skopiowano",
+            'slotDraftInput("charge_current"',
+            'slotDraftInput("discharge_current"',
+            'slotDraftInput("grid_charge_current"',
+            'slotDraftInput("tou_soc"',
+            'slotDraftSelect("charge_enabled"',
+            'data-draft-charge-profile="1"',
         ):
             self.assertIn(required, dialog)
-        self.assertIn("pill(entities.chargeEnabled)", dialog)
         self.assertIn("const isSelling", dialog)
         self.assertIn("const socField", dialog)
         self.assertEqual(dialog.count("${socField}"), 1)
-        self.assertIn('this.pill(null, "NIE")', dialog)
+        self.assertNotIn("this.callService(", dialog)
 
-    def test_slot_mode_selector_contains_exactly_three_supported_modes(self):
-        method = extract_method(self.sources[0], "slotWorkModes()")
+    def test_card_uses_polish_manager_modes(self):
+        source = self.sources[0]
+        start = source.index("  slotWorkModes() {")
+        method = source[start : source.index("\n  }", start) + 4]
         for mode in (
-            "Selling First",
             "Normalna Praca",
-            "Charge",
+            "Sprzedaż",
+            "Ładowanie",
         ):
             self.assertIn(mode, method)
         self.assertNotIn("Zero Export To Load", method)
@@ -692,7 +732,7 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn('subtitle: "Normalny tryb pracy"', mode_meta)
         self.assertIn('subtitle: "Slot nieaktywny"', mode_meta)
 
-    def test_slot_mode_selectors_map_technical_values_to_polish_labels(self):
+    def test_slot_mode_selectors_use_canonical_polish_values(self):
         source = self.sources[0]
         self.assertIn("slotModeLabel(mode)", source)
         self.assertIn("slotModeOptions()", source)
@@ -701,34 +741,47 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertNotIn('this.rawSelect("multi-mode", this.slotWorkModes(), bulk.mode)', source)
 
     def test_zero_export_physical_modes_display_as_normal_operation(self):
-        import re
-        def norm(value):
-            return re.sub(r"[^a-z0-9]", "", value.lower())
+        normalizer = extract_method(self.sources[0], "  normalizeManagerMode(value) {")
         mode_meta = extract_method(self.sources[0], "modeMeta(mode, enabled = true)")
-        self.assertIn('normalized.includes("zeroexport")', mode_meta)
-        self.assertIn('normalized.includes("normal")', mode_meta)
-        self.assertNotIn('normalized.includes("zero export")', mode_meta)
-        self.assertNotIn('normalized.includes("normalna praca")', mode_meta)
+        self.assertIn('"Zero Export To Load": "Normalna Praca"', normalizer)
+        self.assertIn('"Zero Export To CT": "Normalna Praca"', normalizer)
+        self.assertIn('this.normalizeManagerMode(mode)', mode_meta)
         self.assertIn('title: "Normalna Praca"', mode_meta)
         self.assertIn('cls: "normal"', mode_meta)
-        for raw in ("Zero Export To Load", "Zero Export To CT", "Normalna Praca"):
-            self.assertTrue("normal" in norm(raw) or "zeroexport" in norm(raw), f"{raw} nie mapuje się na Normalna Praca")
         label_method = extract_method(self.sources[0], "slotModeLabel(mode)")
-        self.assertIn('normalized.includes("zeroexport")', label_method)
-        self.assertIn('normalized.includes("normal")', label_method)
-        self.assertIn('return "Normalna Praca"', label_method)
+        self.assertIn('this.normalizeManagerMode(mode)', label_method)
 
-    def test_normal_profile_settings_keep_physical_mode_names(self):
+    def test_card_labels_successful_rollback_as_restored(self):
+        status_label = extract_method(self.sources[0], "touStatusLabel(status)")
+        self.assertIn('rolled_back: "Przywr\u00f3cono"', status_label)
+
+    def test_card_uses_backend_normal_profile_labels(self):
         source = self.sources[0]
         dialog = extract_method(source, "renderDialog(slots, touStarts)")
         self.assertIn('this.rawSelect("normal-profile-mode",', dialog)
-        self.assertIn('["Zero Export To Load", "Zero Export To Load"]', dialog)
-        self.assertIn('["Zero Export To CT", "Zero Export To CT"]', dialog)
+        self.assertIn("...this.normalProfileModeOptions()", dialog)
+        self.assertNotIn('["Zero Export To Load", "Eksport wyłączony — pomiar Load"]', dialog)
+        self.assertNotIn('["Zero Export To CT", "Eksport wyłączony — pomiar CT"]', dialog)
+
+    def test_card_uses_polish_charge_profile_label(self):
+        self.assertIn("Docelowy SOC profilu Ładowania", self.sources[0])
+        self.assertNotIn("Docelowy SOC profilu Charge", self.sources[0])
+
+    def test_card_does_not_expose_zero_export_provider_values_as_user_labels(self):
+        dialog = extract_method(self.sources[0], "renderDialog(slots, touStarts)")
+        self.assertNotIn('["Zero Export To Load", "Zero Export To Load"]', dialog)
+        self.assertNotIn('["Zero Export To CT", "Zero Export To CT"]', dialog)
+
+    def test_card_mapping_does_not_depend_on_legacy_schedule_function(self):
+        mapping = extract_method(self.sources[0], "scheduleSegments(slots)")
+        dialog = extract_method(self.sources[0], "renderDialog(slots, touStarts)")
+        self.assertNotIn("schedule_function", mapping)
+        self.assertNotIn("<th>Funkcja</th>", dialog)
 
     def test_disabled_state_is_not_a_work_mode_option(self):
         source = self.sources[0]
         dialog = extract_method(source, "renderDialog(slots, touStarts)")
-        self.assertIn("selectInput(entities.mode", dialog)
+        self.assertIn('slotDraftSelect("mode", this.slotModeOptions())', dialog)
         self.assertNotIn("Wy\\u0142\\u0105czono", dialog)
 
     def test_schedule_table_always_displays_stored_grid_permission_and_current(self):
@@ -938,6 +991,30 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertNotIn("save_future_plan", loader)
         self.assertNotIn("apply_schedule_patch", loader)
 
+    def test_plan_explanation_is_day_scoped_and_uses_full_slot_power(self):
+        source = self.sources[0]
+        method = extract_method(source, "renderAiExplanation(planner)")
+        self.assertIn('data-ai-explanation-day="today"', method)
+        self.assertIn('data-ai-explanation-day="tomorrow"', method)
+        self.assertIn("profile.day_summaries?.[day]", method)
+        self.assertIn("this.aiPlannedSlotPower(source)", method)
+        self.assertIn("Dodatkowe sugestie optymalizatora", method)
+        self.assertIn("nie jest zaliczana jako wykonanie celu profilu", method)
+        self.assertIn("Dzisiejsze okno porannej sprzedaży już się zakończyło", method)
+        self.assertNotIn('["today", "tomorrow"].flatMap', method)
+
+    def test_execution_table_shows_only_planned_price_pair(self):
+        source = self.sources[0]
+        method = extract_method(source, "renderAiExecutionTable(data, planOnly = false)")
+        self.assertIn("Plan: kupno / sprzedaż", method)
+        self.assertNotIn("Wykonanie: kupno / sprzedaż", method)
+        self.assertIn("row.effective_buy_price", method)
+        self.assertIn("row.sell_price", method)
+        self.assertNotIn("actual.buy_price_pln_kwh", method)
+        self.assertNotIn("actual.sell_price_pln_kwh", method)
+        self.assertIn('colspan="2" class="ai-exec-col-error"', method)
+        self.assertNotIn("callService", method)
+
     def test_ai_mobile_charts_tables_and_weather_keep_only_local_overflow(self):
         source = self.sources[0]
         self.assertIn(
@@ -986,6 +1063,45 @@ class FrontendDefaultRestoreTests(unittest.TestCase):
         self.assertIn('columns: "full"', method)
         self.assertIn("min_columns: 3", method)
         self.assertNotIn("rows:", method)
+
+    def test_control_master_is_shown_in_schedule_header_and_status_panel(self):
+        source = self.sources[0]
+        render = extract_method(source, "renderV073()")
+        flow = extract_method(source, "energyFlowPanel()")
+        binding = extract_method(source, "bindDashboardControls(slots)")
+        self.assertIn('data-control-toggle="1"', render)
+        self.assertIn("Sterowanie Deye — ${this.escapeHtml(controlStatus)}", render)
+        self.assertIn("const control = this.controlState()", flow)
+        self.assertIn("const controlOn = control.enabled", flow)
+        self.assertIn("const controlStatus = control.status", flow)
+        self.assertIn('this.entity("sensor", "planned_manager_action")', flow)
+        self.assertIn('this.entity("sensor", "executed_manager_action")', flow)
+        self.assertIn("Planowana decyzja", flow)
+        self.assertIn("Wykonana decyzja", flow)
+        self.assertIn('[data-control-toggle]', binding)
+        self.assertIn("this.toggleControl()", binding)
+
+    def test_disabled_schedule_save_has_explicit_polish_monitoring_message(self):
+        method = extract_method(self.sources[0], "async applySchedulePatch(updates, options = null)")
+        self.assertIn("this.slotControlEnabled()", method)
+        self.assertNotIn('this.entity("switch", "control")', method)
+        self.assertIn(
+            "Zmiany zapisano w Harmonogramie. Sterowanie Deye jest wyłączone — nie wysłano ich do falownika.",
+            method,
+        )
+
+    def test_configuration_import_never_restores_external_physical_entities_directly(self):
+        source = self.sources[0]
+        editable = extract_method(source, "editableConfigEntities()")
+        snapshot = extract_method(source, "configurationSnapshot()")
+        apply = extract_method(source, "async applyConfigurationSnapshot(snapshot)")
+        self.assertNotIn("this.touEntities(", editable)
+        self.assertIn('entityId.includes("deye_energy_manager_")', editable)
+        self.assertIn("physical_tou:", snapshot)
+        self.assertIn('entityId.includes("deye_energy_manager_")', apply)
+        self.assertIn('this.callService("deye_energy_manager", "set_tou_slot"', apply)
+        self.assertIn("physicalTou.length && desiredControlOn", apply)
+        self.assertIn("fizycznego TOU nie wysłano do falownika", apply)
 
     def test_dialog_host_and_dashboard_render_unchanged(self):
         source = self.sources[0]

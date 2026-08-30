@@ -9,9 +9,12 @@ import sys
 try:
     from .optimizer_core import (  # type: ignore
         ALGORITHM_VERSION,
+        DEFAULT_MINIMUM_AUTO_SELL_POWER_W,
+        DEFAULT_PRICE_EQUIVALENCE_BAND,
         PLAN_SCHEMA_VERSION,
         build_energy_plan,
         build_plan_bundle,
+        quantize_power_w,
         simulate_alternative,
         snapshot_id,
     )
@@ -29,18 +32,24 @@ except (ImportError, ValueError):
         sys.modules[module_name] = module
         spec.loader.exec_module(module)
     ALGORITHM_VERSION = module.ALGORITHM_VERSION
+    DEFAULT_MINIMUM_AUTO_SELL_POWER_W = module.DEFAULT_MINIMUM_AUTO_SELL_POWER_W
+    DEFAULT_PRICE_EQUIVALENCE_BAND = module.DEFAULT_PRICE_EQUIVALENCE_BAND
     PLAN_SCHEMA_VERSION = module.PLAN_SCHEMA_VERSION
     build_energy_plan = module.build_energy_plan
     build_plan_bundle = module.build_plan_bundle
+    quantize_power_w = module.quantize_power_w
     simulate_alternative = module.simulate_alternative
     snapshot_id = module.snapshot_id
 
 
 __all__ = [
     "ALGORITHM_VERSION",
+    "DEFAULT_MINIMUM_AUTO_SELL_POWER_W",
+    "DEFAULT_PRICE_EQUIVALENCE_BAND",
     "PLAN_SCHEMA_VERSION",
     "build_energy_plan",
     "build_plan_bundle",
+    "quantize_power_w",
     "simulate_alternative",
     "snapshot_id",
 ]

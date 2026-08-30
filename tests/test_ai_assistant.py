@@ -17,13 +17,17 @@ SPEC.loader.exec_module(assistant)
 def valid_analysis():
     return {
         "status": "ok",
+        "source_plan_id": "local-1",
+        "source_input_snapshot_id": "snapshot-1",
+        "request_id": "request-1",
         "summary": "Plan lokalny jest bezpieczny.",
         "plan_assessment": "safe",
         "confidence_adjustment": -2,
         "best_option": "balanced",
+        "problem_codes": [],
         "alternative": {
             "enabled": True,
-            "hours": [{"start": "20:00", "end": "21:00", "action": "sell", "power_w": 4000}],
+            "hours": [{"index": 20, "action": "sell", "power_w": 4000}],
         },
         "reasons": ["Wysoka cena sprzedaży"],
         "risks": ["Krótka historia"],
@@ -33,6 +37,7 @@ def valid_analysis():
 def plan():
     return {
         "plan_id": "local-1",
+        "input_snapshot_id": "snapshot-1",
         "selected_variant": "balanced",
         "plan_status": "proposal",
         "optimized_result": 12,
@@ -159,6 +164,20 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual("PGE Dystrybucja", payload["tariff"]["provider_name"])
         self.assertTrue(payload["privacy"]["protection_enforced"])
 
+    def test_material_fingerprint_ignores_small_noise_but_tracks_actions(self):
+        original = plan()
+        noisy = json.loads(json.dumps(original))
+        noisy["rows"][0]["soc_end_pct"] = 60.4
+        self.assertEqual(
+            assistant.material_review_fingerprint(original),
+            assistant.material_review_fingerprint(noisy),
+        )
+        noisy["rows"][0]["action"] = "charge"
+        self.assertNotEqual(
+            assistant.material_review_fingerprint(original),
+            assistant.material_review_fingerprint(noisy),
+        )
+
     def test_response_schema_accepts_valid_and_rejects_unknown_fields(self):
         self.assertEqual("safe", assistant.validate_response(valid_analysis())["plan_assessment"])
         invalid = valid_analysis()
@@ -166,20 +185,56 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             assistant.validate_response(invalid)
 
+    def test_response_must_match_exact_plan_contract(self):
+        analysis = valid_analysis()
+        with self.assertRaisesRegex(ValueError, "nieaktualnego planu"):
+            assistant.validate_response(analysis, {
+                "source_plan_id": "new-plan",
+                "source_input_snapshot_id": "snapshot-1",
+                "request_id": "request-1",
+            })
+
+    def test_private_profiles_include_decision_semantics_without_names(self):
+        payload = assistant.build_private_payload(
+            plan(),
+            user_profiles={"profiles": {"charging": {
+                "name": "Nie wysyłaj tej nazwy",
+                "enabled": True,
+                "profitable_only": True,
+                "purpose": "sale",
+                "deadline": "18:00",
+                "charge_missing_only": True,
+                "minimum_margin": 0.15,
+            }}},
+        )
+        profile = payload["user_profiles"]["charging"]
+        self.assertNotIn("name", profile)
+        self.assertTrue(profile["profitable_only"])
+        self.assertEqual("sale", profile["purpose"])
+
     def test_response_rejects_power_time_and_soc_like_untrusted_values(self):
         invalid = valid_analysis()
         invalid["alternative"]["hours"][0]["power_w"] = 99999
         with self.assertRaises(ValueError):
             assistant.validate_response(invalid)
         invalid = valid_analysis()
-        invalid["alternative"]["hours"][0]["start"] = "25:00"
+        invalid["alternative"]["hours"][0]["index"] = 48
         with self.assertRaises(ValueError):
             assistant.validate_response(invalid)
 
     async def test_valid_api_response_is_advisory_and_performs_no_write(self):
+        payload = assistant.build_private_payload(plan())
+        analysis = valid_analysis()
+        analysis.update(payload["request_contract"])
+        analysis.pop("algorithm_version", None)
+        analysis.pop("plan_schema_version", None)
+        analysis.pop("horizon_start", None)
+        analysis.pop("horizon_end", None)
+        analysis.pop("max_candidate_changes", None)
+        analysis.pop("manual_confirmation_required", None)
         envelope = {
             "model": "actual-model",
-            "choices": [{"message": {"content": json.dumps(valid_analysis())}}],
+            "choices": [{"message": {"content": json.dumps(analysis)}}],
         }
         session = FakeSession([FakeResponse(200, envelope)])
         local = plan()
@@ -187,7 +242,7 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
         result = await assistant.request_analysis(
             session,
             self.config(),
-            assistant.build_private_payload(local),
+            payload,
         )
         self.assertEqual("valid", result["json_schema"])
         self.assertFalse(result["writes_performed"])
@@ -203,12 +258,15 @@ class AiAssistantTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_transient_error_has_one_bounded_retry(self):
-        envelope = {"choices": [{"message": {"content": json.dumps(valid_analysis())}}]}
+        payload = assistant.build_private_payload(plan())
+        analysis = valid_analysis()
+        analysis.update({key: payload["request_contract"][key] for key in ("source_plan_id", "source_input_snapshot_id", "request_id")})
+        envelope = {"choices": [{"message": {"content": json.dumps(analysis)}}]}
         session = FakeSession([
             FakeResponse(503, {"error": "busy"}, {"Retry-After": "0"}),
             FakeResponse(200, envelope),
         ])
-        result = await assistant.request_analysis(session, self.config(), assistant.build_private_payload(plan()))
+        result = await assistant.request_analysis(session, self.config(), payload)
         self.assertEqual("ok", result["status"])
         self.assertEqual(2, len(session.calls))
 

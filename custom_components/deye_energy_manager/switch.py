@@ -8,8 +8,40 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, MODE_CHARGE, SLOTS
+from .const import DOMAIN, SLOTS
 from .entity import DeyeEnergyManagerEntity
+
+
+class DeyeControlSwitch(DeyeEnergyManagerEntity, SwitchEntity):
+    """The single master switch for the physical Deye execution layer."""
+
+    def __init__(self, runtime):
+        super().__init__(runtime, "control", "Sterowanie Deye")
+        # Home Assistant treats an entity_id assigned before registration as a
+        # suggestion.  The stable unique_id still wins for an existing or
+        # user-renamed registry entry.
+        self.entity_id = "switch.deye_energy_manager_control"
+
+    async def async_added_to_hass(self):
+        """Publish the registry-resolved entity_id to the manager contract."""
+        self.runtime.control_entity_id = self.entity_id
+        self.runtime.notify_update()
+
+    async def async_will_remove_from_hass(self):
+        """Drop only this entity's resolved id during unload/reload."""
+        if self.runtime.control_entity_id == self.entity_id:
+            self.runtime.control_entity_id = None
+            self.runtime.notify_update()
+
+    @property
+    def is_on(self):
+        return bool(self.runtime.control_enabled)
+
+    async def async_turn_on(self, **kwargs: Any):
+        await self.runtime.async_enable_control()
+
+    async def async_turn_off(self, **kwargs: Any):
+        await self.runtime.async_disable_control()
 
 
 class DeyeManagerSwitch(DeyeEnergyManagerEntity, SwitchEntity, RestoreEntity):
@@ -97,27 +129,22 @@ class DeyeSlotSwitch(DeyeEnergyManagerEntity, SwitchEntity, RestoreEntity):
 
 
 class DeyeSlotGridChargeSwitch(DeyeEnergyManagerEntity, SwitchEntity, RestoreEntity):
-    """Explicit per-slot permission for Deye TOU Grid Charge."""
+    """Physical Deye TOU Grid Charge flag for one schedule hour."""
 
     def __init__(self, runtime, slot_key, label):
-        super().__init__(runtime, f"slot_{slot_key}_charge_enabled", f"Charge {label}")
+        super().__init__(runtime, f"slot_{slot_key}_charge_enabled", f"Grid charge {label}")
         self.slot_key = slot_key
 
     @property
     def is_on(self):
-        slot = self.runtime.slots[self.slot_key]
-        return bool(slot.mode == MODE_CHARGE and slot.charge_enabled)
+        return bool(self.runtime.slots[self.slot_key].charge_enabled)
 
     async def async_added_to_hass(self):
         if (last_state := await self.async_get_last_state()) is not None:
-            slot = self.runtime.slots[self.slot_key]
-            slot.charge_enabled = last_state.state == "on" and slot.mode == MODE_CHARGE
+            self.runtime.slots[self.slot_key].charge_enabled = last_state.state == "on"
 
     async def async_turn_on(self, **kwargs: Any):
-        slot = self.runtime.slots[self.slot_key]
-        if slot.mode != MODE_CHARGE:
-            raise ValueError("Ładowanie z sieci można włączyć tylko dla slotu Charge")
-        slot.charge_enabled = True
+        self.runtime.slots[self.slot_key].charge_enabled = True
         await self.runtime.async_apply_slot_grid_charge(self.slot_key)
 
     async def async_turn_off(self, **kwargs: Any):
@@ -128,6 +155,7 @@ class DeyeSlotGridChargeSwitch(DeyeEnergyManagerEntity, SwitchEntity, RestoreEnt
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback):
     runtime = hass.data[DOMAIN][entry.entry_id]
     entities = [
+        DeyeControlSwitch(runtime),
         DeyeManagerSwitch(runtime, "scheduler_enabled", "Scheduler", "scheduler_enabled"),
         DeyeManagerSwitch(runtime, "soc_guard_enabled", "SOC guard", "soc_guard_enabled"),
         DeyeManagerSwitch(runtime, "price_guard_enabled", "Price guard", "price_guard_enabled"),

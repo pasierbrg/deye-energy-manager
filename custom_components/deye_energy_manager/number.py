@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, SLOTS
+from .const import ABSOLUTE_INVERTER_MAX_POWER_W, DEFAULT_INVERTER_MAX_POWER_W, DOMAIN, SLOTS
 from .entity import DeyeEnergyManagerEntity
 
 
@@ -24,7 +24,28 @@ class DeyeManagerNumber(DeyeEnergyManagerEntity, NumberEntity, RestoreEntity):
 
     @property
     def native_value(self):
-        return getattr(self.runtime, self.attr)
+        value = getattr(self.runtime, self.attr)
+        if self.attr.endswith("sell_power"):
+            return min(value, self.runtime.effective_inverter_max_power_w)
+        return value
+
+    @property
+    def native_min_value(self):
+        if self.attr.endswith("sell_power"):
+            return 0
+        return self._attr_native_min_value
+
+    @property
+    def native_max_value(self):
+        if self.attr.endswith("sell_power"):
+            return self.runtime.effective_inverter_max_power_w
+        return self._attr_native_max_value
+
+    def _restore_max(self):
+        """Allow restoring old values above the current effective limit."""
+        if self.attr.endswith("sell_power"):
+            return ABSOLUTE_INVERTER_MAX_POWER_W
+        return self._attr_native_max_value
 
     def _physical_range_entity(self):
         """Return the mapped Deye entity that owns this helper's limits."""
@@ -68,12 +89,19 @@ class DeyeManagerNumber(DeyeEnergyManagerEntity, NumberEntity, RestoreEntity):
         if (last_state := await self.async_get_last_state()) is not None:
             try:
                 value = float(last_state.state)
-                if math.isfinite(value) and self.native_min_value <= value <= self.native_max_value:
+                if math.isfinite(value) and self.native_min_value <= value <= self._restore_max():
                     setattr(self.runtime, self.attr, value)
             except (TypeError, ValueError):
                 pass
 
     async def async_set_native_value(self, value: float):
+        if not self.native_min_value <= value <= self.native_max_value:
+            raise ValueError(
+                f"{self.name} value {value} outside allowed range "
+                f"{self.native_min_value}–{self.native_max_value}"
+            )
+        if self.attr.endswith("sell_power"):
+            self.runtime.validate_manual_sell_power_w(self.name, value)
         previous = getattr(self.runtime, self.attr)
         setattr(self.runtime, self.attr, value)
         # The default profile is deliberately a save-only operation.  It is
@@ -150,14 +178,29 @@ class DeyeSlotNumber(DeyeEnergyManagerEntity, NumberEntity, RestoreEntity):
 
     @property
     def native_value(self):
-        return getattr(self.runtime.slots[self.slot_key], self.attr)
+        value = getattr(self.runtime.slots[self.slot_key], self.attr)
+        if self.attr == "sell_power":
+            return min(value, self.runtime.effective_inverter_max_power_w)
+        return value
+
+    @property
+    def native_max_value(self):
+        if self.attr == "sell_power":
+            return self.runtime.effective_inverter_max_power_w
+        return self._attr_native_max_value
+
+    def _restore_max(self):
+        """Allow restoring old slot values above the current effective limit."""
+        if self.attr == "sell_power":
+            return ABSOLUTE_INVERTER_MAX_POWER_W
+        return self._attr_native_max_value
 
     async def async_added_to_hass(self):
         restored = False
         if (last_state := await self.async_get_last_state()) is not None:
             try:
                 value = float(last_state.state)
-                if math.isfinite(value) and self.native_min_value <= value <= self.native_max_value:
+                if math.isfinite(value) and self.native_min_value <= value <= self._restore_max():
                     setattr(self.runtime.slots[self.slot_key], self.attr, value)
                     restored = True
             except (TypeError, ValueError):
@@ -166,8 +209,24 @@ class DeyeSlotNumber(DeyeEnergyManagerEntity, NumberEntity, RestoreEntity):
             physical_soc = self.runtime.physical_tou_soc_for_slot(self.slot_key)
             if physical_soc is not None:
                 setattr(self.runtime.slots[self.slot_key], self.attr, physical_soc)
+        # Track per-slot restoration for the safe 5A.1 migration.
+        if self.attr == "tou_soc":
+            self.runtime.mark_slot_tou_soc_restored(self.slot_key)
+        elif self.attr == "minimum_sell_soc":
+            self.runtime.mark_slot_minimum_sell_soc_restored(self.slot_key)
 
     async def async_set_native_value(self, value: float):
+        if not self.native_min_value <= value <= self.native_max_value:
+            raise ValueError(
+                f"{self.name} value {value} outside allowed range "
+                f"{self.native_min_value}–{self.native_max_value}"
+            )
+        if self.attr == "sell_power":
+            self.runtime.validate_manual_sell_power_w(self.name, value)
+        if self.attr == "discharge_current":
+            # A direct helper edit explicitly transfers ownership of this
+            # current back to the user/manual schedule contract.
+            self.runtime.slots[self.slot_key].ai_sell_power_only = False
         setattr(self.runtime.slots[self.slot_key], self.attr, value)
         self.runtime.mark_config_saved()
         self.runtime.notify_update()
@@ -179,10 +238,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     entities = [
         DeyeManagerNumber(runtime, "minimum_sell_soc", "Minimum sell SOC", "min_sell_soc", 0, 100, 1, "%"),
         DeyeManagerNumber(runtime, "minimum_sell_price", "Minimum sell price", "price_sell_threshold", 0, 5, 0.01, "PLN/kWh"),
-        DeyeManagerNumber(runtime, "manual_sell_power", "Manual sell power", "manual_sell_power", 0, 13000, 100, "W"),
+        DeyeManagerNumber(runtime, "manual_sell_power", "Manual sell power", "manual_sell_power", 0, DEFAULT_INVERTER_MAX_POWER_W, 100, "W"),
         DeyeManagerNumber(runtime, "manual_discharge_current", "Manual discharge current", "manual_discharge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "manual_charge_current", "Manual charge current", "manual_charge_current", 0, 240, 5, "A"),
-        DeyeManagerNumber(runtime, "default_sell_power", "Default sell power", "default_sell_power", 0, 13000, 100, "W"),
+        DeyeManagerNumber(runtime, "default_sell_power", "Default sell power", "default_sell_power", 0, DEFAULT_INVERTER_MAX_POWER_W, 100, "W"),
         DeyeManagerNumber(runtime, "default_discharge_current", "Default discharge current", "default_discharge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "default_charge_current", "Default charge current", "default_charge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "default_grid_charge_current", "Default grid charge current", "default_grid_charge_current", 0, 240, 5, "A"),
@@ -190,7 +249,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
         DeyeManagerNumber(runtime, "charge_profile_discharge_current", "Charge profile discharge current", "charge_profile_discharge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "charge_profile_grid_charge_current", "Charge profile grid charge current", "charge_profile_grid_charge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "charge_profile_target_soc", "Charge profile target SOC", "charge_profile_target_soc", 0, 100, 1, "%"),
-        DeyeManagerNumber(runtime, "normal_profile_sell_power", "Normal profile sell power", "normal_profile_sell_power", 0, 13000, 100, "W"),
+        DeyeManagerNumber(runtime, "normal_profile_sell_power", "Normal profile sell power", "normal_profile_sell_power", 0, DEFAULT_INVERTER_MAX_POWER_W, 100, "W"),
         DeyeManagerNumber(runtime, "normal_profile_discharge_current", "Normal profile discharge current", "normal_profile_discharge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "normal_profile_charge_current", "Normal profile charge current", "normal_profile_charge_current", 0, 240, 5, "A"),
         DeyeManagerNumber(runtime, "normal_profile_grid_charge_current", "Normal profile grid charge current", "normal_profile_grid_charge_current", 0, 240, 5, "A"),
@@ -199,7 +258,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry, async_add_e
     for key, label, *_ in SLOTS:
         entities.extend(
             [
-                DeyeSlotNumber(runtime, key, label, "sell_power", "Sell power", 13000, 100, "W"),
+                DeyeSlotNumber(runtime, key, label, "sell_power", "Sell power", DEFAULT_INVERTER_MAX_POWER_W, 100, "W"),
                 DeyeSlotNumber(runtime, key, label, "discharge_current", "Discharge current", 240, 5, "A"),
                 DeyeSlotNumber(runtime, key, label, "charge_current", "Charge current", 240, 5, "A"),
                 DeyeSlotNumber(runtime, key, label, "grid_charge_current", "Grid charge current", 240, 5, "A"),

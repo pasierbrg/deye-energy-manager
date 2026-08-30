@@ -1,290 +1,424 @@
-Deye Energy Manager 0.7.9 — instalacja
+# Deye Energy Manager 0.8.0 — instalacja i aktualizacja
 
-Wymagany Home Assistant: `2026.6` lub nowszy.
+Ten dokument prowadzi przez instalację, aktualizację i pierwszy bezpieczny zapis.
+Opis funkcji znajduje się w [README.md](README.md), a zmiany wydania w
+[RELEASE_NOTES_0.8.0.md](RELEASE_NOTES_0.8.0.md).
 
-## Lokalny test wersji 0.7.9
+## Wymagania
 
-1. Skopiuj lokalnie pliki integracji 0.7.9 oraz obie identyczne kopie karty.
-2. Uruchom ponownie Home Assistant.
-3. Sprawdź w **Ustawienia i diagnostyka → System**, czy integracja i karta
-   pokazują `0.7.9`.
-4. Ustaw rewizję zasobu karty na `v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj
-   twarde odświeżenie przeglądarki.
-5. W **Historia i dane** sprawdź status migracji, zachowaną liczbę dni oraz
-   `history_schema_version = 4`. Migracja jest automatyczna i nie kasuje danych.
-6. Przejrzyj mapowanie encji. Nowe PV3 Power i Battery SOH są opcjonalne.
-7. Pozostaw nowe profile AI wyłączone, dopóki nie skonfigurujesz ich świadomie.
-8. W **Sugestie AI** sprawdź, czy minimalna cena odpowiada ustawieniom profilu,
-   a „Moc do slotu” jest zgodna z pokazywaną energią i długością godziny.
-9. W **Asystent AI przez API** zachowaj wybrane ustawienia prywatności i uruchom
-   ponowną analizę, aby otrzymać nową odpowiedź po polsku.
+- Home Assistant 2026.6 lub nowszy;
+- dostęp do katalogu `/config` i możliwość restartu Home Assistant;
+- działające encje falownika udostępnione przez wspierany provider;
+- HACS albo możliwość ręcznego skopiowania integracji;
+- przeglądarka umożliwiająca twarde odświeżenie cache karty.
 
-## Pierwsza konfiguracja planowania 0.7.9
+Pełne sterowanie wymaga encji trybu pracy, Max Sell Power, prądu rozładowania,
+prądu ładowania baterii, prądu ładowania z sieci i SOC baterii. Pełne fizyczne
+Deye Time Of Use wymaga sześciu startów, sześciu wartości SOC i sześciu pól Grid
+Charge/source. Cena i Solcast są wymagane tylko przez funkcje, które ich używają.
 
-W **Sugestie AI → Ustawienia** skonfiguruj kolejno:
+## Kopia bezpieczeństwa przed aktualizacją
 
-1. Parametry magazynu: pojemność, twarde minimum SOC, rezerwę w kWh, sprawność
-   ładowania i rozładowania oraz limity mocy/prądu.
-2. Profil domu: preferowane `Load Power`; opcjonalnie kompletne L1/L2/L3 jako
-   fallback. Brak pełnego kompletu faz nie jest sumowany częściowo.
-3. Profil PV i Solcast. Korekta lokalna rośnie stopniowo wraz z liczbą poprawnych
-   próbek i pomija okresy ograniczenia produkcji.
-4. **Poranna sprzedaż**: dni, okno, minimalna cena, cel kWh, sposób rozłożenia,
-   minimalny SOC po sprzedaży, limit mocy i minimalna pewność.
-5. **Wieczorna sprzedaż**: analogicznie; planer liczy ją po wcześniejszym
-   zużyciu i wykonaniu porannego profilu.
-6. **Ładowanie**: cel SOC lub energia kWh, deadline, źródło, maksymalna
-   efektywna cena, limit energii z sieci i zachowanie miejsca na PV.
+Przed aktualizacją:
 
-`Cel kWh` jest limitem energii profilu. `Częściowa realizacja` pozwala zaplanować
-mniej, gdy ogranicza to SOC, moc, dostępna liczba godzin lub cena. Profil
-sprzedaży nie schodzi poniżej wskazanego SOC. Profil ładowania z opcją zachowania
-miejsca na PV pozostawia co najmniej podaną wolną pojemność.
+1. wykonaj pełną kopię zapasową Home Assistant;
+2. zapisz aktualne wartości fizycznych sześciu zakresów Deye TOU;
+3. zrób zrzuty Harmonogramu, ustawień domyślnych i profili;
+4. zanotuj provider, urządzenie falownika i ręczne mapowanie encji;
+5. wyłącz **Sterowanie Deye**, aby aktualizacja nie rozpoczęła nowej operacji.
 
-## Taryfa i dystrybucja
-
-Nie konfiguruj godzin taniej taryfy w AI. Wybierz istniejący operator OSD,
-taryfę i tryb katalogu w dotychczasowym module. W trybie automatycznym używany
-jest jego profil dziś/jutro; w trybie ręcznym – profil użytkownika. Ustaw
-poprawnie opcję **Cena zakupu zawiera dystrybucję**, aby koszt nie został
-doliczony drugi raz.
-
-## Opcjonalne API AI
-
-Lokalny Optimizer Core działa bez API. Aby włączyć dodatkową ocenę:
-
-1. Otwórz **Sugestie AI → Ustawienia → API**.
-2. Wybierz Gemini, OpenRouter, OpenAI, OpenCode albo własny endpoint zgodny z
-   OpenAI.
-3. Uzyskaj klucz wyłącznie według oficjalnej instrukcji dostawcy i wklej go w
-   pole hasła.
-4. Wybierz model. Dla własnego dostawcy podaj endpoint `https://`.
-5. Ustaw zakres prywatności, zapisz i wybierz **Test połączenia**.
-6. Po poprawnym teście uruchom analizę ręcznie.
-
-OpenCode / OpenCode Go jest dostępny tylko przez oficjalny publiczny endpoint
-usługi i klucz podany przez użytkownika. Integracja nie korzysta z lokalnego
-logowania OpenCode, plików poświadczeń ani poleceń powłoki. Nigdy nie wklejaj
-klucza do YAML, dokumentacji ani zgłoszenia diagnostycznego.
-
-Przez pierwsze 7 dni zalecany jest tryb sugestii bez stosowania planu. Statusy
-„Zbieranie danych” i „Plan wstępny” są normalne; pełniejsza pewność pojawia się
-po 21 i 60 kompletnych dniach. Błąd API nie blokuje planera lokalnego. Status
-„Plan zablokowany” zwykle oznacza brak krytycznego SOC lub cen – sprawdź jakość
-danych i mapowanie, zamiast omijać zabezpieczenie.
+Nie edytuj ręcznie plików `.storage`. Kopia Home Assistant jest właściwą metodą
+zabezpieczenia wpisu konfiguracji i danych integracji.
 
 ## Instalacja przez HACS
 
-1. Dodaj repozytorium jako niestandardowe repozytorium HACS typu **Integracja**.
-2. Zainstaluj Deye Energy Manager.
-3. Uruchom ponownie Home Assistant.
-4. Przejdź do **Ustawienia → Urządzenia i usługi → Dodaj integrację**.
-5. Przejdź przez kreator:
-   - wybierz mapowanie automatyczne, ręczne albo zachowanie bieżących ustawień;
-   - sprawdź encje sterujące i pomiarowe Deye;
-   - wybierz encje cen sprzedaży i zakupu;
-   - sprawdź encje Solcast;
-   - wybierz prognozę `weather.*` (domyślnie `weather.forecast_home_2`);
-   - wykonaj test i potwierdź mapowanie.
+1. Otwórz **HACS → Integracje → Niestandardowe repozytoria**.
+2. Dodaj `https://github.com/pasierbrg/deye-energy-manager` jako typ
+   **Integracja**.
+3. Wyszukaj **Deye Energy Manager** i wybierz instalację.
+4. Uruchom ponownie Home Assistant.
+5. Przejdź do **Ustawienia → Urządzenia i usługi → Dodaj integrację**.
+6. Wyszukaj **Deye Energy Manager** i rozpocznij konfigurację.
 
-Automatyczne mapowanie niczego nie zapisuje bez końcowego potwierdzenia. Kreator służy wyłącznie do wyboru encji Home Assistant. Operatora, taryfę, stawki oraz kierunek znaku mocy sieci i baterii ustawia się później w karcie.
+Po aktualizacji istniejącej instalacji również wykonaj pełny restart Home
+Assistant, nie tylko przeładowanie YAML.
+
+## Instalacja ręczna
+
+1. Skopiuj katalog:
+
+   ```text
+   custom_components/deye_energy_manager
+   ```
+
+   do:
+
+   ```text
+   /config/custom_components/deye_energy_manager
+   ```
+
+2. Upewnij się, że pliki zostały zastąpione jako jeden spójny zestaw 0.8.0.
+3. Uruchom ponownie Home Assistant.
+4. Dodaj albo przeładuj integrację.
+
+Nie mieszaj plików backendu z różnych wersji.
+
+## Aktualizacja z 0.7.x
+
+Po pierwszym uruchomieniu 0.8.0 integracja automatycznie migruje wpis konfiguracji
+do wersji `1.24`. Migracja zachowuje stabilne identyfikatory zmapowanych encji,
+przebudowuje niezależne kontrakty BUY/SELL, uzupełnia bezpieczne domyślne pola
+sprzedawcy i przenosi starsze ustawienia bez uruchamiania zapisu do falownika.
+Starszy selected-only plan Jutro jest odtwarzany jako pełna, datowana intencja
+24 h z Normalną Pracą dla pozostałych godzin.
+
+Nie edytuj numeru migracji ani rekordów `.storage` ręcznie. Jeżeli migracja nie
+może jednoznacznie rozwiązać encji lub semantyki ceny, funkcja pozostaje
+zablokowana fail-closed i wskazuje brak w diagnostyce zamiast wybierać inną encję.
+
+## Wybór providera i urządzenia
+
+Pierwszy krok kreatora wybiera sposób komunikacji:
+
+- **ESPHome Deye Inverter — Lewa-Reka** — referencyjne pełne sterowanie;
+- **Solarman** — encje Program N Time/SOC/Charging;
+- **Sunsynk** — encje ProgN time/capacity/charge;
+- **Mapowanie niestandardowe** — dowolne poprawne encje HA;
+- **Deye Inverter MQTT / Addon** — profil read-only bez bezpiecznych zapisów.
+
+Następnie wybierz konkretne urządzenie falownika z rejestru Home Assistant.
+Automatyczne wykrywanie analizuje tylko encje tego urządzenia. Niejednoznaczne
+lub brakujące pola należy wskazać ręcznie albo świadomie pozostawić puste.
+
+Przed zatwierdzeniem sprawdź ekran capabilities. Powinien jasno wskazać, które
+funkcje są kompletne, ograniczone albo tylko do odczytu.
+
+## Mapowanie encji
+
+### Sterowanie podstawowe
+
+Sprawdź co najmniej:
+
+- tryb pracy Deye;
+- Max Sell Power;
+- maksymalny prąd rozładowania;
+- prąd ładowania baterii;
+- prąd ładowania z sieci;
+- bieżący SOC baterii.
+
+### Fizyczne Deye Time Of Use
+
+Dla każdego slotu 1–6 sprawdź:
+
+- start;
+- SOC Deye TOU;
+- Grid Charge / źródło ładowania.
+
+Pole **Do** nie ma osobnej encji: Do slotu N jest startem slotu N+1, a Do slotu
+6 jest startem slotu 1.
+
+Provider Custom może być zapisany częściowo, lecz niepełny readback nie otrzyma
+statusu pełnej synchronizacji i nie pozwoli zapisać brakujących pól.
+
+Integracja nie wymaga globalnego przełącznika Time Of Use i nie przełącza
+automatycznie `Time Of Use`, `Use Timer` ani odpowiednika globalnego.
+
+## Maksymalna moc falownika
+
+Ustaw rzeczywisty maksymalny limit AC falownika. Backend porównuje go również z
+zakresem encji Max Sell Power:
+
+- encja może publikować moc w W albo kW;
+- wartość jest przeliczana do natywnej jednostki przed zapisem;
+- 0 W jest poprawną świadomą wartością;
+- wartości ponad efektywnym limitem są odrzucane albo ograniczane zgodnie z
+  daną ścieżką sterowania.
+
+Nie wpisuj mocy większej od możliwości konkretnego falownika i instalacji.
+
+## Ceny energii, taryfa i Solcast
+
+W kroku **Encje cen energii** skonfiguruj niezależnie cztery opcjonalne mapowania:
+BUY Today, BUY Tomorrow, SELL Today i SELL Tomorrow. Jawnie puste pole pozostaje
+puste po restarcie. Stabilne powiązanie Entity Registry zachowuje mapowanie po
+zmianie nazwy tej samej encji, ale przełączenie na inną encję buduje jej adapter
+i schema od nowa.
+
+- Pstryk AIO jest rozpoznawany jako cena all-in brutto i nie otrzymuje drugiego
+  doliczenia OSD, VAT ani opłaty usługowej;
+- PSE/RCE wymaga poprawnych Today/Tomorrow; kompletne kwadranse są agregowane do
+  godzin, a bieżący sensor prosumencki SELL nie jest prognozą na kolejne godziny;
+- Generic/Custom wymaga jawnej jednostki, podstawy, roli ekonomicznej i pól czasu;
+  brak jednoznacznej semantyki blokuje planowanie.
+
+Jeżeli oba BUY są świadomie puste, możesz jawnie wybrać sprzedawcę w **Taryfa i
+dystrybucja**. Zweryfikowana standardowa taryfa tworzy BUY 24+24 z ceny energii
+brutto i zmiennego OSD dodanego dokładnie raz. Taryfy specjalne lub dynamiczne bez
+jednoznacznego kontraktu pozostają zablokowane. Katalog taryf aktualizuje się
+rzadko i atomowo; przy błędzie zachowuje ostatnią poprawną wersję.
+
+W kroku **Solcast** wskaż encje używane przez instalację, przede wszystkim
+prognozę Today/Tomorrow oraz bieżącą moc; pozostałe dni, prognoza pozostała i dane
+szczytu są opcjonalne. W osobnym kroku można wskazać encję pogody. Brak Solcast
+nie blokuje sterowania ręcznego, lecz ogranicza funkcje planu wymagające prognozy.
 
 ## Karta dashboardu
 
-Dodaj zasób JavaScript:
+Karta jest dostarczana razem z integracją. W standardowym trybie UI/storage DEM
+automatycznie tworzy albo aktualizuje wyłącznie własny zasób Lovelace. Po
+aktualizacji i restarcie nie otwieraj **Dashboardy → Zasoby**, nie kopiuj pliku
+do `/config/www` i nie zmieniaj ręcznie `?v=`.
+
+### Tryb UI/storage — automatyczny zasób
+
+Kanoniczny zasób zarządzany przez DEM:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
+/deye_energy_manager/deye-energy-manager-card.js?v=0.8.0.44
 ```
 
-Przy instalacji ręcznej użyj:
+Istniejący jednoznaczny wpis `/local/deye-energy-manager-card.js?...` zostanie
+zaktualizowany w miejscu do powyższego URL. Integracja nie usuwa automatycznie
+niejednoznacznych duplikatów i nie zmienia zasobów innych kart.
+
+### Tryb YAML — konfiguracja ręczna
+
+DEM nie modyfikuje konfiguracji YAML. Dodaj w niej ręcznie kanoniczny bundled
+zasób jako moduł JavaScript:
 
 ```text
-/local/deye-energy-manager-card.js?v=0.7.9.11
+/deye_energy_manager/deye-energy-manager-card.js?v=0.8.0.44
 ```
 
-Następnie dodaj kartę ręczną:
+### Legacy `/config/www` — compatibility/manual fallback
 
-```yaml
-type: custom:deye-energy-manager-card
-```
-
-### Konfiguracja rozmiaru i układu karty
-
-W edytorze karty Lovelace dodaj sekcję `layout:` bezpośrednio pod `type: custom:deye-energy-manager-card`. Wszystkie pola są opcjonalne; nieprawidłowe wartości są zastępowane domyślnymi.
-
-#### Minimalny przykład
-
-```yaml
-type: custom:deye-energy-manager-card
-```
-
-#### Przykład pełny
-
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: auto
-  dashboard_width: 1280
-  center_dashboard: true
-  fit_to_width: false
-  allow_horizontal_scroll: false
-  grid_columns: null
-  grid_gap: 16
-  section: null
-  sections:
-    status_energy: true
-    prices: true
-    solcast: true
-    schedule: true
-    sales_stats: true
-  mobile:
-    mode: auto
-    preserve_desktop_layout: false
-    fit_to_width: true
-    allow_horizontal_scroll: false
-    grid_columns: 1
-    mobile_breakpoint: 768
-  prices_ratio: 0.80
-  buy_prices_ratio: 0.80
-  solcast_ratio: 1.40
-  energy_tile_width: 300
-  energy_tile_gap: 28
-  inverter_scale: 1
-  flow_animation_speed: 6
-```
-
-#### Telefon (jedna kolumna, brak przewijania poziomego)
-
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: auto
-  allow_horizontal_scroll: false
-  mobile:
-    mode: grid
-    preserve_desktop_layout: false
-    grid_columns: 1
-    fit_to_width: true
-    allow_horizontal_scroll: false
-    mobile_breakpoint: 768
-```
-
-Na telefonie sekcje cen i Solcast zostaną ułożone pionowo. Główny dashboard nie będzie przewijany poziomo. Poziome przewijanie pozostaje dostępne lokalnie wewnątrz tabeli Harmonogramu oraz listy dni Solcast.
-
-#### Pojedynczy panel
-
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: single
-  section: schedule
-```
-
-#### Układ grid
-
-```yaml
-type: custom:deye-energy-manager-card
-layout:
-  layout_mode: grid
-  grid_columns: 2
-  sections:
-    status_energy: true
-    prices: true
-    solcast: true
-    schedule: true
-    sales_stats: true
-```
-
-#### Ważne uwagi
-
-- `layout_mode: fit` nie skaluje proporcjonalnie całego dashboardu. Włącza tylko dopasowanie zewnętrznego kontenera do szerokości karty przy zachowaniu wewnętrznego układu sekcji.
-- `max_scale` i `min_scale` są obecnie zarezerwowane. Są wczytywane przez `layoutConfig()`, ale **nie wpływają na renderowanie**.
-
-#### Zmiana wersji zasobu i odświeżenie cache
-
-Po tej lokalnej aktualizacji karty ustaw w zasobie JavaScript parametr `v=0.7.9.11`:
+Root `www/deye-energy-manager-card.js` w repozytorium jest kopią zgodności i
+deweloperską, a nie źródłem runtime standardowej instalacji. Tylko gdy istniejąca
+ręczna konfiguracja musi pozostać przy `/local/`, skopiuj ten plik do
+`/config/www/` i dodaj:
 
 ```text
-/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11
+/local/deye-energy-manager-card.js?v=0.8.0.44
 ```
 
-jeśli korzystasz z karty dostarczanej przez integrację, albo:
+Aktualna rewizja zasobu to `v=0.8.0.44`. W trybie storage przyszłe aktualizacje
+DEM zmienią ją automatycznie. W trybie YAML wartość musi odpowiadać rewizji z
+zainstalowanej wersji integracji.
 
-```text
-/local/deye-energy-manager-card.js?v=0.7.9.11
-```
+Po aktualizacji:
 
-jeśli skopiowałeś plik ręcznie do `/config/www/`.
+1. przeładuj zasoby Lovelace;
+2. wykonaj `Ctrl+F5` na komputerze;
+3. wyczyść cache aplikacji lub przeglądarki na telefonie;
+4. sprawdź wersję i rewizję w diagnostyce karty.
 
-Następnie w Home Assistant:
-1. przeładuj zasoby Lovelace (trzy kropki w prawym górnym rogu dashboardu → **Odśwież**),
-2. wykonaj twarde odświeżenie przeglądarki (`Ctrl + F5` lub `Cmd + Shift + R`).
+Kontrola po aktualizacji:
 
-Test na telefonie:
-1. Zamknij aplikację Home Assistant albo kartę przeglądarki i otwórz dashboard ponownie.
-2. Sprawdź, czy Ceny sprzedaży, Ceny zakupu i Solcast są ułożone w jednej kolumnie.
-3. Upewnij się, że cała strona nie przewija się poziomo.
-4. Przewiń osobno tabelę Harmonogramu i listę dni Solcast — ich lokalny poziomy scroll powinien pozostać aktywny.
-5. Otwórz i zamknij Ustawienia oraz edycję slotu, aby potwierdzić brak migotania i zmiany pozycji strony.
+- w UI/storage istnieje dokładnie jeden zasób DEM pod kanonicznym URL `.44`;
+- nie dodano drugiego wpisu ręcznego ani równoległego `/local/`;
+- główna karta Solcast i **Historia i dane** pokazują tę samą realizację dnia;
+- trafność historyczna pozostaje osobną metryką od bieżącej realizacji.
 
-Błędne wartości w konfiguracji YAML są automatycznie zastępowane bezpiecznymi domyślnymi.
+## Pierwsze uruchomienie
 
-## Aktualizacja z 0.7.5
+Przed uruchomieniem Harmonogramu pracy i Optimizer Core skonfiguruj ustawienia
+domyślne falownika oraz profile Ładowania i Normalnej Pracy. Wszystkie tryby,
+moce, prądy i poziomy SOC muszą być zgodne z parametrami falownika i magazynu
+energii, warunkami operatora OSD oraz mocą i warunkami przyłączenia
+mikroinstalacji. Nie kopiuj wartości widocznych na przykładach ani zrzutach
+ekranu — ustawienia muszą odpowiadać konkretnej instalacji.
 
-1. Wykonaj kopię konfiguracji w panelu **System i diagnostyka**.
-2. Zaktualizuj integrację i uruchom ponownie Home Assistant.
-3. Zmień parametr cache zasobu na `v=0.7.9.11`.
-4. Odśwież przeglądarkę przez `Ctrl + F5`.
-5. Sprawdź mapowanie encji w opcjach integracji.
-6. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**, wybierz operatora i taryfę, a następnie użyj przycisku **Zapisz ustawienia taryfy**.
-7. Zweryfikuj diagnostykę i wykonaj pierwszy test przy niskich limitach mocy.
-8. Po Stop Sell lub zatrzymaniu awaryjnym użyj **System i diagnostyka → Włącz Manager i harmonogram**. Przycisk włącza `Schedule` i Scheduler, lecz nie zmienia szablonu ani istniejących slotów `Charge`; tylko **Ładowanie z sieci: TAK** w konkretnym slocie `Charge` zezwala na ładowanie z sieci.
+Po restarcie pozostaw **Sterowanie Deye = Wyłączone** i wykonaj kontrolę:
 
-Po aktualizacji otwórz **Ustawienia → Urządzenia i usługi → Deye Energy Manager → Konfiguruj**. Kreator zachowa dotychczasowe mapowanie i pozwoli uzupełnić encje cen, Solcast oraz pogody. Ustawienia OSD i taryfy zostały przeniesione do karty i nie są już częścią mapowania encji.
+1. sprawdź odczyty energii, SOC, ceny i Solcast;
+2. otwórz diagnostykę providera i potwierdź właściwe urządzenie;
+3. sprawdź skonfigurowany, wykryty i efektywny limit mocy;
+4. przejrzyj wszystkie 24 godziny Harmonogramu;
+5. sprawdź Mapowanie Deye i liczbę fizycznych zakresów;
+6. porównaj actual i expected dla Deye Time Of Use 6/6;
+7. usuń wszystkie stany unknown/unavailable przed pierwszym zapisem;
+8. dopiero potem włącz Sterowanie Deye.
 
-## Wymagane i zalecane encje
+Przy wyłączonym sterowaniu monitoring, Harmonogram, Mapowanie, Solcast, AI,
+Optimizer Core i diagnostyka nadal działają. Nie są wykonywane fizyczne zapisy.
 
-Wymagane dla bezpiecznego sterowania są: tryb pracy Deye, maksymalna moc sprzedaży, maksymalny prąd rozładowania, prąd ładowania baterii, prąd ładowania z sieci oraz bieżący odczyt SOC baterii. Cena sprzedaży jest wymagana tylko przez aktywny slot `Selling First`, jeżeli ma odpowiedni limit. Sloty `Zero Export` mogą działać bez aktualnego SOC i ceny. Pozostałe encje pomiarowe są zalecane zgodnie z używanymi funkcjami.
+## Test Harmonogramu pracy
 
-Prognoza pogody jest opcjonalnym wsparciem Solcast. Jeżeli `weather.forecast_home_2` nie istnieje, wybierz inną encję z domeny `weather`, która udostępnia prognozę godzinową. Integracja pobiera prognozy godzinowe i dzienne przez `weather.get_forecasts`; brak osobnej prognozy dziennej jest podsumowywany z dostępnych danych godzinowych.
+1. Otwórz pojedynczy slot.
+2. Zmień wartość i wybierz **Anuluj** — stan backendu nie powinien się zmienić.
+3. Otwórz ponownie, wykonaj niewielką bezpieczną zmianę i wybierz **Zapisz**.
+4. Sprawdź, czy dialog czeka na potwierdzenie backendu.
+5. Zweryfikuj osobno:
+   - `minimum_sell_soc` jako próg zatrzymania sprzedaży;
+   - `tou_soc` jako fizyczny SOC Deye TOU;
+   - `charge_enabled` jako zgodę Grid Charge.
 
-## Kontrola po instalacji
+Zmiana każdego pola formularza nie zapisuje natychmiast encji falownika. Jeden
+Zapisz tworzy jeden logiczny patch.
 
-1. Przed uruchomieniem harmonogramu i Optimizer Core skonfiguruj w **Ustawienia i diagnostyka → Ustawienia Trybów** ustawienia domyślne falownika oraz profile **Ładowania** i **Normalnej Pracy**. Wszystkie tryby, moce, prądy i poziomy SOC muszą być zgodne z parametrami falownika i magazynu energii, warunkami operatora OSD oraz mocą i warunkami przyłączenia mikroinstalacji. Nie kopiuj wartości widocznych na przykładach ani zrzutach ekranu — ustawienia muszą odpowiadać konkretnej instalacji.
-2. W diagnostyce sprawdź, czy wymagane encje mają stan `OK`.
-3. Porównaj znaki `Sieć` i `Bateria` z kartą falownika.
-4. W zakładce **Taryfa i dystrybucja** wybierz tryb automatyczny lub ręczny, operatora i taryfę, ustaw znaki przepływu, a następnie kliknij **Zapisz ustawienia taryfy**.
-5. Sprawdź profil 48 godzin: strefy na dziś i jutro, rodzaj dnia, sezon oraz łączną stawkę dystrybucji.
-6. Jeżeli encja ceny zakupu zawiera dystrybucję, zaznacz **Cena zakupu zawiera już dystrybucję**.
-7. Sprawdź stan i wersję katalogu. Automatyczna kontrola odbywa się przy starcie i co 7 dni; przycisk **Sprawdź aktualizację katalogu** uruchamia ją ręcznie. Przy błędzie pozostaje ostatnia poprawna kopia, a ostatecznym zabezpieczeniem jest katalog dostarczony z integracją.
-8. Sprawdź, czy dashboard reaguje na zmianę mocy bez czekania jednej minuty.
-9. Po zakończeniu pełnego dnia sprawdź trafność historyczną; w ciągu dnia używaj pola `Realizacja dzisiaj`.
-10. Otwórz **Sugestie AI** i sprawdź zakładkę **Jakość danych**. Brak cen jutra lub prognozy pogody powinien być jawnie opisany jako brak danych.
-11. W **Proponowanych zmianach** sprawdź osobno **Dziś** i **Jutro**. Plan jutra jest tylko zapisywany; nie zmienia od razu powtarzalnego Deye Time Of Use.
-12. Sprawdź **Plan i wykonanie → Dziś/Jutro/48 h/Historia**. Dla zakończonych godzin tabela powinna porównywać plan z rzeczywistym PV, zużyciem domu, SOC, importem, eksportem i wynikiem. Widok 48 h powinien pokazywać pogodę oraz pasy sprzedaży, ładowania i taniej dystrybucji. Brak pomiaru powinien być opisany jako brak danych.
-13. W sekcji **Pogoda** przełącz widok **Dzienna/Godzinowa** i potwierdź, że jako źródło widoczna jest wybrana encja `weather.*`.
+## Test Mapowania Deye
 
-Tryb ręczny pozwala wpisać własne stawki i przedziały tanich godzin. W trybie automatycznym pory roku, weekendy oraz polskie dni ustawowo wolne wynikają z wybranego profilu OSD. Katalog nie zastępuje umowy — przed uruchomieniem ładowania z sieci porównaj wybrane dane z dokumentami operatora.
+Mapowanie fizyczne jest segmentowane według `tou_soc` i `charge_enabled`.
+Sprawdź:
 
-Po ręcznym skopiowaniu nowej karty do `/config/www/` użyj zasobu `/local/deye-energy-manager-card.js?v=0.7.9.11`, przeładuj zasoby Lovelace i wykonaj `Ctrl + F5`. Jeśli korzystasz z karty dostarczanej przez integrację, użyj adresu `/deye_energy_manager/deye-energy-manager-card.js?v=0.7.9.11`. Nie używaj obu adresów równocześnie.
+- czy plan tworzy najwyżej sześć kolejnych zakresów;
+- czy wartości Od/Do pokrywają pełne 24 godziny;
+- czy SOC i Grid Charge odpowiadają godzinom Harmonogramu;
+- czy `minimum_sell_soc`, tryb, moc i prądy nie są błędnie traktowane jako
+  granice fizycznego TOU.
 
-Plan na jutro wymaga ręcznego zaznaczenia godzin i potwierdzenia przyciskiem **Zaplanuj wybrane na jutro**. Plan jest zapisany z datą i pozostaje oczekujący po restarcie Home Assistant. W dniu wykonania integracja sprawdza encje sterujące oraz tylko SOC i ceny wymagane przez zatwierdzony slot `Selling First`, po czym stosuje dokładnie zaakceptowane pozycje. Nie tworzy planu zastępczego. W razie błędu plan jest oznaczony jako nieudany, a falownik otrzymuje pełne **Ustawienia domyślne** 1:1.
+Więcej niż sześć naturalnych zakresów powinno zablokować zapis przed pierwszą
+zmianą falownika.
 
-W 0.7.6 warunek SOC jest sprawdzany wyłącznie dla aktywnego slotu `Selling First`, gdy ma ustawiony minimalny SOC sprzedaży. Brakujący lub nieprawidłowy SOC (analogicznie cena) jest błędem tylko dla slotu, który wymaga tego warunku; prawidłowy odczyt poniżej progu jedynie wstrzymuje sprzedaż bez błędu harmonogramu. Nie blokuje slotu `Zero Export` ani nie jest zastępowany sztuczną wartością.
+## Test Deye Time Of Use
 
-**Minimalny SOC sprzedaży** jest warunkiem wyłącznie dla `Selling First`; nie trafia do fizycznego Deye TOU. Okno slotu pokazuje tylko jedno pole SOC odpowiednie dla trybu: minimalny SOC sprzedaży, SOC Deye TOU albo docelowy SOC Charge. Po zapisie falownik może opublikować nowy stan z opóźnieniem: integracja nasłuchuje zmian encji Deye i wykonuje odczyt kontrolny po 0,5, 1 i 2 sekundach, maksymalnie przez 12 sekund, bez ponownego wysyłania tej samej transakcji; w tym czasie diagnostyka pokazuje oczekiwanie, a nie błąd.
+Ręczny edytor działa obecnie na pełnych godzinach `HH:00`.
 
-Jeżeli poprzednia konfiguracja nie zawiera wiarygodnie zapisanego **SOC baterii Deye (TOU)**, wprowadź go świadomie dla każdego slotu niebędącego `Charge`. Do czasu potwierdzenia integracja blokuje fizyczny zapis mapowania TOU, zamiast kopiować minimalny SOC sprzedaży albo podstawić `0`.
+1. Wybierz jeden fizyczny slot.
+2. Zmień tylko jedno bezpieczne pole.
+3. Zapisz i sprawdź status confirmation.
+4. Zweryfikuj, że zapisano wyłącznie zmienioną encję.
+5. Sprawdź reverse sync: Harmonogram może zaktualizować tylko `tou_soc`,
+   `charge_enabled` i przypisanie godzin.
+6. Potwierdź, że tryb, enabled, `minimum_sell_soc`, moc i prądy się nie zmieniły.
 
-## Ustawienia ładowania
+Zmiana Do modyfikuje start następnego fizycznego slotu. Dla slotu 6 zmienia
+start slotu 1.
 
-W **Ustawienia i diagnostyka → Ustawienia Trybów → Ustawienia ładowania** zapisz szablon dla nowych slotów `Charge`: prąd ładowania, prąd rozładowania, prąd ładowania z sieci, zgoda na ładowanie z sieci oraz **Docelowy SOC**. Szablon jest kopiowany przy pierwszej zmianie trybu danego slotu na `Charge`. Od tej chwili wartości slotu można edytować ręcznie i mają one pierwszeństwo; późniejsza zmiana szablonu ich nie nadpisze. W oknie slotu `Charge` dostępny jest przycisk **Wczytaj ponownie ustawienia ładowania**, który ponownie skopiuje aktualny szablon tylko do tego slotu. Jedyną zgodą na Grid Charge jest przełącznik **Ładowanie z sieci: TAK** w danym slocie Charge. Przy wartości `NIE` Grid Charge pozostaje wyłączone nawet przy dodatnim limicie prądu; bateria może ładować się z PV.
+## Jak rozpoznać provider read-only
 
-Przycisk **Zapisz ustawienia ładowania** zapisuje cały profil jako jeden rekord przez dedykowaną usługę backendu, niezależnie od tego, czy wszystkie encje pomocnicze są w danej chwili widoczne w Home Assistant. Po zamknięciu okna, ponownym otwarciu karty lub restarcie Home Assistant wszystkie zapisane wartości profilu powinny pozostać bez zmian. Formularz korzysta również z zapisanego profilu w atrybutach statusu managera, jeśli pomocnicza encja nie opublikowała jeszcze stanu. Tabela harmonogramu pokazuje zgodę **Ładowanie z sieci** zawsze jako **TAK** albo **NIE**. Jeżeli walidacja albo zapis się nie powiedzie, integracja zachowuje ostatni poprawny profil i wyświetla błąd.
+W diagnostyce provider read-only ma brak możliwości fizycznego zapisu TOU i
+status `read_only`. Pola mogą pokazywać rzeczywiste odczyty, ale przyciski zapisu
+są niedostępne. Deye Inverter MQTT / Addon nie otrzymuje zastępczych komend MQTT.
 
-Pomocnicze encje profili (`charge_profile_*`, `normal_profile_*`) mogą być wyłączone w rejestrze encji. Integracja nie zmienia automatycznie ich stanu. Ich brak lub wyłączenie nie blokuje zapisu profili ani kopiowania szablonów Charge — źródłem prawdy pozostają usługi backendu i atrybuty `sensor.deye_energy_manager_manager_status`.
+Jeżeli odczyt fizyczny różni się od Harmonogramu, mismatch jest raportowany, ale
+nie jest nadpisywany.
 
-Zakładka **Deye Time Of Use** udostępnia bezpośrednią edycję sześciu fizycznych zakresów falownika. Jest to ścieżka dla świadomej konfiguracji i diagnostyki; późniejsze zastosowanie Harmonogramu sprzedaży może ponownie zapisać te zakresy zgodnie z mapowaniem 24 h.
+## Pierwszy bezpieczny zapis
 
-Stop Sell, zatrzymanie awaryjne oraz błąd sterowania nie zerują automatycznie mocy ani prądów Deye. Integracja stosuje 1:1 pełny zestaw zapisany w **Ustawieniach domyślnych**, włącznie z trybem `Zero Export To CT`, `Zero Export To Load` albo `Selling First`. Integracja nie odgaduje topologii instalacji i nie zastępuje wybranego trybu innym. Przycisk **Zastosuj ustawienia domyślne teraz** pozwala wykonać świadome ręczne przywrócenie.
+Pierwszy zapis wykonuj przy dostępie do fizycznego falownika lub jego aplikacji:
+
+1. upewnij się, że nie trwa inna automatyzacja zmieniająca TOU;
+2. włącz Sterowanie Deye;
+3. zmień jedną niekrytyczną wartość;
+4. obserwuj status writing → confirming → confirmed/in_sync;
+5. sprawdź fizyczny odczyt w niezależnym źródle;
+6. w razie błędu sprawdź status rollback i wszystkie sześć zakresów.
+
+Timeout confirmation wynosi do 30 sekund. Status krytyczny oznacza, że pełnego
+rollbacku nie udało się potwierdzić — wtedy natychmiast sprawdź falownik.
+
+## Zewnętrzne zmiany TOU
+
+Zmiana wykonana przez Solarman, Sunsynk, ESPHome, inną automatyzację lub
+Narzędzia deweloperskie nie jest automatycznie kopiowana do Harmonogramu.
+
+- Sterowanie aktywne: Manager odczyta 6/6 i naprawi tylko różnice;
+- Sterowanie wyłączone: pokaże mismatch bez zapisu;
+- emergency stop: pokaże blokadę bez korekty;
+- unknown/unavailable: poczeka na wiarygodny readback;
+- read-only: pozostawi fizyczny stan bez zmian.
+
+## Diagnostyka
+
+W **Ustawienia i diagnostyka** sprawdź:
+
+- provider, urządzenie i brakujące encje;
+- capabilities każdego pola TOU;
+- Planowaną i Wykonaną decyzję Managera;
+- stan Sterowania Deye;
+- `tou_transaction` i ostatni błąd confirmation/rollback;
+- `tou_reverse_sync`;
+- `tou_reconciliation`, w tym expected/physical signature, `in_sync`,
+  `readback_complete`, `mismatched_fields` i blokady;
+- fizyczne actual/expected/status wszystkich sześciu zakresów.
+
+## Typowe problemy
+
+### Karta pokazuje starą wersję
+
+W trybie UI/storage uruchom ponownie lub przeładuj integrację i sprawdź, czy
+istnieje dokładnie jeden zasób DEM pod kanonicznym URL. Nie edytuj `?v=` ręcznie.
+W trybie YAML sprawdź adres, parametr `v=0.8.0.44`, przeładuj zasoby Lovelace i
+wykonaj twarde odświeżenie. Nie używaj równocześnie ścieżki `/local/` i
+`/deye_energy_manager/`.
+
+### TOU pozostaje waiting_readback
+
+Sprawdź wszystkie 18 fizycznych pól 6/6. Każdy start, SOC i Grid Charge musi być
+dostępny i poprawnie znormalizowany przez provider.
+
+### FuturePlan oczekuje na falownik
+
+`physical_pending` nie oznacza wykonania. Potwierdzenie pojawi się dopiero po
+fizycznym zapisie i readbacku. Nie ma catch-up po końcu slotu; późniejsza zmiana
+ręczna lub Apply Today ma pierwszeństwo nad wcześniej zaakceptowanym planem.
+
+### Mapowanie wymaga więcej niż sześciu zakresów
+
+Zmniejsz liczbę kolejnych zmian `tou_soc` albo `charge_enabled` w Harmonogramie.
+Tryb, moc i próg zatrzymania sprzedaży nie wpływają na segmentację.
+
+### Reverse sync zgłasza błąd round-trip
+
+Sąsiednie fizyczne zakresy mogą mieć identyczny SOC i Grid Charge, a ich ręczna
+granica nie jest wtedy przechowywana przez model godzinowy 24 h. Backend wycofuje
+zmianę zamiast zapisać niejednoznaczny Harmonogram.
+
+### Sterowanie pozostaje Wyłączone
+
+Sprawdź diagnostykę aktywnej transakcji i błędu wyłączania. Po usunięciu problemu
+włącz sterowanie świadomie; Manager porówna readback i wykona diff-only.
+
+### Lokalna kontrola Optimizer Core po aktualizacji
+
+W zakładce Sugestie AI sprawdź status i wiek SOC, tryb uczenia oraz powód braku
+propozycji. W trybie `dry-run` przycisk wdrożenia musi być nieaktywny. Przycisk
+**Zastosuj wybrane na dziś** traktuje zaznaczone pozycje jako jedyne akcje
+specjalne i ustawia wszystkie pozostałe godziny dzisiejszego planu na Normalną
+Pracę; odznaczenie nie zachowuje starej Sprzedaży ani Ładowania. Po zatwierdzeniu
+testowego planu na jutro potwierdzenie ma zawierać datę, strategię i godziny.
+Zaznaczone pozycje są jedynymi specjalnymi akcjami Jutra, a pozostałe godziny
+pełnego targetu 24 h mają intencję Normalna Praca. Samo zatwierdzenie nie zmienia
+dzisiejszego Harmonogramu i nie zapisuje niczego do Deye; wykonanie następuje
+jutro JIT tylko dla aktualnego slotu. Chwilowo niedostępny SOC lub cena daje
+`waiting_data`, odzyskanie
+danych uruchamia ponowną walidację, a okno pominięte podczas offline daje
+`missed`. Zwykła kompletność telemetrii nie oznacza wykonania zatwierdzonej akcji.
+
+W widoku **Dlaczego ten plan?** porównaj osobno Dziś i Jutro. Cel energii profilu
+jest dzienny, więc oba aktywne dni pokazują pełny skonfigurowany target; plan,
+shortfall i przyczyna muszą odnosić się do tej samej lokalnej daty.
+
+W **Ustawienia i diagnostyka → AI i analiza → Ogólne** dostępne są dwa parametry
+strategii `best_hours`:
+
+- **Minimalna moc automatycznej sprzedaży** — domyślnie `1000 W`; dotyczy planu
+  automatycznego i nie ogranicza ręcznego sterowania;
+- **Różnica ceny uznawana za zbliżoną** — domyślnie `0,05 PLN/kWh`; pozwala Core
+  łagodniej rozłożyć moc między ekonomicznie podobne godziny.
+
+Wyraźnie droższa godzina nadal ma pierwszeństwo. Wyrównanie podobnych cen zawsze
+respektuje SOC, rezerwę, PV, obciążenie domu i fizyczne limity mocy. Preferowany
+plan nie zapisuje automatycznego slotu Sprzedaży poniżej skonfigurowanego minimum.
+
+### Kontrola kontraktów źródeł cen po aktualizacji
+
+Po restarcie wpis konfiguracji zostanie bezpiecznie zmigrowany do niezależnych
+kontraktów BUY i SELL bez zmiany identyfikatorów encji. Otwórz **Ustawienia i
+diagnostyka → Taryfa i dystrybucja**, sprawdź adapter oraz oba kontrakty i zapisz:
+
+- dla Pstryk pozostaw adapter Pstryk; cena jest all-in brutto i nie wymaga
+  ręcznego doliczania dystrybucji;
+- dla PSE/RCE ustaw osobne encje Today i Tomorrow dla BUY, podstawę brutto/netto
+  oraz jednostkę publikowaną przez integrację; sensor bieżącej ceny prosumenckiej
+  SELL pozostanie tylko informacją bieżącą;
+- dla generic/custom jawnie wskaż jednostkę, podstawę, semantykę oraz pola listy,
+  wartości i czasu. Status `unknown_*`, `ambiguous_price_source`, niepełne 60 min
+  albo overlap blokują użycie ceny.
+
+Sekcja **Kanoniczne ceny backendu** pokazuje adapter, jednostkę, podstawę,
+pokrycie Today/Tomorrow, status i końcową cenę bieżącej godziny. Po aktualizacji
+uruchom ponownie lub przeładuj integrację; w trybie storage DEM sam ustawi
+`v=0.8.0.44`. Następnie wyczyść cache karty i wykonaj checklistę testu na własnym
+Home Assistant.

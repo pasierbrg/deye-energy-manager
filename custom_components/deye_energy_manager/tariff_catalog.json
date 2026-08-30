@@ -1,10 +1,112 @@
 {
-  "schema_version": 1,
-  "catalog_version": "2026.07.18.1",
-  "generated_at": "2026-07-18T00:00:00+02:00",
+  "schema_version": 2,
+  "catalog_version": "2026.08.27.1",
+  "generated_at": "2026-08-27T00:00:00+02:00",
   "effective_from": "2026-02-01",
+  "valid_to": "2026-12-31",
   "currency": "PLN",
   "vat_included": true,
+  "seller_tariffs": {
+    "pge_obrot": {
+      "seller_name": "PGE Obrót",
+      "source": "https://bip.ure.gov.pl/download/3/20342/PGEObrot.pdf",
+      "tariffs": {
+        "pge_g11_2026": {"seller_id": "pge_obrot", "seller_name": "PGE Obrót", "tariff_group": "g11", "product_variant": "Komfortowa", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["pge"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6189}, "schedule_source": "osd_same_tariff", "source_authority": "URE / PGE Obrót", "source_title": "Taryfa PGE Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20342/PGEObrot.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "267/2025"},
+        "pge_g12_2026": {"seller_id": "pge_obrot", "seller_name": "PGE Obrót", "tariff_group": "g12", "product_variant": "Elastyczna", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["pge"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7018, "offpeak": 0.4635}, "schedule_source": "osd_same_tariff", "source_authority": "URE / PGE Obrót", "source_title": "Taryfa PGE Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20342/PGEObrot.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "267/2025"},
+        "pge_g12w_2026": {"seller_id": "pge_obrot", "seller_name": "PGE Obrót", "tariff_group": "g12w", "product_variant": "Weekendowa", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["pge"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7221, "offpeak": 0.5271}, "schedule_source": "osd_same_tariff", "source_authority": "URE / PGE Obrót", "source_title": "Taryfa PGE Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20342/PGEObrot.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "267/2025"},
+        "pge_g12n_2026": {"seller_id": "pge_obrot", "seller_name": "PGE Obrót", "tariff_group": "g12n", "product_variant": "Niedzielna", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["pge"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.6840, "offpeak": 0.4873}, "schedule_source": "osd_same_tariff", "source_authority": "URE / PGE Obrót", "source_title": "Taryfa PGE Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20342/PGEObrot.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "267/2025"}
+      }
+    },
+    "tauron_sprzedaz": {
+      "seller_name": "TAURON Sprzedaż",
+      "source": "https://bip.ure.gov.pl/download/3/20340/TauronSprzedaz.pdf",
+      "tariffs": {
+        "tauron_g11_2026": {"seller_id": "tauron_sprzedaz", "seller_name": "TAURON Sprzedaż", "tariff_group": "g11", "product_variant": "Taryfa URE", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["tauron"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6175}, "schedule_source": "osd_same_tariff", "source_authority": "URE / TAURON Sprzedaż", "source_title": "Taryfa TAURON Sprzedaż Sp. z o.o. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20340/TauronSprzedaz.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "265/2025"},
+        "tauron_g12_2026": {"seller_id": "tauron_sprzedaz", "seller_name": "TAURON Sprzedaż", "tariff_group": "g12", "product_variant": "Taryfa URE", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["tauron"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.6740, "offpeak": 0.5141}, "schedule_source": "osd_same_tariff", "source_authority": "URE / TAURON Sprzedaż", "source_title": "Taryfa TAURON Sprzedaż Sp. z o.o. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20340/TauronSprzedaz.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "265/2025"},
+        "tauron_g12w_2026": {"seller_id": "tauron_sprzedaz", "seller_name": "TAURON Sprzedaż", "tariff_group": "g12w", "product_variant": "Taryfa URE", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["tauron"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7712, "offpeak": 0.5141}, "schedule_source": "osd_same_tariff", "source_authority": "URE / TAURON Sprzedaż", "source_title": "Taryfa TAURON Sprzedaż Sp. z o.o. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20340/TauronSprzedaz.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "265/2025"},
+        "tauron_g13_2026": {"seller_id": "tauron_sprzedaz", "seller_name": "TAURON Sprzedaż", "tariff_group": "g13", "product_variant": "Taryfa URE", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["tauron"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"morning_peak": 0.5803, "afternoon_peak": 0.9631, "offpeak": 0.5240}, "schedule_source": "osd_same_tariff", "source_authority": "URE / TAURON Sprzedaż", "source_title": "Taryfa TAURON Sprzedaż Sp. z o.o. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20340/TauronSprzedaz.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "265/2025"}
+      }
+    },
+    "enea": {
+      "seller_name": "Enea",
+      "source": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf",
+      "tariffs": {
+        "enea_g11_2026": {"seller_id": "enea", "seller_name": "Enea", "tariff_group": "g11", "product_variant": "Dzień i noc", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["enea"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6187}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Enea", "source_title": "Taryfa G Enea obowiązująca od 1.01.2026", "source_url": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "266/2025"},
+        "enea_g12_2026": {"seller_id": "enea", "seller_name": "Enea", "tariff_group": "g12", "product_variant": "Ciepły dom", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["enea"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7170, "offpeak": 0.4205}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Enea", "source_title": "Taryfa G Enea obowiązująca od 1.01.2026", "source_url": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "266/2025"},
+        "enea_g12w_2026": {"seller_id": "enea", "seller_name": "Enea", "tariff_group": "g12w", "product_variant": "Mój weekend", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["enea"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.8079, "offpeak": 0.4323}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Enea", "source_title": "Taryfa G Enea obowiązująca od 1.01.2026", "source_url": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "266/2025"},
+        "enea_g11p_2026": {"seller_id": "enea", "seller_name": "Enea", "tariff_group": "g11p", "product_variant": "A konto dzień i noc", "price_list_id": "taryfa_ure_2026_prepaid", "applicable_osd": ["enea"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6187}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Enea", "source_title": "Taryfa G Enea obowiązująca od 1.01.2026", "source_url": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "266/2025"},
+        "enea_g12p_2026": {"seller_id": "enea", "seller_name": "Enea", "tariff_group": "g12p", "product_variant": "A konto ciepły dom", "price_list_id": "taryfa_ure_2026_prepaid", "applicable_osd": ["enea"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7170, "offpeak": 0.4205}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Enea", "source_title": "Taryfa G Enea obowiązująca od 1.01.2026", "source_url": "https://www.enea.pl/media/6592/taryfa-g-112026.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "266/2025"}
+      }
+    },
+    "energa_obrot": {
+      "seller_name": "Energa Obrót",
+      "source": "https://bip.ure.gov.pl/download/3/20346/ENERGAOBROT.pdf",
+      "tariffs": {
+        "energa_g11_2026": {"seller_id": "energa_obrot", "seller_name": "Energa Obrót", "tariff_group": "g11", "product_variant": "Podstawowa", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["energa"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6172}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Energa Obrót", "source_title": "Taryfa Energa-Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20346/ENERGAOBROT.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "270/2025"},
+        "energa_g12_2026": {"seller_id": "energa_obrot", "seller_name": "Energa Obrót", "tariff_group": "g12", "product_variant": "Tanie godziny", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["energa"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7182, "offpeak": 0.4678}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Energa Obrót", "source_title": "Taryfa Energa-Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20346/ENERGAOBROT.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "270/2025"},
+        "energa_g12w_2026": {"seller_id": "energa_obrot", "seller_name": "Energa Obrót", "tariff_group": "g12w", "product_variant": "Noce i weekendy", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["energa"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.7512, "offpeak": 0.4908}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Energa Obrót", "source_title": "Taryfa Energa-Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20346/ENERGAOBROT.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "270/2025"},
+        "energa_g12r_2026": {"seller_id": "energa_obrot", "seller_name": "Energa Obrót", "tariff_group": "g12r", "product_variant": "Ekonomiczna dolina", "price_list_id": "taryfa_ure_2026", "applicable_osd": ["energa"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.8262, "offpeak": 0.3772}, "schedule_source": "osd_same_tariff", "source_authority": "URE / Energa Obrót", "source_title": "Taryfa Energa-Obrót S.A. na 2026 r.", "source_url": "https://bip.ure.gov.pl/download/3/20346/ENERGAOBROT.pdf", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "270/2025"}
+      }
+    },
+    "eon_polska": {
+      "seller_name": "E.ON Polska",
+      "source": "https://eon.pl/-/media/eon/dokumenty/dla-domu/taryfa-energii-elektrycznej-eon-polska-sa-dla-grup-taryfowych-g--obowizuje-od-dnia-01_01_2026.ashx",
+      "tariffs": {
+        "eon_g11_2026": {"seller_id": "eon_polska", "seller_name": "E.ON Polska", "tariff_group": "g11", "product_variant": "Najprostsza dla Ciebie", "price_list_id": "taryfa_stoen_2026", "applicable_osd": ["stoen"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"all_day": 0.6212}, "schedule_source": "osd_same_tariff", "source_authority": "E.ON Polska", "source_title": "Taryfa E.ON Polska dla grup G na obszarze Stoen Operator od 1.01.2026", "source_url": "https://eon.pl/-/media/eon/dokumenty/dla-domu/taryfa-energii-elektrycznej-eon-polska-sa-dla-grup-taryfowych-g--obowizuje-od-dnia-01_01_2026.ashx", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "20251105nr1"},
+        "eon_g12_2026": {"seller_id": "eon_polska", "seller_name": "E.ON Polska", "tariff_group": "g12", "product_variant": "Najprostsza dzień i noc", "price_list_id": "taryfa_stoen_2026", "applicable_osd": ["stoen"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.6635, "offpeak": 0.5283}, "schedule_source": "osd_same_tariff", "source_authority": "E.ON Polska", "source_title": "Taryfa E.ON Polska dla grup G na obszarze Stoen Operator od 1.01.2026", "source_url": "https://eon.pl/-/media/eon/dokumenty/dla-domu/taryfa-energii-elektrycznej-eon-polska-sa-dla-grup-taryfowych-g--obowizuje-od-dnia-01_01_2026.ashx", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "20251105nr1"},
+        "eon_g12w_2026": {"seller_id": "eon_polska", "seller_name": "E.ON Polska", "tariff_group": "g12w", "product_variant": "Taniej po godzinach", "price_list_id": "taryfa_stoen_2026", "applicable_osd": ["stoen"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.6512, "offpeak": 0.5467}, "schedule_source": "osd_same_tariff", "source_authority": "E.ON Polska", "source_title": "Taryfa E.ON Polska dla grup G na obszarze Stoen Operator od 1.01.2026", "source_url": "https://eon.pl/-/media/eon/dokumenty/dla-domu/taryfa-energii-elektrycznej-eon-polska-sa-dla-grup-taryfowych-g--obowizuje-od-dnia-01_01_2026.ashx", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "20251105nr1"},
+        "eon_g12as_2026": {"seller_id": "eon_polska", "seller_name": "E.ON Polska", "tariff_group": "g12as", "product_variant": "Bezpieczne ogrzewanie", "price_list_id": "taryfa_stoen_2026", "applicable_osd": ["stoen"], "valid_from": "2026-01-01", "valid_to": "2026-12-31", "currency": "PLN", "unit": "PLN/kWh", "price_basis": "gross", "includes_vat": true, "includes_excise": true, "includes_distribution": false, "economic_role": "energy_only", "rates": {"peak": 0.6758, "offpeak": 0.5344}, "schedule_source": "osd_same_tariff", "source_authority": "E.ON Polska", "source_title": "Taryfa E.ON Polska dla grup G na obszarze Stoen Operator od 1.01.2026", "source_url": "https://eon.pl/-/media/eon/dokumenty/dla-domu/taryfa-energii-elektrycznej-eon-polska-sa-dla-grup-taryfowych-g--obowizuje-od-dnia-01_01_2026.ashx", "source_effective_date": "2026-01-01", "source_checked_at": "2026-08-27", "revision": "20251105nr1"}
+      }
+    }
+  },
+  "seller_support_matrix": {
+    "pge": {
+      "g11": {"suggested_seller_id": "pge_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "pge_g11_2026"},
+      "g12": {"suggested_seller_id": "pge_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "pge_g12_2026"},
+      "g12w": {"suggested_seller_id": "pge_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "pge_g12w_2026"},
+      "g12n": {"suggested_seller_id": "pge_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "pge_g12n_2026"},
+      "g12as": {"suggested_seller_id": "pge_obrot", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Taryfa PGE Obrót 2026 nie publikuje G12as; wymagany jest jawny cennik/oferta."},
+      "g12e": {"suggested_seller_id": "pge_obrot", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Taryfa PGE Obrót 2026 nie publikuje G12e; nie wolno mapować na G12/G12w."}
+    },
+    "tauron": {
+      "g11": {"suggested_seller_id": "tauron_sprzedaz", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "tauron_g11_2026"},
+      "g12": {"suggested_seller_id": "tauron_sprzedaz", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "tauron_g12_2026"},
+      "g12w": {"suggested_seller_id": "tauron_sprzedaz", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "tauron_g12w_2026"},
+      "g12as": {"suggested_seller_id": "tauron_sprzedaz", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Standardowa taryfa TAURON Sprzedaż 2026 nie obejmuje G12as."},
+      "g13": {"suggested_seller_id": "tauron_sprzedaz", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "tauron_g13_2026"},
+      "g13s": {"suggested_seller_id": "tauron_sprzedaz", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Standardowa taryfa TAURON Sprzedaż 2026 nie obejmuje G13s."},
+      "g14dynamic": {"suggested_seller_id": "tauron_sprzedaz", "status": "DYNAMIC_EXTERNAL_SIGNAL_REQUIRED", "reason": "Wymagany zewnętrzny sygnał stref dynamicznych; stała cena nie jest bezpiecznym fallbackiem."}
+    },
+    "enea": {
+      "g11": {"suggested_seller_id": "enea", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "enea_g11_2026"},
+      "g11pewna": {"suggested_seller_id": "enea", "status": "SUPPORTED_SPECIAL_PRICE_LIST", "reason": "Grupa ofertowa wymaga jawnego aktualnego cennika produktu Enea; brak automatycznego standardowego mappingu."},
+      "g12": {"suggested_seller_id": "enea", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "enea_g12_2026"},
+      "g12w": {"suggested_seller_id": "enea", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "enea_g12w_2026"},
+      "g12as": {"suggested_seller_id": "enea", "status": "SUPPORTED_SPECIAL_PRICE_LIST", "reason": "Taryfa Enea URE 2026 nie publikuje zwykłej G12as; wymagany jest jawny cennik oferty."},
+      "g12sezon": {"suggested_seller_id": "enea", "status": "SUPPORTED_SPECIAL_PRICE_LIST", "reason": "G12sezON jest grupą ofertową i wymaga właściwego cennika produktu."},
+      "g13active": {"suggested_seller_id": "enea", "status": "SUPPORTED_SPECIAL_PRICE_LIST", "reason": "G13active jest grupą ofertową i wymaga właściwego cennika produktu."},
+      "g11p": {"suggested_seller_id": "enea", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "enea_g11p_2026", "prepaid": true},
+      "g12p": {"suggested_seller_id": "enea", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "enea_g12p_2026", "prepaid": true}
+    },
+    "energa": {
+      "g11": {"suggested_seller_id": "energa_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "energa_g11_2026"},
+      "g11f": {"suggested_seller_id": "energa_obrot", "status": "DYNAMIC_EXTERNAL_SIGNAL_REQUIRED", "reason": "G11f jest dystrybucyjną grupą dla cen dynamicznych i wymaga zewnętrznego sygnału ceny energii."},
+      "g12": {"suggested_seller_id": "energa_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "energa_g12_2026"},
+      "g12w": {"suggested_seller_id": "energa_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "energa_g12w_2026"},
+      "g12r": {"suggested_seller_id": "energa_obrot", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "energa_g12r_2026"},
+      "g12as": {"suggested_seller_id": "energa_obrot", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Standardowa taryfa Energa Obrót 2026 nie publikuje G12as."}
+    },
+    "stoen": {
+      "g11": {"suggested_seller_id": "eon_polska", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "eon_g11_2026"},
+      "g12": {"suggested_seller_id": "eon_polska", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "eon_g12_2026"},
+      "g12w": {"suggested_seller_id": "eon_polska", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "eon_g12w_2026"},
+      "g12as": {"suggested_seller_id": "eon_polska", "status": "SUPPORTED_TARIFF_BUY", "seller_tariff_id": "eon_g12as_2026"},
+      "g12eko": {"suggested_seller_id": "eon_polska", "status": "OSD_ONLY_NO_STANDARD_SELLER_TARIFF", "reason": "Taryfa E.ON Polska 2026 dla Stoen nie publikuje G12eko; grupa OSD obowiązuje od 1.10.2026."}
+    },
+    "other": {
+      "custom": {"suggested_seller_id": "", "status": "UNKNOWN_REQUIRES_RESEARCH", "reason": "Profil ręczny nie ma automatycznego kontraktu sprzedawcy."}
+    }
+  },
   "common_variable_fees": {
     "quality": 0.0408,
     "oze": 0.00898,
@@ -13,7 +115,7 @@
   "providers": {
     "pge": {
       "name": "PGE Dystrybucja",
-      "source": "https://pgedystrybucja.pl/strona-glowna/komunikaty/taryfa-2026",
+      "source": "https://pgedystrybucja.pl/content/download/6afb41dafda80868a372ec265acb1d28/file/stawki-brutto_od_01.02.2026.pdf%3FinLanguage%3Dpol-PL%26version%3D5%26contentId%3D1212",
       "tariffs": {
         "g11": {"name": "G11 — całodobowa", "rates": {"all_day": 0.4267}, "all_day_zone": "all_day"},
         "g12": {"name": "G12 — dwustrefowa", "rates": {"peak": 0.4937, "offpeak": 0.0941}, "default_zone": "peak", "seasons": {"summer": {"months": [4,5,6,7,8,9], "zones": {"offpeak": [[15,17],[22,6]]}}, "winter": {"months": [1,2,3,10,11,12], "zones": {"offpeak": [[13,15],[22,6]]}}}},
@@ -25,7 +127,7 @@
     },
     "tauron": {
       "name": "TAURON Dystrybucja",
-      "source": "https://www.tauron-dystrybucja.pl/uslugi-dystrybucyjne/dokumenty-do-pobrania",
+      "source": "https://www.tauron-dystrybucja.pl/-/media/offer-documents/dystrybucja/aktualna-taryfa/taryfa-tauron-dystrybucja-2026_ocr.ashx",
       "tariffs": {
         "g11": {"name": "G11 — całodobowa", "rates": {"all_day": 0.3031}, "all_day_zone": "all_day"},
         "g12": {"name": "G12 — dwustrefowa", "rates": {"peak": 0.3494, "offpeak": 0.0686}, "default_zone": "peak", "zones": {"offpeak": [[13,15],[22,6]]}},
@@ -38,7 +140,7 @@
     },
     "enea": {
       "name": "Enea Operator",
-      "source": "https://www.operator.enea.pl/uslugi-dystrybucyjne/taryfy-i-cenniki",
+      "source": "https://www.operator.enea.pl/sites/operator/files/dokumenty/Enea%20Operator_wyci%C4%85g%20z%20taryfy_01.01.2026-31.12.2026.pdf",
       "tariffs": {
         "g11": {"name": "G11 — całodobowa", "rates": {"all_day": 0.3021}, "all_day_zone": "all_day"},
         "g12": {"name": "G12 — dwustrefowa", "rates": {"peak": 0.3418, "offpeak": 0.1123}, "default_zone": "peak", "zones": {"offpeak": [[13,15],[22,6]]}},
@@ -53,7 +155,7 @@
     },
     "energa": {
       "name": "Energa-Operator",
-      "source": "https://energa-operator.pl/uslugi/oplaty-i-faktury/taryfa",
+      "source": "https://bip.ure.gov.pl/download/3/20347/EnergaOperator.pdf",
       "tariffs": {
         "g11": {"name": "G11 — całodobowa", "rates": {"all_day": 0.4287}, "all_day_zone": "all_day"},
         "g11f": {"name": "G11f — stała niska stawka", "rates": {"all_day": 0.0635}, "all_day_zone": "all_day", "requires_meter_confirmation": true},
@@ -65,7 +167,7 @@
     },
     "stoen": {
       "name": "Stoen Operator",
-      "source": "https://www.stoen.pl/plik/wyciag-z-taryfy-dla-dystrybucji-energii-elektrycznej-dla-odbiorcow-z-grupa-taryfowa-g-obowiazuje-od-1-01-2024-r",
+      "source": "https://eon.pl/-/media/Eon/Dokumenty/Obsluga-i-pomoc/Wazne-dokumenty/STOEN_Tabela-zmian-w-Taryfie_2026.ashx",
       "tariffs": {
         "g11": {"name": "G11 — całodobowa", "rates": {"all_day": 0.2881}, "all_day_zone": "all_day"},
         "g12": {"name": "G12 — dwustrefowa", "rates": {"peak": 0.3130, "offpeak": 0.0683}, "default_zone": "peak", "zones": {"offpeak": [[13,15],[22,6]]}},

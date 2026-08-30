@@ -171,10 +171,11 @@ class AiVisualPayloadTests(unittest.TestCase):
         self.assertTrue(all(18 <= row["hour"] < 22 for row in evening))
         self.assertFalse({row["hour"] for row in morning} & {row["hour"] for row in evening})
 
-    def test_sale_ranking_descending_and_tie_uses_earlier_hour(self):
+    def test_sale_ranking_is_chronological_and_keeps_price_rank(self):
         plan = optimizer.build_energy_plan(base_inputs(), "balanced")
         morning = plan["ui_insights"]["sale_profiles"]["morning_sale"]["days"]["today"]
-        self.assertEqual([7, 8, 6], [row["hour"] for row in morning])
+        self.assertEqual([6, 7, 8], [row["hour"] for row in morning])
+        self.assertEqual([3, 1, 2], [row["price_rank"] for row in morning])
 
     def test_minimum_sale_price_and_no_hours_status(self):
         values = base_inputs()
@@ -200,13 +201,15 @@ class AiVisualPayloadTests(unittest.TestCase):
         self.assertEqual("disabled", profile["status"])
         self.assertTrue(all(not row["recommended"] for row in profile["days"]["today"]))
 
-    def test_purchase_ranking_uses_effective_cost_and_earlier_tie(self):
+    def test_purchase_ranking_is_chronological_and_keeps_cost_rank(self):
         plan = optimizer.build_energy_plan(base_inputs(), "balanced")
         ranking = plan["ui_insights"]["purchase_ranking"]["days"]["today"]
-        self.assertEqual(1, ranking[0]["hour"])
+        self.assertEqual(list(range(24)), [row["hour"] for row in ranking])
+        cheapest = min(ranking, key=lambda row: row["price_rank"])
+        self.assertEqual(1, cheapest["hour"])
         self.assertEqual(
-            ranking[0]["effective_price"],
-            round(ranking[0]["energy_price"] + ranking[0]["distribution_price"], 5),
+            cheapest["effective_price"],
+            round(cheapest["energy_price"] + cheapest["distribution_price"], 5),
         )
 
     def test_distribution_is_included_only_once(self):
@@ -235,7 +238,7 @@ class AiVisualPayloadTests(unittest.TestCase):
         self.assertEqual("weekday", first["day_type"])
         self.assertEqual("holiday", tomorrow["day_type"])
 
-    def test_tariff_profile_changes_purchase_order(self):
+    def test_tariff_profile_changes_purchase_rank_without_changing_chronology(self):
         first = optimizer.build_energy_plan(base_inputs(), "balanced")
         values = base_inputs()
         values["distribution"][0] = 0
@@ -243,9 +246,12 @@ class AiVisualPayloadTests(unittest.TestCase):
         values["tariff_context"]["hourly_profile"][0]["total_distribution_rate"] = 0
         values["tariff_context"]["hourly_profile"][1]["total_distribution_rate"] = 1
         second = optimizer.build_energy_plan(values, "balanced")
+        first_rows = first["ui_insights"]["purchase_ranking"]["days"]["today"]
+        second_rows = second["ui_insights"]["purchase_ranking"]["days"]["today"]
+        self.assertEqual([row["hour"] for row in first_rows], [row["hour"] for row in second_rows])
         self.assertNotEqual(
-            first["ui_insights"]["purchase_ranking"]["days"]["today"][0]["hour"],
-            second["ui_insights"]["purchase_ranking"]["days"]["today"][0]["hour"],
+            {row["hour"]: row["price_rank"] for row in first_rows},
+            {row["hour"]: row["price_rank"] for row in second_rows},
         )
 
     def test_missing_osd_warns_and_blocks_optimizer_grid_charge(self):
@@ -295,7 +301,9 @@ class AiVisualPayloadTests(unittest.TestCase):
             forecast=optimizer._forecast_series(values),
             prices=prices,
         )["rows"]
-        self.assertEqual("better", optimizer._ui_insights(values, prices, rows, 1, 0.2)["comparison"]["assessment"])
+        better = optimizer._ui_insights(values, prices, rows, 1, 0.2)["comparison"]
+        self.assertEqual("better", better["assessment"])
+        self.assertEqual("Plan z wyższym wynikiem modelowanym", better["decision_title"])
         self.assertEqual("neutral", optimizer._ui_insights(values, prices, rows, 0.1, 0.2)["comparison"]["assessment"])
         worse = optimizer._ui_insights(values, prices, rows, -1, 0.2)["comparison"]
         self.assertEqual("worse", worse["assessment"])
@@ -343,7 +351,7 @@ class AiVisualSourceTests(unittest.TestCase):
 
     def test_polish_translations_and_api_error_are_user_friendly(self):
         for text in (
-            "Korzyść względem planu bazowego",
+            "Korzyść całego planu względem bazowego",
             "Wynik z pamięci — dane wejściowe bez zmian",
             "Profil: Poranna sprzedaż",
             "Profil: Wieczorna sprzedaż",
@@ -396,7 +404,7 @@ class AiVisualSourceTests(unittest.TestCase):
             "Najlepsze godziny sprzedaży",
             "Najtańsze godziny zakupu",
             "Prognoza SOC 48 h",
-            "Wynik netto planu",
+            "Wynik modelowany całego planu",
             "Profile użytkownika",
             "Status planu",
             "Najważniejsze ostrzeżenia",
@@ -447,13 +455,13 @@ class AiVisualSourceTests(unittest.TestCase):
         purchase_end = self.source.index("  aiLegacyWeatherCard(", sale_start)
         methods = self.source[sale_start:purchase_end]
         self.assertIn("Cena nr", methods)
-        self.assertIn("const visible = ranked;", methods)
-        self.assertIn("const rows = ranked;", methods)
+        self.assertIn("const visible = rows.slice().sort", methods)
+        self.assertIn("const rows = ranked.slice(0, 8).sort", methods)
         self.assertNotIn("aiFormatNumber(row.sell_price, 4)", methods)
         self.assertNotIn("aiFormatNumber(row.effective_price, 4)", methods)
         self.assertIn("aiFormatNumber(row.sell_price, 2)", methods)
 
-    def test_ai_schedule_patch_uses_exact_row_power_and_preserves_other_fields(self):
+    def test_ai_schedule_patch_uses_exact_row_power_and_filters_sell_currents(self):
         power_start = self.source.index("  aiPlannedSlotPower(")
         start = self.source.index("  aiRowUpdate(")
         end = self.source.index("  async applyAiDayPlan(", start)
@@ -462,15 +470,24 @@ class AiVisualSourceTests(unittest.TestCase):
         self.assertIn("energy * 1000 * 60 / duration", power_method)
         self.assertIn("this.aiPlannedSlotPower(row)", method)
         self.assertIn("update.sell_power", method)
+        self.assertIn('if (charging)', method)
+        self.assertIn("this.chargeProfileStoredValues()", method)
+        self.assertIn("charge_current: profile.charge_current", method)
+        self.assertIn("discharge_current: profile.discharge_current", method)
+        self.assertIn("grid_charge_current: profile.grid_charge_current", method)
+        self.assertIn("tou_soc: profile.target_soc", method)
+        contract_path, legacy_path = method.split('    const selling = row.action === "sell";', 1)
+        self.assertIn("row?.action_contract?.schedule_update", contract_path)
+        self.assertIn('row.action === "sell"', contract_path)
+        self.assertIn('new Set(["slot_key", "enabled", "mode", "sell_power"])', contract_path)
+        self.assertIn('"minimum_sell_soc"', contract_path)
+        self.assertIn('"min_sell_price"', contract_path)
         for forbidden in (
             "maxSellPower",
-            "discharge_current",
-            "charge_current",
-            "grid_charge_current",
             "minimum_sell_soc",
             "min_sell_price",
         ):
-            self.assertNotIn(forbidden, method)
+            self.assertNotIn(forbidden, legacy_path)
 
     def test_invalid_or_unprofitable_optimizer_rows_cannot_be_applied(self):
         start = self.source.index("  aiIsApplicableProposal(")

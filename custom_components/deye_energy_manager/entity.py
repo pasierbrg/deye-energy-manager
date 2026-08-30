@@ -15,6 +15,7 @@ class DeyeEnergyManagerEntity(Entity):
         self._attr_unique_id = f"{runtime.entry_id}_{key}"
         self._attr_object_id = f"deye_energy_manager_{key}"
         self._attr_name = name
+        self._deye_manager_key = key
         runtime.register_entity(self)
 
     @property
@@ -25,3 +26,6 @@ class DeyeEnergyManagerEntity(Entity):
             manufacturer="pasierbrg",
             model="Deye Energy Manager",
         )
+
+    async def async_will_remove_from_hass(self) -> None:
+        self.runtime.unregister_entity(self)

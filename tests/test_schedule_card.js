@@ -79,7 +79,7 @@ function makeBulkCard() {
   const card = makeRenderedCard();
   const values = {
     "multi-active": "on",
-    "multi-mode": "Selling First",
+    "multi-mode": "Sprzedaż",
     "multi-sell-power": "5100",
     "multi-discharge-current": "90",
     "multi-charge-current": "45",
@@ -111,7 +111,7 @@ function makeBulkCard() {
     let renders = 0;
     card.render = () => { renders += 1; };
     card.isInteracting = () => false;
-    card.hass = hassWithMode("Selling First");
+    card.hass = hassWithMode("Sprzedaż");
     assertEqual(renders, 1, "schedule state change must render the card");
   }
   {
@@ -130,7 +130,7 @@ function makeBulkCard() {
     card.render = () => { renders += 1; };
     card.updateDynamicValues = () => {};
     card.isInteracting = () => interacting;
-    card.hass = hassWithMode("Selling First");
+    card.hass = hassWithMode("Sprzedaż");
     assertTrue(card._pendingRender, "schedule render must be deferred while editing");
     assertEqual(renders, 0, "deferred schedule update must not interrupt editing");
     interacting = false;
@@ -141,8 +141,8 @@ function makeBulkCard() {
     const card = makeRenderedCard();
     let renders = 0;
     card.render = () => { renders += 1; };
-    await card.setSelect(modeEntity, "Selling First");
-    assertEqual(card._optimisticStates[modeEntity], "Selling First", "slot mode must be optimistic until HA confirms it");
+    await card.setSelect(modeEntity, "Sprzedaż");
+    assertEqual(card._optimisticStates[modeEntity], "Sprzedaż", "slot mode must be optimistic until HA confirms it");
     assertEqual(renders, 1, "slot mode selection must render immediately");
   }
 
@@ -178,7 +178,7 @@ function makeBulkCard() {
     assertEqual(captured.length, 2, "only selected slots must be sent");
     assertEqual(captured[0].slot_key, "06_07", "first selected slot must be sent");
     assertEqual(captured[1].slot_key, "08_09", "second selected slot must be sent");
-    assertEqual(captured[0].mode, "Selling First", "checked mode must be sent");
+    assertEqual(captured[0].mode, "Sprzedaż", "checked mode must be sent canonically");
     assertEqual(captured[0].enabled, true, "checked active state must be sent");
     assertEqual(captured[0].minimum_sell_soc, "30", "checked SOC must be sent");
     assertTrue(!Object.prototype.hasOwnProperty.call(captured[0], "sell_power"), "unchecked sell power must not be sent");
@@ -208,7 +208,7 @@ function makeBulkCard() {
     const slots = [["06_07", "06:00-07:00", 2], ["08_09", "08:00-09:00", 3]];
     const result = await card.applyMultiEdit(slots);
     assertEqual(result, false, "failed bulk edit must report failure");
-    assertEqual(card._bulkEditDraft.mode, "Selling First", "failed bulk edit must keep form values");
+    assertEqual(card._bulkEditDraft.mode, "Sprzedaż", "failed bulk edit must keep form values");
     assertEqual(card._selectedSlots.size, 2, "failed bulk edit must keep selected slots");
   }
 

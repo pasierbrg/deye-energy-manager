@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from datetime import datetime
+from datetime import datetime, timezone
 import math
 from statistics import mean
 from typing import Any
@@ -12,6 +12,125 @@ from typing import Any
 LEARNING_PROFILE_VERSION = 1
 PV_RATIO_MIN = 0.4
 PV_RATIO_MAX = 1.6
+
+# Maturity is statistical evidence, not a safety gate and not plan confidence.
+# Targets describe a representative three-week rolling learning window.  The
+# weights intentionally keep incomplete seasonal PV evidence proportional: it
+# lowers maturity without erasing otherwise useful load/history knowledge.
+MATURITY_COMPONENTS: dict[str, tuple[float, float]] = {
+    "valid_hours": (504.0, 25.0),
+    "complete_days": (21.0, 10.0),
+    "load_coverage": (168.0, 20.0),
+    "pv_coverage": (288.0, 10.0),
+    "pv_accepted_samples": (288.0, 10.0),
+    "pv_acceptance_ratio": (1.0, 10.0),
+    "forecast_accuracy_days": (21.0, 10.0),
+    "freshness": (1.0, 5.0),
+}
+
+
+def learning_maturity(
+    *,
+    valid_hours: int = 0,
+    complete_days: int = 0,
+    load_covered_cells: int = 0,
+    pv_covered_cells: int = 0,
+    pv_accepted_samples: int = 0,
+    pv_rejected_samples: int = 0,
+    forecast_accuracy_days: int = 0,
+    history_last_hour: str | datetime | None = None,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    """Return DEM profile maturity from persisted, validated evidence.
+
+    The score is the sum of the documented weighted component scores above.
+    Freshness scores 100% through 48 h, 60% through seven days and 0% beyond
+    that.  These thresholds cover a normal restart and a longer outage without
+    pretending stale evidence is current.  ``application_ready`` only means
+    learning evidence is sufficient for manual-confirmation evaluation; all
+    Core safety, input, confidence and deployment gates remain authoritative.
+    """
+
+    accepted = max(0, int(pv_accepted_samples))
+    rejected = max(0, int(pv_rejected_samples))
+    attempts = accepted + rejected
+    acceptance_ratio = accepted / attempts if attempts else 0.0
+
+    current = now or datetime.now(timezone.utc)
+    if current.tzinfo is None:
+        current = current.replace(tzinfo=timezone.utc)
+    last: datetime | None = history_last_hour if isinstance(history_last_hour, datetime) else None
+    if last is None and history_last_hour:
+        try:
+            last = datetime.fromisoformat(str(history_last_hour))
+        except (TypeError, ValueError):
+            last = None
+    if last is not None:
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=current.tzinfo)
+        age_hours = max(0.0, (current - last.astimezone(current.tzinfo)).total_seconds() / 3600.0)
+        freshness = 1.0 if age_hours <= 48 else 0.6 if age_hours <= 168 else 0.0
+    else:
+        age_hours = None
+        freshness = 0.0
+
+    raw_values = {
+        "valid_hours": max(0, int(valid_hours)),
+        "complete_days": max(0, int(complete_days)),
+        "load_coverage": max(0, int(load_covered_cells)),
+        "pv_coverage": max(0, int(pv_covered_cells)),
+        "pv_accepted_samples": accepted,
+        "pv_acceptance_ratio": acceptance_ratio,
+        "forecast_accuracy_days": max(0, int(forecast_accuracy_days)),
+        "freshness": freshness,
+    }
+    evidence: dict[str, dict[str, Any]] = {}
+    score = 0.0
+    for key, (target, weight) in MATURITY_COMPONENTS.items():
+        value = float(raw_values[key])
+        component_score = min(100.0, value / target * 100.0)
+        weighted = component_score * weight / 100.0
+        score += weighted
+        evidence[key] = {
+            "value": round(value, 3),
+            "target": target,
+            "weight_percent": weight,
+            "score": round(component_score, 1),
+            "weighted_points": round(weighted, 2),
+        }
+
+    score = round(max(0.0, min(100.0, score)), 1)
+    if score < 25:
+        status, label = "bootstrap", "Rozruch profilu"
+    elif score < 50:
+        status, label = "learning", "Uczenie aktywne"
+    elif score < 80:
+        status, label = "stable", "Profil stabilny"
+    else:
+        status, label = "mature", "Profil dojrzały"
+    application_ready = bool(
+        score >= 50.0
+        and int(valid_hours) >= 48
+        and int(load_covered_cells) >= 24
+    )
+    return {
+        "status": status,
+        "label": label,
+        "score": score,
+        "application_ready": application_ready,
+        "valid_hours": max(0, int(valid_hours)),
+        "complete_days": max(0, int(complete_days)),
+        "load_covered_cells": max(0, int(load_covered_cells)),
+        "load_total_cells": 168,
+        "pv_covered_cells": max(0, int(pv_covered_cells)),
+        "pv_total_cells": 288,
+        "pv_accepted_samples": accepted,
+        "pv_rejected_samples": rejected,
+        "pv_acceptance_ratio": round(acceptance_ratio, 3),
+        "forecast_accuracy_days": max(0, int(forecast_accuracy_days)),
+        "history_age_hours": round(age_hours, 1) if age_hours is not None else None,
+        "evidence": evidence,
+    }
 
 
 def learning_stage(completed_days: int) -> dict[str, Any]:
