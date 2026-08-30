@@ -389,6 +389,34 @@ Standardowy ekran taryfy udostępnia do edycji wyłącznie operatora OSD i taryf
 cztery mapowania są podsumowaniem konfiguracji z Options Flow, a szczegółowa
 diagnostyka i polaryzacja pozostają w zwiniętych sekcjach.
 
+### Gotowe przykłady konfiguracji cen
+
+Mapowania ustawia się w opcjach DEM, w kroku **Encje cen energii**. Dla Pstryk
+AIO wybierz dokładnie:
+
+| Pole DEM | Encja Pstryk AIO |
+|---|---|
+| BUY Today | `sensor.pstryk_aio_obecna_cena_zakupu_pradu` |
+| BUY Tomorrow | `sensor.pstryk_aio_cena_zakupu_pradu_jutro` |
+| SELL Today | `sensor.pstryk_aio_obecna_cena_sprzedazy_pradu` |
+| SELL Tomorrow | `sensor.pstryk_aio_cena_sprzedazy_pradu_jutro` |
+
+Pstryk jest rozpoznawany automatycznie na podstawie metadanych integracji. Jego
+BUY jest ceną all-in brutto: nie doliczaj ponownie OSD, VAT ani zawartej w źródle
+opłaty usługowej. SELL jest niezależny od BUY.
+
+| Sytuacja | BUY | SELL |
+|---|---|---|
+| Pstryk AIO | Pstryk BUY Today/Tomorrow | Pstryk SELL Today/Tomorrow |
+| Zwykła taryfa bez Pstryk | oba BUY puste + OSD/taryfa/sprzedawca | osobne źródło SELL |
+| PSE/RCE | Today/Tomorrow RCE + OSD raz | Today/Tomorrow jako `market_reference` |
+| Custom | jawny kontrakt | jawny kontrakt |
+
+Fallback taryfy sprzedawcy dotyczy wyłącznie BUY i nigdy nie tworzy SELL.
+Bieżąca cena prosumencka nie jest prognozą na kolejne godziny.
+
+Szczegółowa konfiguracja krok po kroku: [INSTALL_PL.md](INSTALL_PL.md).
+
 ## Solcast i bieżąca realizacja
 
 Backend utrzymuje jeden kanoniczny zestaw danych bieżącego dnia: prognozę na dziś,

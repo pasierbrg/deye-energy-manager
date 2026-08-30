@@ -162,6 +162,130 @@ prognozę Today/Tomorrow oraz bieżącą moc; pozostałe dni, prognoza pozostał
 szczytu są opcjonalne. W osobnym kroku można wskazać encję pogody. Brak Solcast
 nie blokuje sterowania ręcznego, lecz ogranicza funkcje planu wymagające prognozy.
 
+## Konfiguracja cen — gotowe scenariusze
+
+Najpierw rozróżnij kierunek przepływu energii:
+
+- BUY (zakup) to koszt energii pobieranej z sieci;
+- SELL (sprzedaż) to wartość lub cena energii oddawanej do sieci;
+- Today i Tomorrow są niezależnymi mapowaniami;
+- jawnie wybrana encja ma pierwszeństwo przed fallbackiem katalogowym;
+- fallback taryfy sprzedawcy działa wyłącznie dla BUY i nigdy nie tworzy SELL.
+
+Każde mapowanie ustawiasz w opcjach integracji, w kroku **Encje cen energii**.
+Jawnie puste pole pozostanie puste po zapisaniu, przeładowaniu i restarcie.
+
+### Scenariusz A — używam Pstryk AIO
+
+W kroku **Encje cen energii** ustaw dokładnie:
+
+| Pole DEM | Encja Pstryk AIO |
+|---|---|
+| BUY Today | `sensor.pstryk_aio_obecna_cena_zakupu_pradu` |
+| BUY Tomorrow | `sensor.pstryk_aio_cena_zakupu_pradu_jutro` |
+| SELL Today | `sensor.pstryk_aio_obecna_cena_sprzedazy_pradu` |
+| SELL Tomorrow | `sensor.pstryk_aio_cena_sprzedazy_pradu_jutro` |
+
+1. Otwórz opcje Deye Energy Manager.
+2. Przejdź do kroku **Encje cen energii**.
+3. Wybierz cztery encje z tabeli i zapisz opcje.
+4. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**.
+5. Sprawdź diagnostycznie, czy dla BUY i SELL wykryto adapter Pstryk.
+6. Sprawdź pokrycie Today/Tomorrow obu kierunków.
+7. W tabeli cen zweryfikuj dziś oraz jutro, gdy Pstryk opublikuje dane jutra.
+
+Adapter Pstryk jest rozpoznawany automatycznie na podstawie metadanych integracji;
+nie ustawiaj ręcznie jego schematu. BUY Pstryk ma znaczenie all-in brutto, dlatego
+nie próbuj ponownie doliczać do niego OSD, VAT ani opłaty usługowej zawartej w
+źródle. SELL Pstryk jest osobnym kontraktem i nie jest wyprowadzany z BUY.
+
+### Scenariusz B — zakup z taryfy sprzedawcy, bez Pstryk AIO
+
+Ten wariant służy między innymi zwykłym taryfom takim jak G11 lub G12w; wybierz
+jednak taryfę i ofertę zgodną z własną umową, a nie na podstawie przykładu.
+
+1. Otwórz opcje DEM i przejdź do **Encje cen energii**.
+2. Wyczyść **BUY Today** oraz **BUY Tomorrow** i świadomie zapisz oba puste pola.
+3. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja**.
+4. Wybierz swojego operatora OSD i właściwą taryfę dystrybucyjną.
+5. W widocznej sekcji zakupu wybierz sprzedawcę energii. Jeżeli istnieje dokładnie
+   jedna zgodna oferta standardowa, DEM dopasuje ją; przy wielu zgodnych ofertach
+   wybierz właściwą ofertę jawnie.
+6. Zapisz i sprawdź status fallbacku oraz pokrycie BUY Today/Tomorrow.
+
+DEM tworzy BUY 24+24 tylko dla ważnej, zweryfikowanej taryfy standardowej. Cena
+końcowa składa się z ceny energii brutto i zmiennego OSD doliczonego dokładnie
+raz. Brak sprzedawcy, brak ważnej lub jednoznacznej oferty, brak składnika OSD
+albo nieobsługiwana taryfa specjalna/dynamiczna powodują działanie fail-closed.
+
+**Fallback katalogu sprzedawcy dotyczy wyłącznie BUY. Nie ustawia, nie uzupełnia
+i nie zmienia SELL.** Źródła sprzedaży skonfiguruj osobno.
+
+### Scenariusz C — BUY po PSE/RCE
+
+Poniższe identyfikatory są przykładem znanego, wspieranego schematu. Inna
+integracja RCE może używać innych nazw; zawsze wybierz faktyczne encje ze swojej
+instalacji, które publikują wymagane pełne serie.
+
+| Pole DEM | Przykładowa encja PSE/RCE |
+|---|---|
+| BUY Today | `sensor.rce_pse_cena` |
+| BUY Tomorrow | `sensor.rce_pse_cena_jutro` |
+
+1. W **Encje cen energii** ustaw rzeczywiste encje RCE Today i Tomorrow dla BUY.
+2. Zapisz, a następnie w **Taryfa i dystrybucja** sprawdź wykryty adapter,
+   pokrycie obu dni oraz operatora OSD i taryfę.
+3. W tabeli cen potwierdź 24 kompletne godziny na każdy dostępny dzień.
+
+Znany adapter PSE/RCE traktuje `rce_pln` jako cenę energii (`energy_only`) i
+agreguje kompletne kwadranse do godzin. Backend dodaje zmienne OSD dokładnie raz.
+Brak pełnych 60 minut, nakładające się przedziały albo niejednoznaczna semantyka
+blokują planowanie. Zero i ceny ujemne są poprawnymi danymi, jeżeli źródło je
+rzeczywiście publikuje.
+
+### Scenariusz D — sprzedaż bez Pstryk AIO
+
+**Katalog sprzedawców i OSD nie tworzy SELL.** W kroku **Encje cen energii**
+musisz jawnie ustawić **SELL Today** i — jeśli ma być dostępny plan jutra —
+**SELL Tomorrow**.
+
+Jeżeli chcesz użyć PSE/RCE jako rynkowej referencji sprzedaży, przykładem znanej
+pary obsługującej pełne serie są:
+
+- `sensor.rce_pse_cena` dla SELL Today;
+- `sensor.rce_pse_cena_jutro` dla SELL Tomorrow.
+
+Przy kierunku SELL DEM klasyfikuje RCE jako `market_reference`, a nie jako cenę
+prosumencką. Przed użyciem sprawdź, czy ta rynkowa referencja odpowiada
+rzeczywistemu sposobowi rozliczenia sprzedaży w Twojej umowie.
+
+Alternatywnie użyj własnego godzinowego źródła Generic/Custom z pełnymi seriami
+Today/Tomorrow. W takim kontrakcie ustaw zgodnie z faktycznym źródłem jednostkę,
+podstawę brutto/netto, rolę ekonomiczną, atrybut listy, pole wartości, pola czasu
+oraz rozdzielczość i schemat. DEM nie zgaduje tych parametrów.
+
+> **Bieżąca cena prosumencka nie jest prognozą na kolejne godziny.** Sensora z
+> jedną aktualną wartością nie mapuj jako prognozy 24/48 h. DEM nie rozciąga tej
+> wartości na przyszłość, nie kopiuje Today do Tomorrow i przy braku pełnej serii
+> SELL Tomorrow pozostawia prognozę jutra niedostępną.
+
+### Scenariusz E — Custom / Inne
+
+Custom/Inne wybierz dla własnej integracji lub sensora, którego formatu nie
+obsługuje znany adapter. Pstryk i RCE powinny zostać rozpoznane automatycznie i nie
+wymagają ręcznego schematu.
+
+1. W **Encje cen energii** wskaż rzeczywiste encje Today/Tomorrow dla właściwego
+   kierunku BUY lub SELL i zapisz.
+2. Otwórz **Ustawienia i diagnostyka → Taryfa i dystrybucja** i w zaawansowanej
+   konfiguracji Custom uzupełnij kontrakt zgodnie z formatem źródła.
+3. Jawnie określ jednostkę, podstawę ceny, rolę ekonomiczną, atrybut listy, pole
+   wartości, pola czasu i rozdzielczość/schemat.
+4. Sprawdź diagnostykę kontraktu i pokrycie Today/Tomorrow przed użyciem planu.
+
+Brak jednostki, podstawy, roli ekonomicznej lub kompletnego schematu działa
+fail-closed. Frontend nie zgaduje formatu ani ekonomicznego znaczenia źródła.
+
 ## Karta dashboardu
 
 Karta jest dostarczana razem z integracją. W standardowym trybie UI/storage DEM
